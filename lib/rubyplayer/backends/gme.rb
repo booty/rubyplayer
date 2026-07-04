@@ -1,0 +1,141 @@
+require "ffi"
+
+module RubyPlayer
+  module Backends
+    module GmeLib
+      extend FFI::Library
+      ffi_lib ["gme", "libgme.dylib", "/opt/homebrew/lib/libgme.dylib"]
+
+      GME_INFO_ONLY = -1 # special sample_rate: open for metadata only
+
+      # gme functions return a const char* error string, or NULL on success.
+      attach_function :gme_open_file, [:string, :pointer, :int], :string
+      attach_function :gme_track_count, [:pointer], :int
+      attach_function :gme_start_track, [:pointer, :int], :string
+      attach_function :gme_play, [:pointer, :int, :pointer], :string, blocking: true
+      attach_function :gme_track_ended, [:pointer], :int
+      attach_function :gme_seek, [:pointer, :int], :string, blocking: true
+      attach_function :gme_tell, [:pointer], :int
+      attach_function :gme_set_fade, [:pointer, :int], :void
+      attach_function :gme_track_info, [:pointer, :pointer, :int], :string
+      attach_function :gme_free_info, [:pointer], :void
+      attach_function :gme_delete, [:pointer], :void
+    end
+
+    # Mirrors gme_info_t: 16 ints then 16 const char*. Only the named leading
+    # fields are used; i4..i15 / s7..s15 are reserved padding in gme.h, so this
+    # layout is size-compatible across libgme 0.6.x releases.
+    class GmeInfo < FFI::Struct
+      layout :length, :int, :intro_length, :int, :loop_length, :int, :play_length, :int,
+             :i4, :int, :i5, :int, :i6, :int, :i7, :int, :i8, :int, :i9, :int,
+             :i10, :int, :i11, :int, :i12, :int, :i13, :int, :i14, :int, :i15, :int,
+             :system, :string, :game, :string, :song, :string, :author, :string,
+             :copyright, :string, :comment, :string, :dumper, :string,
+             :s7, :string, :s8, :string, :s9, :string, :s10, :string, :s11, :string,
+             :s12, :string, :s13, :string, :s14, :string, :s15, :string
+    end
+
+    class Gme
+      class Error < StandardError; end
+
+      def name = "gme"
+
+      def track_count(path)
+        with_emu(path, GmeLib::GME_INFO_ONLY) { |emu| GmeLib.gme_track_count(emu) }
+      end
+
+      def metadata(path, subtune_index)
+        with_emu(path, GmeLib::GME_INFO_ONLY) do |emu|
+          with_info(emu, subtune_index) do |info|
+            {
+              title: presence(info[:song]) || format("Track %02d", subtune_index + 1),
+              album: presence(info[:game]),
+              artist: presence(info[:author]),
+              composer: presence(info[:author]),
+              track_number: subtune_index + 1,
+              duration_ms: info[:play_length].positive? ? info[:play_length] : nil,
+              format: File.extname(path).delete_prefix(".").downcase,
+            }
+          end
+        end
+      end
+
+      def open(path, subtune_index, sample_rate:)
+        emu = open_emu(path, sample_rate)
+        err = GmeLib.gme_start_track(emu, subtune_index)
+        if err
+          GmeLib.gme_delete(emu)
+          raise Error, err
+        end
+        Handle.new(emu, subtune_index)
+      end
+
+      class Handle
+        attr_reader :duration_ms
+
+        def initialize(emu, subtune_index)
+          @emu = emu
+          info_ptr = FFI::MemoryPointer.new(:pointer)
+          if GmeLib.gme_track_info(@emu, info_ptr, subtune_index).nil?
+            info = GmeInfo.new(info_ptr.read_pointer)
+            play_len = info[:play_length]
+            @duration_ms = play_len.positive? ? play_len : nil
+            # Looping chiptunes never end on their own; fade out at play_length.
+            GmeLib.gme_set_fade(@emu, play_len) if play_len.positive?
+            GmeLib.gme_free_info(info_ptr.read_pointer)
+          end
+        end
+
+        # Returns packed float32 stereo, or nil once the track has ended.
+        def read(frames)
+          return nil if @emu.nil? || GmeLib.gme_track_ended(@emu) != 0
+          samples = frames * 2
+          if @buf.nil? || @buf_samples != samples
+            @buf = FFI::MemoryPointer.new(:short, samples)
+            @buf_samples = samples
+          end
+          err = GmeLib.gme_play(@emu, samples, @buf)
+          raise Error, err if err
+          @buf.read_bytes(samples * 2).unpack("s<*").map { |s| s / 32_768.0 }.pack("e*")
+        end
+
+        def seek(ms) = GmeLib.gme_seek(@emu, ms).nil?
+        def position_ms = GmeLib.gme_tell(@emu)
+
+        def close
+          GmeLib.gme_delete(@emu) if @emu
+          @emu = nil
+        end
+      end
+
+      private
+
+      def open_emu(path, sample_rate)
+        out = FFI::MemoryPointer.new(:pointer)
+        err = GmeLib.gme_open_file(path, out, sample_rate)
+        raise Error, err if err
+        out.read_pointer
+      end
+
+      def with_emu(path, sample_rate)
+        emu = open_emu(path, sample_rate)
+        yield emu
+      ensure
+        GmeLib.gme_delete(emu) if emu
+      end
+
+      def with_info(emu, subtune_index)
+        info_ptr = FFI::MemoryPointer.new(:pointer)
+        err = GmeLib.gme_track_info(emu, info_ptr, subtune_index)
+        raise Error, err if err
+        begin
+          yield GmeInfo.new(info_ptr.read_pointer)
+        ensure
+          GmeLib.gme_free_info(info_ptr.read_pointer)
+        end
+      end
+
+      def presence(str) = str.nil? || str.empty? ? nil : str
+    end
+  end
+end
