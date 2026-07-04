@@ -4,3 +4,5 @@ end
 
 require_relative "rubyplayer/config"
 require_relative "rubyplayer/database"
+require_relative "rubyplayer/track"
+require_relative "rubyplayer/library"
