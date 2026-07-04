@@ -67,6 +67,18 @@ module RubyPlayer
         row && row[:type] == :track ? row[:track] : nil
       end
 
+      # Index of the selected row among :track rows only (headers don't
+      # count). In the queue view there are no headers, so this equals the
+      # queue position directly -- that's what callers removing from the
+      # live queue (App#dispatch :remove_from_queue) need.
+      def selected_track_index
+        rows = display_rows
+        row = rows[@selection]
+        return nil unless row && row[:type] == :track
+
+        rows[0..@selection].count { |r| r[:type] == :track } - 1
+      end
+
       def render(screen, x:, y:, w:, h:, active:)
         rows = display_rows
         follow_selection(h, rows.size)

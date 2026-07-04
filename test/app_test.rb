@@ -66,6 +66,77 @@ class AppTest < Minitest::Test
     assert @app.quit?
   end
 
+  # Bounded poll for state that changes asynchronously via the decoder
+  # thread (enqueue_now/skip/seek all hand off to a command queue). Mirrors
+  # the wait_for pattern already used in playback_engine_test.rb rather than
+  # a blind sleep-then-assert.
+  def wait_until(timeout: 2)
+    deadline = Time.now + timeout
+    until yield
+      flunk("timed out waiting for condition") if Time.now > deadline
+      sleep 0.01
+    end
+  end
+
+  def test_next_track_key_advances_queue
+    3.times { @app.handle_key("down") } # select the music folder (>=2 tracks)
+    @app.handle_key("enter")            # play_now: enqueues the folder and starts playing
+    wait_until { @app.engine.state[:track] }
+    before_size = @app.engine.queue_items.size
+    assert_operator before_size, :>=, 2
+
+    @app.handle_key(">")                # next_track
+    wait_until { @app.engine.queue_items.size < before_size }
+    assert_equal before_size - 1, @app.engine.queue_items.size
+  end
+
+  def test_remove_from_queue_key_removes_selected_queue_track
+    3.times { @app.handle_key("down") } # select the music folder
+    @app.handle_key("n")                # enqueue_end (not playing, so no auto-skip semantics)
+    before_size = @app.engine.queue_items.size
+    assert_operator before_size, :>=, 2
+
+    @app.handle_key("p")                # select_queue: show the Playback Queue in tracks pane
+    @app.handle_key("tab")              # focus tracks pane so nav_down routes there
+    @app.handle_key("down")             # move selection onto the 2nd queue row
+
+    @app.handle_key("x")                # remove_from_queue
+    assert_equal before_size - 1, @app.engine.queue_items.size
+  end
+
+  def test_remove_from_queue_is_a_noop_outside_the_queue_view
+    3.times { @app.handle_key("down") } # select the music folder
+    @app.handle_key("n")                # enqueue_end
+    before_size = @app.engine.queue_items.size
+
+    @app.handle_key("tab")              # tracks pane is showing the folder, not the queue
+    @app.handle_key("x")
+    assert_equal before_size, @app.engine.queue_items.size
+  end
+
+  def test_seek_forward_key_issues_absolute_seek_without_error
+    3.times { @app.handle_key("down") }
+    @app.handle_key("enter")
+    wait_until { @app.engine.state[:track] }
+
+    # Stub state/seek so the assertion is exact regardless of real-time
+    # playback drift on the decoder thread (position_ms ticks on wall-clock
+    # time even with null audio) -- this test proves App's dispatch math
+    # (absolute target = current position + configured seek step), not the
+    # engine's live position at some arbitrary instant.
+    engine = @app.engine
+    track = engine.state[:track]
+    engine.define_singleton_method(:state) do
+      { track: track, playing: true, paused: false, position_ms: 5_000, skip_disliked: false }
+    end
+    seek_calls = []
+    engine.define_singleton_method(:seek) { |ms| seek_calls << ms }
+
+    @app.handle_key("]") # seek_forward
+
+    assert_equal [15_000], seek_calls # 5_000 + seek_seconds(10) * 1000
+  end
+
   def test_refresh_panes_preserves_tracks_pane_cursor
     3.times { @app.handle_key("down") } # select the music folder (populates tracks pane)
     assert_operator @app.tracks_pane.display_rows.size, :>=, 2

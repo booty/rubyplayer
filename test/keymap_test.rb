@@ -39,4 +39,16 @@ class KeymapTest < Minitest::Test
   def test_unknown_key_is_nil
     assert_nil RubyPlayer::Keymap.new.action_for("f9", pane: :library)
   end
+
+  def test_transport_defaults_are_global
+    k = RubyPlayer::Keymap.new
+    assert_equal :next_track, k.action_for(">", pane: :library)
+    assert_equal :next_track, k.action_for(">", pane: :tracks)
+    assert_equal :seek_back, k.action_for("[", pane: :library)
+    assert_equal :seek_back, k.action_for("[", pane: :tracks)
+    assert_equal :seek_forward, k.action_for("]", pane: :library)
+    assert_equal :seek_forward, k.action_for("]", pane: :tracks)
+    assert_equal :remove_from_queue, k.action_for("x", pane: :library)
+    assert_equal :remove_from_queue, k.action_for("x", pane: :tracks)
+  end
 end

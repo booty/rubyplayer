@@ -143,9 +143,45 @@ module RubyPlayer
           on = @engine.toggle_skip_disliked
           @status_line.set_message("Skip disliked tracks: #{on ? 'ON' : 'OFF'}")
         when :add_path then @input_buffer = ""
+        when :next_track
+          @engine.skip
+          @status_line.set_message("Skipped")
+        when :seek_forward then seek_by(1)
+        when :seek_back then seek_by(-1)
+        when :remove_from_queue then remove_from_queue
         when *RATE_ACTIONS.keys then rate_current(RATE_ACTIONS[action])
         else route_to_pane(action)
         end
+      end
+
+      # engine.seek takes an ABSOLUTE ms position (see PlaybackEngine#seek),
+      # so both directions are computed relative to the current position
+      # rather than as a delta the engine could apply itself; back is
+      # clamped at 0 so repeated presses near the start don't go negative.
+      def seek_by(direction)
+        return unless @engine.state[:track]
+        seek_ms = @config["ui", "seek_seconds"] * 1000
+        target = @engine.state[:position_ms] + (direction * seek_ms)
+        @engine.seek([target, 0].max)
+      end
+
+      # Removing from the queue is gated to the Playback Queue view (rather
+      # than, say, letting "x" also act on a folder's track list) because
+      # the tracks pane doesn't distinguish "queue position" from "row in
+      # whatever's currently shown" -- selected_track_index only means
+      # "queue index" when that's actually what's on screen.
+      def remove_from_queue
+        if @library_pane.selected&.kind != :queue
+          @status_line.set_message("Select a track in the Playback Queue to remove")
+          return
+        end
+        index = @tracks_pane.selected_track_index
+        if index.nil?
+          @status_line.set_message("Select a track in the Playback Queue to remove")
+          return
+        end
+        @engine.remove_at(index)
+        @status_line.set_message("Removed from queue (u:undo)")
       end
 
       def route_to_pane(action)

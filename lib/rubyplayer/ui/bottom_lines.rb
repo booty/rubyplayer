@@ -61,6 +61,8 @@ module RubyPlayer
         quit: "quit", nav_up: nil, nav_down: nil, collapse: nil, expand: nil,
         toggle_group: "group", sort_title: "title", sort_number: "number",
         sort_artist: "artist",
+        next_track: "next", seek_back: "seek-", seek_forward: "seek+",
+        remove_from_queue: "remove",
       }.freeze
 
       def initialize(keymap:)

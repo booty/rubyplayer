@@ -6,6 +6,7 @@ module RubyPlayer
       "library_pane_percent" => 33,
       "frame_fps" => 30,
       "status_message_seconds" => 5,
+      "seek_seconds" => 10,
       "format_string_grouped" => "{track_number} {title} {duration} {artist?} {rating}",
       "format_string_ungrouped" => "{album} {track_number} {title} {duration} {artist?} {rating}",
     },

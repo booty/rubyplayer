@@ -19,6 +19,8 @@ module RubyPlayer
         "0" => "rate_0", "1" => "rate_1", "2" => "rate_2", "3" => "rate_3",
         "4" => "rate_4", "5" => "rate_5", "6" => "rate_6",
         "ctrl_c" => "quit",
+        ">" => "next_track", "[" => "seek_back", "]" => "seek_forward",
+        "x" => "remove_from_queue",
       },
       "library" => {
         "up" => "nav_up", "down" => "nav_down",
