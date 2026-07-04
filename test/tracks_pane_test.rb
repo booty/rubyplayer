@@ -1,5 +1,6 @@
 require "test_helper"
 require "tmpdir"
+require "stringio"
 
 class TracksPaneTest < Minitest::Test
   def setup
@@ -65,6 +66,16 @@ class TracksPaneTest < Minitest::Test
     y_row = apple_rows.find { |r| r[:track].artist == "Y" }
     refute_includes x_row[:text], "X"
     assert_includes y_row[:text], "Y"
+  end
+
+  def test_grouped_album_header_is_rendered_as_a_dashed_separator
+    @pane.show(@folder_row)
+    @pane.handle_action(:toggle_group)
+    screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 10, cols: 40)
+    @pane.render(screen, x: 0, y: 0, w: 40, h: 10, active: true)
+    out = screen.flush
+    assert_includes out, "--- Apple #{'-' * (40 - '--- Apple '.size)}"
+    assert_includes out, "--- Zebra #{'-' * (40 - '--- Zebra '.size)}"
   end
 
   def test_selection_skips_headers

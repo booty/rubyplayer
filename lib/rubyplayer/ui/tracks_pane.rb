@@ -104,7 +104,7 @@ module RubyPlayer
           bg = selected ? (active ? :blue : :bright_black) : nil
           screen.put(y + i, x, " " * w, bg: bg) if selected
           if row[:type] == :header
-            screen.put(y + i, x, row[:text][0, w], fg: :cyan, bg: bg, bold: true)
+            screen.put(y + i, x, header_line(row[:text], w), fg: :cyan, bg: bg, bold: true)
           else
             screen.put(y + i, x, row[:text][0, w],
                        fg: selected ? :bright_white : nil, bg: bg, bold: selected)
@@ -113,6 +113,17 @@ module RubyPlayer
       end
 
       private
+
+      # "--- Album Name ------..." with the trailing run of dashes extending
+      # to the pane's right edge. Built at render time (not baked into the
+      # row in #grouped_rows) since it depends on the pane width, which can
+      # change on terminal resize.
+      def header_line(album, w)
+        prefix = "--- #{album} "
+        return prefix[0, w] if prefix.size >= w
+
+        "#{prefix}#{'-' * (w - prefix.size)}"
+      end
 
       def flat_rows
         @tracks.map { |t| { type: :track, text: @flat_template.render(t), track: t } }
