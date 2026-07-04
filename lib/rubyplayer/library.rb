@@ -108,6 +108,10 @@ module RubyPlayer
       @db.read { |s| s.get_first_value("SELECT rating FROM tracks WHERE id = ?", [track_id]) }
     end
 
+    def set_errored(track_id)
+      @db.write { |s| s.execute("UPDATE tracks SET errored = 1 WHERE id = ?", [track_id]) }
+    end
+
     def find_track(id)
       row = @db.read { |s| s.execute("SELECT * FROM tracks WHERE id = ?", [id]).first }
       row && Track.from_row(row)

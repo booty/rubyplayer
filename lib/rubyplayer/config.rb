@@ -21,6 +21,7 @@ module RubyPlayer
       "backup_retention" => 10,
       "history_limit" => 100,
       "history_min_percent" => 5,
+      "history_min_seconds_unknown" => 30,
       "undo_depth" => 10,
     },
     "eq" => { "bands" => 16, "fps" => 30 },
