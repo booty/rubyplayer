@@ -11,7 +11,7 @@ module RubyPlayer
                        rate_4: 4, rate_5: 5, rate_6: 6 }.freeze
 
       attr_reader :engine, :library_pane, :tracks_pane, :active_pane, :input_buffer,
-                  :pending_delete, :info_track
+                  :pending_delete, :info_track, :show_help
 
       def initialize(argv: [], config_path: nil, data_path: nil, null_audio: false,
                      io_out: $stdout)
@@ -49,6 +49,7 @@ module RubyPlayer
         @input_buffer = nil
         @pending_delete = nil
         @info_track = nil
+        @show_help = false
         @quit = false
         @resized = false
         @engine.start
@@ -105,11 +106,16 @@ module RubyPlayer
       end
 
       def handle_key(key)
+        return handle_help_key(key) if @show_help
         return handle_info_key(key) if @info_track
         return handle_confirm_key(key) if @pending_delete
         return handle_input_mode_key(key) if @input_buffer
         action = @keymap.action_for(key, pane: @active_pane)
         dispatch(action) if action
+      end
+
+      def handle_help_key(key)
+        @show_help = false if %w[? escape enter].include?(key)
       end
 
       # Any of these three dismiss the info modal; everything else is
@@ -173,6 +179,7 @@ module RubyPlayer
         when :remove_from_queue then remove_from_queue
         when :remove_library_item then request_remove_library_item
         when :show_track_info then request_show_track_info
+        when :show_help then @show_help = true
         when *RATE_ACTIONS.keys then rate_current(RATE_ACTIONS[action])
         else route_to_pane(action)
         end
@@ -356,6 +363,7 @@ module RubyPlayer
         @hotkey_line.render(@screen, row: rows - 1, w: cols, pane: @active_pane)
         render_confirm_modal if @pending_delete
         render_info_modal if @info_track
+        render_help_modal if @show_help
         @screen.flush
       end
 
@@ -407,6 +415,30 @@ module RubyPlayer
         y = [(@screen.rows - h) / 2, 0].max
         (1...(h - 1)).each { |i| @screen.put(y + i, x + 1, " " * (w - 2), bg: :black) }
         draw_box(x, y, w, h, active: true, title: "Track Info")
+        lines.each_with_index { |line, i| @screen.put(y + 2 + i, x + 2, line[0, w - 4], fg: :bright_white) }
+        @screen.put(y + h - 2, x + 2, hint[0, w - 4], fg: :bright_black)
+      end
+
+      # Lists every hotkey reachable from the currently active pane (pane-local
+      # + global, already deduped by Keymap#bindings_for) -- unlike the
+      # compact bottom hotkey line, nothing is filtered out here (rate_N
+      # actions and nav_up/nav_down are shown too), since this modal exists
+      # specifically to be the exhaustive reference the hint line has no
+      # room for.
+      def render_help_modal
+        bindings = @keymap.bindings_for(@active_pane)
+        lines = bindings.map do |key, action|
+          label = HotkeyLine::LABELS[action] || action.to_s.tr("_", " ")
+          "#{key.upcase.ljust(6)} #{label}"
+        end
+        title = "Hotkeys (#{@active_pane})"
+        hint = "[?/esc/enter] Close"
+        w = [lines.map(&:size).max, hint.size, title.size].max + 4
+        h = lines.size + 5
+        x = [(@screen.cols - w) / 2, 0].max
+        y = [(@screen.rows - h) / 2, 0].max
+        (1...(h - 1)).each { |i| @screen.put(y + i, x + 1, " " * (w - 2), bg: :black) }
+        draw_box(x, y, w, h, active: true, title: title)
         lines.each_with_index { |line, i| @screen.put(y + 2 + i, x + 2, line[0, w - 4], fg: :bright_white) }
         @screen.put(y + h - 2, x + 2, hint[0, w - 4], fg: :bright_black)
       end

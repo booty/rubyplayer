@@ -81,6 +81,12 @@ class KeymapTest < Minitest::Test
     assert_equal :remove_from_queue, k.action_for("x", pane: :tracks)
   end
 
+  def test_help_key_is_global
+    k = RubyPlayer::Keymap.new
+    assert_equal :show_help, k.action_for("?", pane: :library)
+    assert_equal :show_help, k.action_for("?", pane: :tracks)
+  end
+
   def test_show_track_info_key_is_tracks_scoped
     k = RubyPlayer::Keymap.new
     assert_equal :show_track_info, k.action_for("i", pane: :tracks)

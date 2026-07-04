@@ -63,7 +63,7 @@ module RubyPlayer
         sort_artist: "artist",
         next_track: "next", seek_back: "seek-", seek_forward: "seek+",
         remove_from_queue: "remove", remove_library_item: "remove",
-        show_track_info: "info",
+        show_track_info: "info", show_help: "help",
       }.freeze
 
       def initialize(keymap:)

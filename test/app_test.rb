@@ -245,6 +245,21 @@ class AppTest < Minitest::Test
     assert_nil @app.info_track
   end
 
+  def test_help_key_opens_and_escape_closes_the_modal
+    @app.handle_key("?")
+    assert @app.show_help
+    @app.handle_key("escape")
+    refute @app.show_help
+  end
+
+  def test_help_modal_lists_bindings_for_the_active_pane
+    @app.handle_key("?")
+    @app.render
+    out = @app.instance_variable_get(:@io_out).string
+    assert_includes out, "Hotkeys (library)"
+    assert_includes out, "SPACE"
+  end
+
   def test_seek_forward_key_issues_absolute_seek_without_error
     3.times { @app.handle_key("down") }
     @app.handle_key("enter")
