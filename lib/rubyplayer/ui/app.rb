@@ -11,7 +11,7 @@ module RubyPlayer
                        rate_4: 4, rate_5: 5, rate_6: 6 }.freeze
 
       attr_reader :engine, :library_pane, :tracks_pane, :active_pane, :input_buffer,
-                  :pending_delete
+                  :pending_delete, :info_track
 
       def initialize(argv: [], config_path: nil, data_path: nil, null_audio: false,
                      io_out: $stdout)
@@ -48,6 +48,7 @@ module RubyPlayer
         @active_pane = :library
         @input_buffer = nil
         @pending_delete = nil
+        @info_track = nil
         @quit = false
         @resized = false
         @engine.start
@@ -104,10 +105,18 @@ module RubyPlayer
       end
 
       def handle_key(key)
+        return handle_info_key(key) if @info_track
         return handle_confirm_key(key) if @pending_delete
         return handle_input_mode_key(key) if @input_buffer
         action = @keymap.action_for(key, pane: @active_pane)
         dispatch(action) if action
+      end
+
+      # Any of these three dismiss the info modal; everything else is
+      # swallowed rather than falling through to normal dispatch, same as
+      # the confirm-delete and add-path input-capture states below.
+      def handle_info_key(key)
+        @info_track = nil if %w[i escape enter].include?(key)
       end
 
       # While a delete confirmation modal is up, keys are captured here
@@ -163,6 +172,7 @@ module RubyPlayer
         when :seek_back then seek_by(-1)
         when :remove_from_queue then remove_from_queue
         when :remove_library_item then request_remove_library_item
+        when :show_track_info then request_show_track_info
         when *RATE_ACTIONS.keys then rate_current(RATE_ACTIONS[action])
         else route_to_pane(action)
         end
@@ -218,6 +228,14 @@ module RubyPlayer
         @library_pane.rebuild!
         @tracks_pane.show(@library_pane.selected)
         @status_line.set_message("Removed \"#{folder['name']}\" from library")
+      end
+
+      # Bound only in the "tracks" keymap scope (see keymap.rb), so this is
+      # never reached while the Library pane is active.
+      def request_show_track_info
+        track = @tracks_pane.selected_track
+        return unless track
+        @info_track = track
       end
 
       def route_to_pane(action)
@@ -337,6 +355,7 @@ module RubyPlayer
         end
         @hotkey_line.render(@screen, row: rows - 1, w: cols, pane: @active_pane)
         render_confirm_modal if @pending_delete
+        render_info_modal if @info_track
         @screen.flush
       end
 
@@ -358,14 +377,55 @@ module RubyPlayer
         @screen.put(y + 4, x + 2, prompt[0, w - 4], fg: :bright_white, bold: true)
       end
 
+      # Rows are built as [label, value] pairs and only included when they
+      # apply (archive/subtune fields for plain files, missing/errored flags
+      # for healthy tracks) so a typical track's modal isn't cluttered with
+      # blank fields.
+      def render_info_modal
+        t = @info_track
+        stats = @library.play_stats(t.id)
+        rows = [
+          ["Title", t.title], ["Album", t.album], ["Artist", t.artist],
+          ["Composer", t.composer], ["Track #", t.track_number],
+          ["Format", t.format], ["Backend", t.backend],
+          ["Length", fmt_length(t.duration_ms)],
+          ["Rating", t.rating ? "#{@config['glyphs', 'star']} x#{t.rating}" : "unrated"],
+          ["Path", t.physical_path],
+        ]
+        rows << ["Archive entry", t.archive_entry] unless t.archive_entry.to_s.empty?
+        rows << ["Subtune", t.subtune_index] if t.subtune_index.to_i.positive?
+        flags = [("missing" if t.missing == 1), ("errored" if t.errored == 1)].compact
+        rows << ["Status", flags.join(", ")] unless flags.empty?
+        rows << ["Played", stats[:count].zero? ? "never" :
+          "#{stats[:count]}x, #{fmt_length(stats[:total_played_ms])} total (last #{stats[:last_played_at]})"]
+
+        lines = rows.map { |label, value| "#{label}: #{value.nil? || value.to_s.empty? ? '—' : value}" }
+        hint = "[i/esc/enter] Close"
+        w = [lines.map(&:size).max, hint.size].max + 4
+        h = lines.size + 5
+        x = [(@screen.cols - w) / 2, 0].max
+        y = [(@screen.rows - h) / 2, 0].max
+        (1...(h - 1)).each { |i| @screen.put(y + i, x + 1, " " * (w - 2), bg: :black) }
+        draw_box(x, y, w, h, active: true, title: "Track Info")
+        lines.each_with_index { |line, i| @screen.put(y + 2 + i, x + 2, line[0, w - 4], fg: :bright_white) }
+        @screen.put(y + h - 2, x + 2, hint[0, w - 4], fg: :bright_black)
+      end
+
+      def fmt_length(ms)
+        return "unknown" unless ms
+        total = ms / 1000
+        format("%d:%02d", total / 60, total % 60)
+      end
+
       def draw_box(x, y, w, h, active:, title:)
         color = active ? :bright_cyan : :bright_black
-        @screen.put(y, x, "┌#{"─" * (w - 2)}┐", fg: color)
+        tl, tr, bl, br, hz, vt = active ? %w[╔ ╗ ╚ ╝ ═ ║] : %w[┌ ┐ └ ┘ ─ │]
+        @screen.put(y, x, "#{tl}#{hz * (w - 2)}#{tr}", fg: color)
         (1...(h - 1)).each do |i|
-          @screen.put(y + i, x, "│", fg: color)
-          @screen.put(y + i, x + w - 1, "│", fg: color)
+          @screen.put(y + i, x, vt, fg: color)
+          @screen.put(y + i, x + w - 1, vt, fg: color)
         end
-        @screen.put(y + h - 1, x, "└#{"─" * (w - 2)}┘", fg: color)
+        @screen.put(y + h - 1, x, "#{bl}#{hz * (w - 2)}#{br}", fg: color)
         @screen.put(y, x + 2, " #{title} ", fg: color, bold: active)
       end
 

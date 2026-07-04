@@ -225,6 +225,26 @@ class AppTest < Minitest::Test
     wait_until { @app.engine.queue_items.empty? }
   end
 
+  def test_show_track_info_key_populates_info_track
+    3.times { @app.handle_key("down") } # select the music folder
+    @app.handle_key("tab")              # focus the Tracks pane
+    @app.handle_key("i")
+    assert_instance_of RubyPlayer::Track, @app.info_track
+  end
+
+  def test_show_track_info_key_is_a_noop_in_the_library_pane
+    @app.handle_key("i") # library pane active: "i" isn't bound there
+    assert_nil @app.info_track
+  end
+
+  def test_escape_dismisses_the_track_info_modal
+    3.times { @app.handle_key("down") }
+    @app.handle_key("tab")
+    @app.handle_key("i")
+    @app.handle_key("escape")
+    assert_nil @app.info_track
+  end
+
   def test_seek_forward_key_issues_absolute_seek_without_error
     3.times { @app.handle_key("down") }
     @app.handle_key("enter")

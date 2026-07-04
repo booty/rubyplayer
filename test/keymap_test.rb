@@ -61,4 +61,10 @@ class KeymapTest < Minitest::Test
     assert_equal :remove_library_item, k.action_for("x", pane: :library)
     assert_equal :remove_from_queue, k.action_for("x", pane: :tracks)
   end
+
+  def test_show_track_info_key_is_tracks_scoped
+    k = RubyPlayer::Keymap.new
+    assert_equal :show_track_info, k.action_for("i", pane: :tracks)
+    assert_nil k.action_for("i", pane: :library)
+  end
 end

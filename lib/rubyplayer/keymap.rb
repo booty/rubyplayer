@@ -35,6 +35,7 @@ module RubyPlayer
         "up" => "nav_up", "down" => "nav_down",
         "G" => "toggle_group",
         "T" => "sort_title", "N" => "sort_number", "A" => "sort_artist",
+        "i" => "show_track_info",
       },
     }.freeze
 

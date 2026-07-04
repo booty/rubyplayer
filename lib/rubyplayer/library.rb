@@ -108,6 +108,17 @@ module RubyPlayer
       @db.read { |s| s.get_first_value("SELECT rating FROM tracks WHERE id = ?", [track_id]) }
     end
 
+    # Aggregate (not per-play) history for the track-info modal: how many
+    # times it's been played, total time actually played, and when last.
+    def play_stats(track_id)
+      rows = @db.read do |s|
+        s.execute("SELECT started_at, ended_at FROM playback_history WHERE track_id = ?", [track_id])
+      end
+      return { count: 0, last_played_at: nil, total_played_ms: 0 } if rows.empty?
+      total_ms = rows.sum { |r| (Time.parse(r["ended_at"]) - Time.parse(r["started_at"])) * 1000 }.round
+      { count: rows.size, last_played_at: rows.map { |r| r["started_at"] }.max, total_played_ms: total_ms }
+    end
+
     def set_errored(track_id)
       @db.write { |s| s.execute("UPDATE tracks SET errored = 1 WHERE id = ?", [track_id]) }
     end

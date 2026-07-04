@@ -105,6 +105,19 @@ class LibraryTest < Minitest::Test
     assert_empty @lib.tracks_under(@root)
   end
 
+  def test_play_stats_aggregates_count_total_and_last_played
+    id = add_track("/m/sega/a.vgm")
+    assert_equal({ count: 0, last_played_at: nil, total_played_ms: 0 }, @lib.play_stats(id))
+
+    @lib.record_history(track_id: id, started_at: "2026-07-01T00:00:00Z", ended_at: "2026-07-01T00:01:00Z")
+    @lib.record_history(track_id: id, started_at: "2026-07-02T00:00:00Z", ended_at: "2026-07-02T00:00:30Z")
+    stats = @lib.play_stats(id)
+
+    assert_equal 2, stats[:count]
+    assert_equal 90_000, stats[:total_played_ms]
+    assert_equal "2026-07-02T00:00:00Z", stats[:last_played_at]
+  end
+
   def test_rating_check_constraint
     id = add_track("/m/sega/a.vgm")
     assert_raises(SQLite3::ConstraintException) { @lib.set_rating(id, 9) }
