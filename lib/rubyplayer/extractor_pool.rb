@@ -24,7 +24,10 @@ module RubyPlayer
           while (item = queue.pop) != :done
             ok = extract(item)
             mutex.synchronize { errored += 1 unless ok }
-            @event_bus&.publish(:scan_progress, path: item.path)
+            # Progress notification is telemetry, not core work: a raising bus must
+            # not escape the worker thread, or Thread#join re-raises it and skips
+            # recompute_counts!/:scan_complete while leaving sibling workers orphaned.
+            safe_publish(:scan_progress, path: item.path)
           end
         end
       end
@@ -32,11 +35,20 @@ module RubyPlayer
 
       @library.recompute_counts!
       result = { processed: work_items.size, errored: errored }
-      @event_bus&.publish(:scan_complete, **result)
+      safe_publish(:scan_complete, **result)
       result
     end
 
     private
+
+    # The pool's contract is "never raises out of #process"; a caller-supplied
+    # event_bus is outside our control, so any exception from #publish is
+    # swallowed here rather than allowed to propagate.
+    def safe_publish(...)
+      @event_bus&.publish(...)
+    rescue StandardError
+      nil
+    end
 
     def extract(item)
       stat = File.stat(item.path)
