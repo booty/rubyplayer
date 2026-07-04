@@ -9,7 +9,12 @@ module RubyPlayer
       GME_INFO_ONLY = -1 # special sample_rate: open for metadata only
 
       # gme functions return a const char* error string, or NULL on success.
-      attach_function :gme_open_file, [:string, :pointer, :int], :string
+      # gme_open_file/gme_track_info do real decoding work during scanning (parsing
+      # the file, in gme_open_file's case reading it from disk); each call operates
+      # on its own handle/buffer and never re-enters Ruby, so marking them blocking:
+      # true lets ExtractorPool's worker threads actually run them concurrently
+      # across cores instead of serializing on the GVL.
+      attach_function :gme_open_file, [:string, :pointer, :int], :string, blocking: true
       attach_function :gme_track_count, [:pointer], :int
       attach_function :gme_start_track, [:pointer, :int], :string
       attach_function :gme_play, [:pointer, :int, :pointer], :string, blocking: true
@@ -17,7 +22,7 @@ module RubyPlayer
       attach_function :gme_seek, [:pointer, :int], :string, blocking: true
       attach_function :gme_tell, [:pointer], :int
       attach_function :gme_set_fade, [:pointer, :int], :void
-      attach_function :gme_track_info, [:pointer, :pointer, :int], :string
+      attach_function :gme_track_info, [:pointer, :pointer, :int], :string, blocking: true
       attach_function :gme_free_info, [:pointer], :void
       attach_function :gme_delete, [:pointer], :void
     end

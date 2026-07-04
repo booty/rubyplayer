@@ -6,16 +6,21 @@ module RubyPlayer
       extend FFI::Library
       ffi_lib ["openmpt", "libopenmpt.dylib", "/opt/homebrew/lib/libopenmpt.dylib"]
 
+      # create_from_memory2 parses the whole module and get_duration_seconds/
+      # get_metadata do real work scanning its patterns; each call is scoped to
+      # its own module handle and buffer and never re-enters Ruby, so marking
+      # them blocking: true lets ExtractorPool's worker threads run them
+      # concurrently across cores during scanning instead of serializing on the GVL.
       attach_function :openmpt_module_create_from_memory2,
                       [:pointer, :size_t, :pointer, :pointer, :pointer, :pointer,
-                       :pointer, :pointer, :pointer], :pointer
+                       :pointer, :pointer, :pointer], :pointer, blocking: true
       attach_function :openmpt_module_destroy, [:pointer], :void
       attach_function :openmpt_module_read_interleaved_float_stereo,
                       [:pointer, :int32, :size_t, :pointer], :size_t, blocking: true
-      attach_function :openmpt_module_get_duration_seconds, [:pointer], :double
+      attach_function :openmpt_module_get_duration_seconds, [:pointer], :double, blocking: true
       attach_function :openmpt_module_set_position_seconds, [:pointer, :double], :double
       attach_function :openmpt_module_get_position_seconds, [:pointer], :double
-      attach_function :openmpt_module_get_metadata, [:pointer, :string], :pointer
+      attach_function :openmpt_module_get_metadata, [:pointer, :string], :pointer, blocking: true
       attach_function :openmpt_free_string, [:pointer], :void
     end
 
