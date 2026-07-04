@@ -3,3 +3,4 @@ module RubyPlayer
 end
 
 require_relative "rubyplayer/config"
+require_relative "rubyplayer/database"
