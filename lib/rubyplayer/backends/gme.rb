@@ -23,7 +23,8 @@ module RubyPlayer
     end
 
     # Mirrors gme_info_t: 16 ints then 16 const char*. Only the named leading
-    # fields are used; i4..i15 / s7..s15 are reserved padding in gme.h, so this
+    # fields are used; i4 corresponds to gme.h's named `fade_length` field
+    # (unused by our code), and i5..i15 / s7..s15 are reserved padding, so this
     # layout is size-compatible across libgme 0.6.x releases.
     class GmeInfo < FFI::Struct
       layout :length, :int, :intro_length, :int, :loop_length, :int, :play_length, :int,
@@ -99,8 +100,17 @@ module RubyPlayer
           @buf.read_bytes(samples * 2).unpack("s<*").map { |s| s / 32_768.0 }.pack("e*")
         end
 
-        def seek(ms) = GmeLib.gme_seek(@emu, ms).nil?
-        def position_ms = GmeLib.gme_tell(@emu)
+        def seek(ms)
+          return false if @emu.nil?
+
+          GmeLib.gme_seek(@emu, ms).nil?
+        end
+
+        def position_ms
+          return 0 if @emu.nil?
+
+          GmeLib.gme_tell(@emu)
+        end
 
         def close
           GmeLib.gme_delete(@emu) if @emu
