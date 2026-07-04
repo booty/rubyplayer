@@ -48,6 +48,15 @@ module RubyPlayer
     File.join(Dir.home, ".local", "share", "rubyplayer")
   end
 
+  def self.logger
+    @logger ||= begin
+      require "logger"
+      require "fileutils"
+      FileUtils.mkdir_p(data_dir)
+      Logger.new(File.join(data_dir, "rubyplayer.log"), 2, 1_048_576) # 2 rotations, 1MB
+    end
+  end
+
   class ConfigStore
     attr_reader :path, :data
 

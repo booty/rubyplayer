@@ -155,6 +155,13 @@ module RubyPlayer
       end
     end
 
+    # All top-level roots (regardless of visibility) — rescanned on startup.
+    def root_paths
+      @db.read do |s|
+        s.execute("SELECT path FROM folders WHERE parent_id IS NULL").map { |r| r["path"] }
+      end
+    end
+
     # For the Scanner's diff pass: everything the DB knows under `root`.
     def db_paths_under(root)
       prefix = root.chomp("/") + "/"
