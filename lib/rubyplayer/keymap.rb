@@ -22,6 +22,7 @@ module RubyPlayer
         ">" => "next_track", "[" => "seek_back", "]" => "seek_forward",
         "x" => "remove_from_queue",
         "?" => "show_help",
+        "t" => "show_theme_picker",
       },
       "library" => {
         "up" => "nav_up", "down" => "nav_down",
@@ -30,15 +31,17 @@ module RubyPlayer
         # Library pane is focused (pane-local bindings win, see #action_for).
         "x" => "remove_library_item",
       },
-      # Matching is case-insensitive (see #action_for), so "t"/"g" here also
-      # match "T"/"G" from the terminal. sort_number/sort_artist use "#"/"@"
-      # rather than "n"/"a" -- those letters are already global bindings
-      # (enqueue_end/add_path), and case-folding would otherwise make the
-      # pane-local sort binding shadow them whenever Tracks is focused.
+      # Matching is case-insensitive (see #action_for), so "g" here also
+      # matches "G" from the terminal. sort_number/sort_artist/sort_title use
+      # "#"/"@"/"y" rather than "n"/"a"/"t" -- those letters are already
+      # global bindings (enqueue_end/add_path/show_theme_picker), and
+      # case-folding would otherwise make the pane-local sort binding shadow
+      # them (and, for "t", defeat "T opens the theme picker from anywhere")
+      # whenever Tracks is focused.
       "tracks" => {
         "up" => "nav_up", "down" => "nav_down",
         "g" => "toggle_group",
-        "t" => "sort_title", "#" => "sort_number", "@" => "sort_artist",
+        "y" => "sort_title", "#" => "sort_number", "@" => "sort_artist",
         "i" => "show_track_info",
       },
     }.freeze

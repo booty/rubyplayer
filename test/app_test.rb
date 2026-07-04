@@ -154,14 +154,14 @@ class AppTest < Minitest::Test
     folder_idx = @app.library_pane.rows.index { |r| r.kind == :folder && r.folder["name"] == "synth" }
     folder_idx.times { @app.handle_key("down") }
     @app.handle_key("tab") # focus tracks pane, which is now showing the "synth" folder
-    @app.handle_key("T")   # sort_title: dirties TracksPane's @sort before we ever view the queue
+    @app.handle_key("Y")   # sort_title: dirties TracksPane's @sort before we ever view the queue
 
     @app.handle_key("p")   # select_queue
     queue_titles = @app.tracks_pane.display_rows.map { |r| r[:track].title }
     assert_equal %w[Charlie Alpha Bravo], queue_titles
 
     @app.handle_key("tab") # refocus tracks pane; still showing the queue
-    @app.handle_key("T")   # must be a no-op while viewing the queue
+    @app.handle_key("Y")   # must be a no-op while viewing the queue
     assert_equal %w[Charlie Alpha Bravo], @app.tracks_pane.display_rows.map { |r| r[:track].title }
 
     @app.handle_key("down") # select queue row 1 ("Alpha")
@@ -258,6 +258,67 @@ class AppTest < Minitest::Test
     out = @app.instance_variable_get(:@io_out).string
     assert_includes out, "Hotkeys (library)"
     assert_includes out, "SPACE"
+  end
+
+  def test_starts_on_the_default_theme
+    assert_equal :default, @app.theme_id
+  end
+
+  def test_theme_picker_key_opens_the_modal
+    @app.handle_key("t")
+    assert @app.theme_picker
+  end
+
+  def test_scrolling_the_theme_picker_previews_immediately
+    @app.handle_key("t")
+    before = @app.theme_id
+    @app.handle_key("down")
+    refute_equal before, @app.theme_id # live preview changed the active theme
+    assert @app.theme_picker # still open -- nothing persisted yet
+    assert_equal "default", @app.instance_variable_get(:@config)["ui", "theme"]
+  end
+
+  def test_confirming_the_theme_picker_persists_the_previewed_theme
+    @app.handle_key("t")
+    @app.handle_key("down")
+    previewed = @app.theme_id
+    @app.handle_key("enter")
+
+    refute @app.theme_picker
+    assert_equal previewed, @app.theme_id
+    assert_equal previewed.to_s, @app.instance_variable_get(:@config)["ui", "theme"]
+  end
+
+  def test_cancelling_the_theme_picker_reverts_the_preview
+    @app.handle_key("t")
+    @app.handle_key("down")
+    refute_equal :default, @app.theme_id
+    @app.handle_key("escape")
+
+    refute @app.theme_picker
+    assert_equal :default, @app.theme_id
+  end
+
+  def test_selecting_a_hex_theme_actually_changes_rendered_colors
+    @app.render
+    # StringIO#string returns the live internal buffer, not a copy -- capture
+    # the length now (an Integer, immune to later mutation) rather than the
+    # string object itself, or "before" would grow along with "after".
+    before_len = @app.instance_variable_get(:@io_out).string.size
+
+    @app.handle_key("t")
+    @app.handle_key("down") # preview the first named (hex) theme
+    @app.render
+    themed_out = @app.instance_variable_get(:@io_out).string[before_len..]
+
+    border_hex = RubyPlayer::Theme[@app.theme_id][:border_focus].delete("#").scan(/../).map { |h| h.to_i(16) }
+    assert_includes themed_out, "38;2;#{border_hex.join(';')}m"
+  end
+
+  def test_theme_picker_wraps_around_the_list
+    @app.handle_key("t")
+    @app.handle_key("up") # one before :default wraps to the last theme
+    assert_equal RubyPlayer::Theme::ALL_IDS.last, @app.theme_id
   end
 
   def test_seek_forward_key_issues_absolute_seek_without_error

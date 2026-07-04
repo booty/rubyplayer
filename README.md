@@ -83,7 +83,8 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | `event_bus.rb` | `EventBus`: thread-safe event queue with a self-pipe wakeup, so the main loop's `IO.select` can block on stdin *and* background events simultaneously instead of polling. |
 | `level_tap.rb` | `LevelTap`: feeds the bottom-line EQ animation. Runs a Goertzel-algorithm frequency analysis over a short rolling window of recently-played audio at log-spaced band frequencies. `push` runs on the decoder thread, `levels` on the UI thread, guarded by a mutex. |
 | `template.rb` | `Template`: parses a config-supplied format string like `"{track_number} {title} {duration}"` once, then renders it per track. Field substitution is a fixed whitelist — arbitrary `{...}` content can never execute code, it just renders empty. |
-| `keymap.rb` | `Keymap`: maps normalized key names to action symbols, merging user TOML config over sensible single-letter defaults. Supports per-pane overrides (a pane-local binding shadows the global one for that key) via `action_for(key, pane:)`. |
+| `keymap.rb` | `Keymap`: maps normalized key names to action symbols, merging user TOML config over sensible single-letter defaults. Matching is case-insensitive. Supports per-pane overrides (a pane-local binding shadows the global one for that key) via `action_for(key, pane:)`. |
+| `theme.rb` | `Theme`: named color palettes for the TUI — a semantic role (`border`, `selection_bg`, `text_muted`, ...) mapped to either a named ANSI symbol or a `"#rrggbb"` truecolor string. `Theme::DEFAULT` reproduces the app's original hardcoded ANSI colors exactly; `Theme::THEMES` holds the selectable named palettes. Widgets receive the active theme per render call, not at construction time, so switching is instant. |
 
 ### Format backends (`lib/rubyplayer/backends/`)
 
@@ -130,3 +131,4 @@ Keys of particular interest:
 - `[scanner] thread_count` — `0` means "one per CPU core".
 - `[keymap.global]`, `[keymap.library]`, `[keymap.tracks]` — override or add keybindings; pane-scoped tables take priority over `global` for the same key.
 - `[ui] format_string_grouped` / `format_string_ungrouped` — track row templates (see `template.rb` for the available `{field}` tokens).
+- `[ui] theme` — active color scheme id (see `theme.rb` for the full list). Normally set via the in-app theme picker (`T`), which persists your choice back into this key; hand-editing it also works and is picked up on the next hot-reload.

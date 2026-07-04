@@ -1,4 +1,5 @@
 require "tomlrb"
+require "fileutils"
 
 module RubyPlayer
   DEFAULTS = {
@@ -9,6 +10,7 @@ module RubyPlayer
       "seek_seconds" => 10,
       "format_string_grouped" => "{track_number} {title} {duration} {artist?} {rating}",
       "format_string_ungrouped" => "{album} {track_number} {title} {duration} {artist?} {rating}",
+      "theme" => "default",
     },
     "audio" => {
       "sample_rate" => "auto",   # "auto" = device native, or an integer Hz
@@ -80,7 +82,46 @@ module RubyPlayer
       true
     end
 
+    # Called only from the in-app theme picker. Patches just the "theme" line
+    # under [ui] in the on-disk file rather than round-tripping the whole
+    # thing -- there's no TOML writer in this project's dependencies, and
+    # rewriting the full file risks mangling a user's hand-edited comments
+    # for the sake of persisting one scalar.
+    def persist_theme(id)
+      id = id.to_s
+      @data = deep_merge(@data, { "ui" => { "theme" => id } })
+      write_theme_line(id)
+      @mtime = safe_mtime # our own write, not an external change: skip the next reload
+    end
+
     private
+
+    def write_theme_line(id)
+      lines = File.exist?(@path) ? File.readlines(@path) : []
+      in_ui = false
+      ui_header_at = nil
+      replaced = false
+      lines.each_with_index do |line, i|
+        stripped = line.strip
+        if stripped =~ /\A\[(.+)\]\z/
+          in_ui = (Regexp.last_match(1) == "ui")
+          ui_header_at = i if in_ui
+        elsif in_ui && stripped =~ /\Atheme\s*=/
+          lines[i] = "theme = #{id.inspect}\n"
+          replaced = true
+        end
+      end
+      unless replaced
+        if ui_header_at
+          lines.insert(ui_header_at + 1, "theme = #{id.inspect}\n")
+        else
+          lines << "\n" unless lines.empty?
+          lines << "[ui]\n" << "theme = #{id.inspect}\n"
+        end
+      end
+      FileUtils.mkdir_p(File.dirname(@path))
+      File.write(@path, lines.join)
+    end
 
     def safe_mtime
       File.mtime(@path)

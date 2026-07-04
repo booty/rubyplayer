@@ -95,19 +95,19 @@ module RubyPlayer
         rows[0..@selection].count { |r| r[:type] == :track } - 1
       end
 
-      def render(screen, x:, y:, w:, h:, active:)
+      def render(screen, x:, y:, w:, h:, active:, theme:)
         rows = display_rows
         follow_selection(h, rows.size)
         h.times do |i|
           row = rows[@scroll + i] or break
           selected = (@scroll + i) == @selection
-          bg = selected ? (active ? :blue : :bright_black) : nil
+          bg = selected ? (active ? theme[:selection_bg] : theme[:surface_alt]) : nil
           screen.put(y + i, x, " " * w, bg: bg) if selected
           if row[:type] == :header
-            screen.put(y + i, x, header_line(row[:text], w), fg: :cyan, bg: bg, bold: true)
+            screen.put(y + i, x, header_line(row[:text], w), fg: theme[:info], bg: bg, bold: true)
           else
             screen.put(y + i, x, row[:text][0, w],
-                       fg: selected ? :bright_white : nil, bg: bg, bold: selected)
+                       fg: selected ? theme[:selection_text] : theme[:text], bg: bg, bold: selected)
           end
         end
       end

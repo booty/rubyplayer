@@ -44,13 +44,13 @@ module RubyPlayer
         true
       end
 
-      def render(screen, x:, y:, w:, h:, active:)
+      def render(screen, x:, y:, w:, h:, active:, theme:)
         follow_selection(h)
         h.times do |i|
           row = @rows[@scroll + i] or break
           selected = (@scroll + i) == @selection
-          bg = selected ? (active ? :blue : :bright_black) : nil
-          fg = selected ? :bright_white : nil
+          bg = selected ? (active ? theme[:selection_bg] : theme[:surface_alt]) : nil
+          fg = selected ? theme[:selection_text] : theme[:text]
           screen.put(y + i, x, " " * w, bg: bg) if selected
           label, suffix = label_for(row)
           indent = "  " * row.depth
@@ -58,7 +58,7 @@ module RubyPlayer
           unless suffix.empty?
             col = x + indent.size + label.size + 1
             screen.put(y + i, col, suffix[0, [w - (col - x), 0].max],
-                       fg: selected ? fg : :bright_black, bg: bg)
+                       fg: selected ? fg : theme[:text_muted], bg: bg)
           end
         end
       end

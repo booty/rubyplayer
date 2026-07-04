@@ -29,6 +29,63 @@ class ConfigTest < Minitest::Test
     end
   end
 
+  def test_persist_theme_creates_file_when_missing
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "nested", "config.toml")
+      c = RubyPlayer::ConfigStore.new(path: path)
+      c.persist_theme(:neon_cyberpunk)
+      assert_equal "neon_cyberpunk", c["ui", "theme"]
+      assert_equal "neon_cyberpunk", Tomlrb.load_file(path).dig("ui", "theme")
+    end
+  end
+
+  def test_persist_theme_preserves_other_content_in_the_file
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "config.toml")
+      File.write(path, <<~TOML)
+        # a comment the user wrote
+        [audio]
+        sample_rate = 48000
+
+        [ui]
+        frame_fps = 60
+      TOML
+      c = RubyPlayer::ConfigStore.new(path: path)
+      c.persist_theme(:solarized_dark_like)
+
+      raw = File.read(path)
+      assert_includes raw, "# a comment the user wrote"
+      assert_includes raw, "sample_rate = 48000"
+      assert_includes raw, "frame_fps = 60"
+      data = Tomlrb.load_file(path)
+      assert_equal "solarized_dark_like", data.dig("ui", "theme")
+      assert_equal 60, data.dig("ui", "frame_fps")
+    end
+  end
+
+  def test_persist_theme_overwrites_an_existing_theme_line
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "config.toml")
+      File.write(path, "[ui]\ntheme = \"basic_terminal\"\nframe_fps = 60\n")
+      c = RubyPlayer::ConfigStore.new(path: path)
+      c.persist_theme(:amber_navy)
+
+      data = Tomlrb.load_file(path)
+      assert_equal "amber_navy", data.dig("ui", "theme")
+      assert_equal 60, data.dig("ui", "frame_fps")
+      assert_equal 1, File.read(path).scan(/^theme\s*=/).size
+    end
+  end
+
+  def test_persist_theme_does_not_trigger_a_spurious_reload
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "config.toml")
+      c = RubyPlayer::ConfigStore.new(path: path)
+      c.persist_theme(:ocean_mist)
+      refute c.reload_if_changed
+    end
+  end
+
   def test_reload_if_changed
     Dir.mktmpdir do |dir|
       path = File.join(dir, "config.toml")

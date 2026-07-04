@@ -72,7 +72,7 @@ class TracksPaneTest < Minitest::Test
     @pane.show(@folder_row)
     @pane.handle_action(:toggle_group)
     screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 10, cols: 40)
-    @pane.render(screen, x: 0, y: 0, w: 40, h: 10, active: true)
+    @pane.render(screen, x: 0, y: 0, w: 40, h: 10, active: true, theme: RubyPlayer::Theme::DEFAULT)
     out = screen.flush
     assert_includes out, "--- Apple #{'-' * (40 - '--- Apple '.size)}"
     assert_includes out, "--- Zebra #{'-' * (40 - '--- Zebra '.size)}"

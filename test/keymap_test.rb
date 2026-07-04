@@ -81,6 +81,13 @@ class KeymapTest < Minitest::Test
     assert_equal :remove_from_queue, k.action_for("x", pane: :tracks)
   end
 
+  def test_theme_picker_key_is_global_and_sort_title_moved_off_it
+    k = RubyPlayer::Keymap.new
+    assert_equal :show_theme_picker, k.action_for("t", pane: :library)
+    assert_equal :show_theme_picker, k.action_for("T", pane: :tracks) # not shadowed by sort_title
+    assert_equal :sort_title, k.action_for("y", pane: :tracks)
+  end
+
   def test_help_key_is_global
     k = RubyPlayer::Keymap.new
     assert_equal :show_help, k.action_for("?", pane: :library)

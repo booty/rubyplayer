@@ -55,7 +55,7 @@ class LibraryPaneTest < Minitest::Test
 
   def test_render_shows_specials_folder_and_count
     screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 10, cols: 40)
-    @pane.render(screen, x: 0, y: 0, w: 40, h: 10, active: true)
+    @pane.render(screen, x: 0, y: 0, w: 40, h: 10, active: true, theme: RubyPlayer::Theme::DEFAULT)
     out = screen.flush
     assert_includes out, "Playback Queue"
     assert_includes out, "Music"

@@ -11,7 +11,7 @@ module RubyPlayer
                        rate_4: 4, rate_5: 5, rate_6: 6 }.freeze
 
       attr_reader :engine, :library_pane, :tracks_pane, :active_pane, :input_buffer,
-                  :pending_delete, :info_track, :show_help
+                  :pending_delete, :info_track, :show_help, :theme_id, :theme_picker
 
       def initialize(argv: [], config_path: nil, data_path: nil, null_audio: false,
                      io_out: $stdout)
@@ -50,6 +50,10 @@ module RubyPlayer
         @pending_delete = nil
         @info_track = nil
         @show_help = false
+        @theme_picker = false
+        @theme_picker_index = 0
+        @theme_id_before_preview = nil
+        set_theme!(@config["ui", "theme"])
         @quit = false
         @resized = false
         @engine.start
@@ -106,12 +110,36 @@ module RubyPlayer
       end
 
       def handle_key(key)
+        return handle_theme_picker_key(key) if @theme_picker
         return handle_help_key(key) if @show_help
         return handle_info_key(key) if @info_track
         return handle_confirm_key(key) if @pending_delete
         return handle_input_mode_key(key) if @input_buffer
         action = @keymap.action_for(key, pane: @active_pane)
         dispatch(action) if action
+      end
+
+      # Up/Down cycle through Theme::ALL_IDS and immediately re-theme the
+      # whole app (live preview) without touching config; Enter persists
+      # whatever's currently previewed, Escape/t reverts to whatever was
+      # active before the picker was opened.
+      def handle_theme_picker_key(key)
+        case key
+        when "up" then move_theme_preview(-1)
+        when "down" then move_theme_preview(1)
+        when "enter"
+          @config.persist_theme(@theme_id)
+          @theme_picker = false
+        when "escape", "t"
+          set_theme!(@theme_id_before_preview)
+          @theme_picker = false
+        end
+      end
+
+      def move_theme_preview(delta)
+        ids = Theme::ALL_IDS
+        @theme_picker_index = (@theme_picker_index + delta) % ids.size
+        set_theme!(ids[@theme_picker_index])
       end
 
       def handle_help_key(key)
@@ -180,6 +208,7 @@ module RubyPlayer
         when :remove_library_item then request_remove_library_item
         when :show_track_info then request_show_track_info
         when :show_help then @show_help = true
+        when :show_theme_picker then request_show_theme_picker
         when *RATE_ACTIONS.keys then rate_current(RATE_ACTIONS[action])
         else route_to_pane(action)
         end
@@ -243,6 +272,19 @@ module RubyPlayer
         track = @tracks_pane.selected_track
         return unless track
         @info_track = track
+      end
+
+      def request_show_theme_picker
+        @theme_id_before_preview = @theme_id
+        @theme_picker_index = Theme::ALL_IDS.index(@theme_id) || 0
+        @theme_picker = true
+      end
+
+      def set_theme!(id)
+        id = id.to_s.to_sym
+        id = :default unless Theme::ALL_IDS.include?(id)
+        @theme_id = id
+        @theme = Theme[id]
       end
 
       def route_to_pane(action)
@@ -334,6 +376,10 @@ module RubyPlayer
         @keymap = Keymap.new(@config["keymap"])
         @hotkey_line = HotkeyLine.new(keymap: @keymap)
         @tracks_pane.update_config(@config)
+        # Don't clobber an in-progress interactive preview with whatever's
+        # still on disk -- the picker itself is the source of truth for
+        # @theme_id until it's closed.
+        set_theme!(@config["ui", "theme"]) unless @theme_picker
         @status_line.set_message("Config reloaded")
       end
 
@@ -348,22 +394,24 @@ module RubyPlayer
         draw_box(0, 0, lib_w, content_h, active: @active_pane == :library, title: "Library")
         draw_box(lib_w, 0, cols - lib_w, content_h, active: @active_pane == :tracks, title: "Tracks")
         @library_pane.render(@screen, x: 1, y: 1, w: lib_w - 2, h: content_h - 2,
-                             active: @active_pane == :library)
+                             active: @active_pane == :library, theme: @theme)
         @tracks_pane.render(@screen, x: lib_w + 1, y: 1, w: cols - lib_w - 2,
-                            h: content_h - 2, active: @active_pane == :tracks)
+                            h: content_h - 2, active: @active_pane == :tracks, theme: @theme)
         @playback_line.render(@screen, row: rows - 3, w: cols,
-                              state: @engine.state, levels: @engine.levels)
+                              state: @engine.state, levels: @engine.levels, theme: @theme)
         if @input_buffer
-          @screen.put(rows - 2, 0, "Add path: #{@input_buffer}_"[0, cols], fg: :bright_yellow)
+          @screen.put(rows - 2, 0, "Add path: #{@input_buffer}_"[0, cols], fg: @theme[:accent])
         else
           stats = @library.folder_stats
           @status_line.render(@screen, row: rows - 2, w: cols,
-                              default: "#{stats[:tracks]} tracks in #{stats[:folders]} folders")
+                              default: "#{stats[:tracks]} tracks in #{stats[:folders]} folders",
+                              theme: @theme)
         end
-        @hotkey_line.render(@screen, row: rows - 1, w: cols, pane: @active_pane)
+        @hotkey_line.render(@screen, row: rows - 1, w: cols, pane: @active_pane, theme: @theme)
         render_confirm_modal if @pending_delete
         render_info_modal if @info_track
         render_help_modal if @show_help
+        render_theme_picker_modal if @theme_picker
         @screen.flush
       end
 
@@ -378,11 +426,11 @@ module RubyPlayer
         h = 6
         x = [(@screen.cols - w) / 2, 0].max
         y = [(@screen.rows - h) / 2, 0].max
-        (1...(h - 1)).each { |i| @screen.put(y + i, x + 1, " " * (w - 2), bg: :black) }
+        (1...(h - 1)).each { |i| @screen.put(y + i, x + 1, " " * (w - 2), bg: @theme[:surface]) }
         draw_box(x, y, w, h, active: true, title: "Confirm Remove")
-        @screen.put(y + 2, x + 2, message[0, w - 4], fg: :bright_yellow, bold: true)
-        @screen.put(y + 3, x + 2, hint[0, w - 4], fg: :bright_black)
-        @screen.put(y + 4, x + 2, prompt[0, w - 4], fg: :bright_white, bold: true)
+        @screen.put(y + 2, x + 2, message[0, w - 4], fg: @theme[:accent], bold: true)
+        @screen.put(y + 3, x + 2, hint[0, w - 4], fg: @theme[:text_muted])
+        @screen.put(y + 4, x + 2, prompt[0, w - 4], fg: @theme[:primary], bold: true)
       end
 
       # Rows are built as [label, value] pairs and only included when they
@@ -413,10 +461,10 @@ module RubyPlayer
         h = lines.size + 5
         x = [(@screen.cols - w) / 2, 0].max
         y = [(@screen.rows - h) / 2, 0].max
-        (1...(h - 1)).each { |i| @screen.put(y + i, x + 1, " " * (w - 2), bg: :black) }
+        (1...(h - 1)).each { |i| @screen.put(y + i, x + 1, " " * (w - 2), bg: @theme[:surface]) }
         draw_box(x, y, w, h, active: true, title: "Track Info")
-        lines.each_with_index { |line, i| @screen.put(y + 2 + i, x + 2, line[0, w - 4], fg: :bright_white) }
-        @screen.put(y + h - 2, x + 2, hint[0, w - 4], fg: :bright_black)
+        lines.each_with_index { |line, i| @screen.put(y + 2 + i, x + 2, line[0, w - 4], fg: @theme[:primary]) }
+        @screen.put(y + h - 2, x + 2, hint[0, w - 4], fg: @theme[:text_muted])
       end
 
       # Lists every hotkey reachable from the currently active pane (pane-local
@@ -437,10 +485,33 @@ module RubyPlayer
         h = lines.size + 5
         x = [(@screen.cols - w) / 2, 0].max
         y = [(@screen.rows - h) / 2, 0].max
-        (1...(h - 1)).each { |i| @screen.put(y + i, x + 1, " " * (w - 2), bg: :black) }
+        (1...(h - 1)).each { |i| @screen.put(y + i, x + 1, " " * (w - 2), bg: @theme[:surface]) }
         draw_box(x, y, w, h, active: true, title: title)
-        lines.each_with_index { |line, i| @screen.put(y + 2 + i, x + 2, line[0, w - 4], fg: :bright_white) }
-        @screen.put(y + h - 2, x + 2, hint[0, w - 4], fg: :bright_black)
+        lines.each_with_index { |line, i| @screen.put(y + 2 + i, x + 2, line[0, w - 4], fg: @theme[:primary]) }
+        @screen.put(y + h - 2, x + 2, hint[0, w - 4], fg: @theme[:text_muted])
+      end
+
+      # Live preview: @theme already reflects Theme::ALL_IDS[@theme_picker_index]
+      # (see #move_theme_preview), so the highlighted row is drawn with that
+      # same theme's own selection colors -- the picker doubles as a swatch.
+      def render_theme_picker_modal
+        names = Theme::ALL_IDS.map { |id| Theme[id][:name] }
+        hint = "[up/down] Preview  [enter] Select  [esc] Cancel"
+        title = "Select Theme"
+        w = [names.map(&:size).max, hint.size, title.size].max + 6
+        h = names.size + 5
+        x = [(@screen.cols - w) / 2, 0].max
+        y = [(@screen.rows - h) / 2, 0].max
+        (1...(h - 1)).each { |i| @screen.put(y + i, x + 1, " " * (w - 2), bg: @theme[:surface]) }
+        draw_box(x, y, w, h, active: true, title: title)
+        names.each_with_index do |name, i|
+          selected = i == @theme_picker_index
+          bg = selected ? @theme[:selection_bg] : nil
+          fg = selected ? @theme[:selection_text] : @theme[:text]
+          @screen.put(y + 2 + i, x + 1, " " * (w - 2), bg: bg) if selected
+          @screen.put(y + 2 + i, x + 2, name[0, w - 4], fg: fg, bg: bg, bold: selected)
+        end
+        @screen.put(y + h - 2, x + 2, hint[0, w - 4], fg: @theme[:text_muted])
       end
 
       def fmt_length(ms)
@@ -450,7 +521,7 @@ module RubyPlayer
       end
 
       def draw_box(x, y, w, h, active:, title:)
-        color = active ? :bright_cyan : :bright_black
+        color = active ? @theme[:border_focus] : @theme[:border]
         tl, tr, bl, br, hz, vt = active ? %w[╔ ╗ ╚ ╝ ═ ║] : %w[┌ ┐ └ ┘ ─ │]
         @screen.put(y, x, "#{tl}#{hz * (w - 2)}#{tr}", fg: color)
         (1...(h - 1)).each do |i|
