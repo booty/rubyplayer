@@ -50,6 +50,7 @@ module RubyPlayer
         @resized = false
         @engine.start
         @library_pane.rebuild!
+        @tracks_pane.show(@library_pane.selected)
       end
 
       def quit? = @quit
@@ -216,7 +217,11 @@ module RubyPlayer
 
       def refresh_panes
         @library_pane.rebuild!
-        @tracks_pane.show(@library_pane.selected)
+        # Playback/scan events change pane *contents*, not which view is shown,
+        # so reload! (preserves @mode/@selection/@scroll, just re-clamps) is
+        # correct here. `show` is reserved for actual selection changes (see
+        # route_to_pane/select_queue) where resetting the cursor is desired.
+        @tracks_pane.reload!
       end
 
       def reload_config_if_changed

@@ -65,4 +65,18 @@ class AppTest < Minitest::Test
     @app.handle_key("ctrl_c")
     assert @app.quit?
   end
+
+  def test_refresh_panes_preserves_tracks_pane_cursor
+    3.times { @app.handle_key("down") } # select the music folder (populates tracks pane)
+    assert_operator @app.tracks_pane.display_rows.size, :>=, 2
+
+    @app.handle_key("tab")              # move focus to tracks pane
+    @app.handle_key("down")             # move the tracks-pane cursor off 0
+    assert_equal 1, @app.tracks_pane.selection
+
+    @app.send(:refresh_panes)           # simulate a queue_changed/track_started/track_ended event
+
+    assert_equal 1, @app.tracks_pane.selection
+    assert_operator @app.tracks_pane.display_rows.size, :>=, 2
+  end
 end
