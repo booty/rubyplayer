@@ -24,15 +24,12 @@ module RubyPlayer
 
       def show(library_row)
         @mode = library_row.kind == :folder ? [:folder, library_row.folder["id"]] : library_row.kind
-        # The play queue is an ordered list (playback order), not a browsable
-        # collection -- sorting/grouping it would desync the displayed row
-        # order from engine.queue_items, and App#dispatch(:remove_from_queue)
-        # removes by that index, so a stale sort/group here silently removes
-        # the wrong track. Force flat/unsorted whenever we (re-)enter queue mode.
-        if @mode == :queue
-          @group_by_album = false
-          @sort = nil
-        end
+        # @group_by_album/@sort are the user's preference and are shared across
+        # views (folder/history/favorites/queue) -- they are NOT reset here.
+        # Resetting them on entering :queue used to destroy a folder's sort as
+        # a side effect of merely peeking the queue. Instead, apply_sort and
+        # display_rows force the queue to render flat/unsorted regardless of
+        # these flags (see below), so the stored preference survives the trip.
         @selection = 0
         @scroll = 0
         reload!
@@ -52,9 +49,10 @@ module RubyPlayer
       end
 
       def handle_action(action)
-        # Queue view must stay flat + in playback order (see #show): swallow
-        # sort/group keys here too, otherwise the user could re-introduce the
-        # same display/engine-index desync while already viewing the queue.
+        # Sort/group keys are no-ops while viewing the queue: apply_sort and
+        # display_rows already force flat/unsorted rendering in :queue mode
+        # (see below), so honoring these here would just flip flags with no
+        # visible effect -- swallow them instead of confusing the user.
         return true if @mode == :queue && %i[toggle_group sort_title sort_number sort_artist].include?(action)
         case action
         when :nav_up then move_selection(-1)
@@ -71,6 +69,11 @@ module RubyPlayer
       end
 
       def display_rows
+        # The queue is an ordered play list (see #show); album headers would
+        # break the row-index-to-queue-index mapping that selected_track_index
+        # relies on, so ignore @group_by_album here regardless of its value
+        # for other views.
+        return flat_rows if @mode == :queue
         return flat_rows unless @group_by_album
         grouped_rows
       end
@@ -127,6 +130,11 @@ module RubyPlayer
       end
 
       def apply_sort
+        # The queue's displayed order must equal engine.queue_items (playback
+        # order), since App#dispatch(:remove_from_queue) removes by displayed
+        # index -- a lingering @sort from another view must not reorder it.
+        return if @mode == :queue
+
         case @sort
         when :title then @tracks.sort_by! { |t| t.title.to_s.downcase }
         when :number then @tracks.sort_by! { |t| [t.album.to_s, t.track_number || 0] }

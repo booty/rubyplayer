@@ -125,6 +125,30 @@ class TracksPaneTest < Minitest::Test
     assert_equal "Alpha", @pane.selected_track.title
   end
 
+  # Regression test for the follow-up fix: show() used to RESET
+  # @sort/@group_by_album whenever entering :queue mode, which fixed the
+  # index-desync bug above but destroyed the user's folder sort/group as a
+  # side effect of merely glancing at the queue. Now show() never mutates
+  # those flags -- apply_sort/display_rows just ignore them while @mode is
+  # :queue -- so a folder's sort must survive a trip through the queue view.
+  def test_folder_sort_survives_a_trip_through_the_queue_view
+    @queue = [@lib.tracks_under(@folder).find { |t| t.title == "Charlie" }]
+
+    @pane.show(@folder_row)
+    @pane.handle_action(:sort_title)
+    assert_equal %w[Alpha Bravo Charlie], titles
+
+    @pane.show(RubyPlayer::UI::LibraryPane::Row.new(kind: :queue, depth: 0))
+    # Queue view itself must still be flat play order, not title-sorted.
+    assert_equal %w[Charlie], titles
+    refute(@pane.display_rows.any? { |r| r[:type] == :header })
+
+    @pane.show(@folder_row)
+    # The folder's sort preference must have survived the queue detour.
+    assert_equal %w[Alpha Bravo Charlie], titles
+    assert_equal :title, @pane.instance_variable_get(:@sort)
+  end
+
   def test_config_hot_reload_changes_format
     @pane.show(@folder_row)
     Dir.mktmpdir do |dir|
