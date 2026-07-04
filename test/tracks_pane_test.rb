@@ -83,6 +83,48 @@ class TracksPaneTest < Minitest::Test
     assert_equal %w[Queued], titles
   end
 
+  # Regression test for the queue-index desync bug: TracksPane used to keep
+  # @sort/@group_by_album across show(), so switching to the Playback Queue
+  # after sorting/grouping a folder view left the queue displayed out of
+  # playback order while selected_track_index (used by App#remove_from_queue
+  # to call engine.remove_at) still assumed row-position == queue-position.
+  def test_queue_view_ignores_prior_sort_and_group
+    folder_tracks = @lib.tracks_under(@folder)
+    charlie = folder_tracks.find { |t| t.title == "Charlie" }
+    alpha   = folder_tracks.find { |t| t.title == "Alpha" }
+    bravo   = folder_tracks.find { |t| t.title == "Bravo" }
+    # Deliberately not title-, number-, or artist-sorted order, so any
+    # leftover sort/group would visibly reorder this list.
+    @queue = [charlie, alpha, bravo]
+
+    # Dirty @sort/@group_by_album on a folder view BEFORE ever showing the queue.
+    @pane.show(@folder_row)
+    @pane.handle_action(:sort_title)
+    @pane.handle_action(:toggle_group)
+
+    @pane.show(RubyPlayer::UI::LibraryPane::Row.new(kind: :queue, depth: 0))
+
+    # (a) display order is the true queue/playback order, not the stale sort
+    # (title sort would read Alpha, Bravo, Charlie) and not grouped (no headers).
+    assert_equal %w[Charlie Alpha Bravo], titles
+    refute(@pane.display_rows.any? { |r| r[:type] == :header })
+
+    # (b) sort/group keys must be no-ops while viewing the queue, so the user
+    # can't re-introduce the desync from inside the queue view itself.
+    @pane.handle_action(:toggle_group)
+    @pane.handle_action(:sort_title)
+    @pane.handle_action(:sort_number)
+    @pane.handle_action(:sort_artist)
+    assert_equal %w[Charlie Alpha Bravo], titles
+
+    # (c) selected_track_index must be the real queue position of the
+    # selected row (not just "some index") -- that's the value App passes
+    # straight to engine.remove_at.
+    @pane.handle_action(:nav_down) # move onto queue row 1
+    assert_equal 1, @pane.selected_track_index
+    assert_equal "Alpha", @pane.selected_track.title
+  end
+
   def test_config_hot_reload_changes_format
     @pane.show(@folder_row)
     Dir.mktmpdir do |dir|

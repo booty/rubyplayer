@@ -114,6 +114,45 @@ class AppTest < Minitest::Test
     assert_equal before_size, @app.engine.queue_items.size
   end
 
+  # Regression test for the queue-index desync bug: sorting a folder view
+  # left @sort "dirty" on the TracksPane instance, so switching to the
+  # Playback Queue (p) redisplayed it sorted while remove_from_queue still
+  # removed by raw display-row index -- silently deleting the wrong track.
+  def test_sorting_a_folder_then_viewing_queue_removes_the_right_track
+    library = @app.instance_variable_get(:@library)
+    folder_id = library.upsert_folder(parent_id: nil, name: "synth", path: "/synth", kind: "dir")
+    ids = %w[Charlie Alpha Bravo].each_with_index.map do |title, i|
+      library.upsert_track(folder_id: folder_id, physical_path: "/synth/#{i}.vgm",
+                           backend: "gme", format: "vgm", title: title,
+                           track_number: i + 1, duration_ms: 1000)
+    end
+    library.recompute_counts!
+    @app.library_pane.rebuild!
+    tracks = ids.map { |id| library.find_track(id) }
+
+    # Enqueue in a deliberately non-alphabetical order (Charlie, Alpha, Bravo)
+    # so a leftover title sort (Alpha, Bravo, Charlie) would visibly reorder it.
+    @app.engine.enqueue_end(tracks)
+
+    folder_idx = @app.library_pane.rows.index { |r| r.kind == :folder && r.folder["name"] == "synth" }
+    folder_idx.times { @app.handle_key("down") }
+    @app.handle_key("tab") # focus tracks pane, which is now showing the "synth" folder
+    @app.handle_key("T")   # sort_title: dirties TracksPane's @sort before we ever view the queue
+
+    @app.handle_key("p")   # select_queue
+    queue_titles = @app.tracks_pane.display_rows.map { |r| r[:track].title }
+    assert_equal %w[Charlie Alpha Bravo], queue_titles
+
+    @app.handle_key("tab") # refocus tracks pane; still showing the queue
+    @app.handle_key("T")   # must be a no-op while viewing the queue
+    assert_equal %w[Charlie Alpha Bravo], @app.tracks_pane.display_rows.map { |r| r[:track].title }
+
+    @app.handle_key("down") # select queue row 1 ("Alpha")
+    @app.handle_key("x")    # remove_from_queue
+
+    assert_equal %w[Charlie Bravo], @app.engine.queue_items.map(&:title)
+  end
+
   def test_seek_forward_key_issues_absolute_seek_without_error
     3.times { @app.handle_key("down") }
     @app.handle_key("enter")

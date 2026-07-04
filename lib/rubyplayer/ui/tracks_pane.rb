@@ -24,6 +24,15 @@ module RubyPlayer
 
       def show(library_row)
         @mode = library_row.kind == :folder ? [:folder, library_row.folder["id"]] : library_row.kind
+        # The play queue is an ordered list (playback order), not a browsable
+        # collection -- sorting/grouping it would desync the displayed row
+        # order from engine.queue_items, and App#dispatch(:remove_from_queue)
+        # removes by that index, so a stale sort/group here silently removes
+        # the wrong track. Force flat/unsorted whenever we (re-)enter queue mode.
+        if @mode == :queue
+          @group_by_album = false
+          @sort = nil
+        end
         @selection = 0
         @scroll = 0
         reload!
@@ -43,6 +52,10 @@ module RubyPlayer
       end
 
       def handle_action(action)
+        # Queue view must stay flat + in playback order (see #show): swallow
+        # sort/group keys here too, otherwise the user could re-introduce the
+        # same display/engine-index desync while already viewing the queue.
+        return true if @mode == :queue && %i[toggle_group sort_title sort_number sort_artist].include?(action)
         case action
         when :nav_up then move_selection(-1)
         when :nav_down then move_selection(1)
