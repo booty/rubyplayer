@@ -20,7 +20,14 @@ module RubyPlayer
       @level_tap = LevelTap.new(bands: config["eq", "bands"],
                                 sample_rate: audio.sample_rate)
       @commands = Thread::Queue.new
-      @mutex = Mutex.new # guards @queue and playback state reads from UI thread
+      # Guards @queue and the @current/@playing/@paused/@frames_base/@seek_offset_ms/
+      # @started_at fields the decoder thread writes and `state`/UI commands read.
+      # toggle_play's @playing read and toggle_skip_disliked's @skip_disliked write
+      # deliberately skip the lock: MRI's GVL makes a single ivar read/write atomic,
+      # and the decoder thread re-checks @playing/@skip_disliked itself before
+      # acting on a command, so a stale read here only risks one redundant/delayed
+      # command, never corrupted state.
+      @mutex = Mutex.new
       @playing = false
       @paused = false
       @skip_disliked = false
@@ -30,7 +37,7 @@ module RubyPlayer
       @frames_base = 0
       @seek_offset_ms = 0
       @started_at = nil
-      @queue.on_change { @bus.publish(:queue_changed, items: @queue.items) }
+      @queue.on_change { safe_publish(:queue_changed, items: @queue.items) }
     end
 
     def start
@@ -111,21 +118,55 @@ module RubyPlayer
 
     def run
       loop do
+        # 0 timeout while playing lets this loop decode-ahead as fast as possible
+        # to fill the ring buffer; once it's full, pump's sleep(0.005) below
+        # throttles back to short-interval polling. Intentional decode-ahead, not
+        # a busy-wait bug.
         cmd = begin
           @commands.pop(timeout: @playing && !@paused ? 0 : 0.05)
         rescue ThreadError
           nil
         end
-        case cmd
-        when :stop then break
-        when :play_head then play_head
-        when :skip then finish_and_advance
-        when :toggle_pause then toggle_pause
-        when Array then handle_seek(cmd[1]) if cmd[0] == :seek
+        # :stop must break unconditionally, before the rescue below gets a
+        # chance to run -- an intentional shutdown is not a decode error and
+        # must never be swallowed/retried.
+        break if cmd == :stop
+        begin
+          case cmd
+          when :play_head then play_head
+          when :skip then finish_and_advance
+          when :toggle_pause then toggle_pause
+          when Array then handle_seek(cmd[1]) if cmd[0] == :seek
+          end
+          pump if @playing && !@paused
+        rescue StandardError => e
+          # A backend can raise mid-decode (e.g. gme_play failing on a
+          # corrupt-but-openable file). Without this, the exception would
+          # kill the decoder thread and playback would be dead until the
+          # process restarts. Treat it like an open failure: flag the
+          # track, tell the UI, and move on -- the thread must run until
+          # an explicit :stop.
+          handle_decode_error(e)
         end
-        pump if @playing && !@paused
       end
       close_handle
+    end
+
+    # Recovery for any exception raised while a track is current (mid-decode
+    # read failure, or an error surfacing from pause/seek/history/advance
+    # while a track was loaded). Mirrors open_and_play's rescue so a run of
+    # back-to-back bad tracks behaves identically regardless of whether the
+    # failure happened while opening or while already playing.
+    def handle_decode_error(e)
+      failing = @current
+      close_handle
+      # Reset before advancing so `state` never reports a track that's no
+      # longer decoding as current/playing during the retry window.
+      @mutex.synchronize { @current = nil; @playing = false }
+      @library.set_errored(failing.id) if failing&.id
+      safe_publish(:track_error, track: failing, message: e.message) if failing
+      nxt = @mutex.synchronize { @queue.advance! }
+      nxt ? open_and_play(nxt) : stop_playback
     end
 
     def pump
@@ -142,7 +183,7 @@ module RubyPlayer
       else
         @level_tap.push(data)
         @pending = data
-        @bus.publish(:position, position_ms: position_ms, track_id: @current&.id)
+        safe_publish(:position, position_ms: position_ms, track_id: @current&.id)
       end
     end
 
@@ -174,14 +215,17 @@ module RubyPlayer
         @started_at = Time.now.utc
       end
       @level_tap.reset
-      @bus.publish(:track_started, track: track)
-      @bus.publish(:playback_state, playing: true, paused: false)
+      safe_publish(:track_started, track: track)
+      safe_publish(:playback_state, playing: true, paused: false)
     rescue StandardError => e
+      # Reset first: while retrying past several consecutive bad tracks,
+      # `state` must not keep reporting the previous (already-closed)
+      # attempt as current/playing.
+      @mutex.synchronize { @current = nil; @playing = false }
       @library.set_errored(track.id) if track&.id
-      @bus.publish(:track_error, track: track, message: e.message)
-      @mutex.synchronize { @queue.advance! }
-      retry_next = @mutex.synchronize { @queue.first }
-      retry_next ? open_and_play(retry_next) : stop_playback
+      safe_publish(:track_error, track: track, message: e.message)
+      nxt = @mutex.synchronize { @queue.advance! }
+      nxt ? open_and_play(nxt) : stop_playback
     end
 
     # Applies the skip-rated-1 rule, advancing past disliked tracks.
@@ -194,7 +238,7 @@ module RubyPlayer
 
     def finish_and_advance
       record_history
-      @bus.publish(:track_ended, track: @current) if @current
+      safe_publish(:track_ended, track: @current) if @current
       nxt = @mutex.synchronize { @queue.advance! }
       close_handle
       nxt ? open_and_play(nxt) : stop_playback
@@ -209,14 +253,14 @@ module RubyPlayer
         @playing = false
         @paused = false
       end
-      @bus.publish(:playback_state, playing: false, paused: false)
+      safe_publish(:playback_state, playing: false, paused: false)
     end
 
     def toggle_pause
       return unless @playing
       @mutex.synchronize { @paused = !@paused }
       @audio.paused = @paused
-      @bus.publish(:playback_state, playing: true, paused: @paused)
+      safe_publish(:playback_state, playing: true, paused: @paused)
     end
 
     def handle_seek(ms)
@@ -252,6 +296,19 @@ module RubyPlayer
       @handle&.close
       @handle = nil
       @pending = nil
+    end
+
+    # Publish calls happen from inside code that may already hold @mutex
+    # (e.g. @queue.on_change fires during a @mutex.synchronize block). That's
+    # only safe because EventBus#publish is non-blocking and never re-enters
+    # the engine (no callback here calls back into a locking engine method).
+    # Rescuing here additionally means a misbehaving -- or pathologically
+    # reentrant -- bus can't take the decoder thread down; telemetry must
+    # never break playback.
+    def safe_publish(type, **payload)
+      @bus.publish(type, **payload)
+    rescue StandardError
+      nil
     end
   end
 end

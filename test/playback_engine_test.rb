@@ -12,6 +12,34 @@ class PlaybackEngineTest < Minitest::Test
     def all = Array.new(@events.size) { @events.pop }
   end
 
+  # A handle that opens fine (so open_and_play's own rescue never fires) but
+  # raises on the first read -- reproduces gme_play failing on a
+  # corrupt-but-openable file without needing a real corrupt fixture.
+  class BoomHandle
+    def read(_frames) = raise "decode boom: read after open"
+    def seek(_ms) = false
+    def close; end
+  end
+
+  class BoomBackend
+    def open(_path, _subtune, sample_rate:) = BoomHandle.new
+  end
+
+  # Delegates to a real registry for every path except one trapped path,
+  # which always resolves to BoomBackend. Lets a single test mix one
+  # deliberately-broken track with real, playable fixtures.
+  class TrapRegistry
+    def initialize(fallback, trap_path, trap_backend)
+      @fallback = fallback
+      @trap_path = trap_path
+      @trap_backend = trap_backend
+    end
+
+    def backend_for(path)
+      path == @trap_path ? @trap_backend : @fallback.backend_for(path)
+    end
+  end
+
   def setup
     @tmp = Dir.mktmpdir
     @db = RubyPlayer::Database.new(path: File.join(@tmp, "library.sqlite3"))
@@ -132,5 +160,32 @@ class PlaybackEngineTest < Minitest::Test
     ev = wait_for_event(:track_started) # engine moved on
     assert_equal good.id, ev[1][:track].id
     assert_equal 1, @lib.find_track(id).errored
+  end
+
+  def test_decoder_survives_mid_decode_read_failure
+    boom_path = File.join(@tmp, "boom.gbs")
+    FileUtils.cp(File.join(FIXTURES, "shantae.gbs"), boom_path)
+    boom_id = @lib.upsert_track(folder_id: @folder, physical_path: boom_path,
+                                backend: "gme", format: "gbs", title: "boom")
+    good = make_track("shantae.gbs", subtune: 6)
+
+    # Swap in a registry that traps boom_path to a backend which opens fine
+    # but raises on read, i.e. the failure mode this fix targets (open
+    # succeeds, gme_play/read blows up mid-decode).
+    real_registry = @engine.instance_variable_get(:@registry)
+    @engine.instance_variable_set(
+      :@registry, TrapRegistry.new(real_registry, boom_path, BoomBackend.new)
+    )
+
+    @engine.enqueue_now([@lib.find_track(boom_id), good])
+    ev = wait_for_event(:track_error)
+    assert_equal boom_id, ev[1][:track].id
+    assert_equal 1, @lib.find_track(boom_id).errored
+
+    # The decoder thread must still be alive to start the next track --
+    # before this fix, the unhandled read error killed it and this would
+    # time out.
+    ev = wait_for_event(:track_started)
+    assert_equal good.id, ev[1][:track].id
   end
 end
