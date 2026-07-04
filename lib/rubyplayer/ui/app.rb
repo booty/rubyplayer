@@ -207,7 +207,11 @@ module RubyPlayer
 
       def selected_tracks
         if @active_pane == :tracks
-          Array(@tracks_pane.selected_track)
+          # Track is a Struct, and Kernel#Array(struct) would splat it into its
+          # field VALUES ([id, folder_id, ...]) rather than wrap it — which would
+          # enqueue an Integer id as a "track". Wrap-and-compact keeps the Track
+          # (and yields [] when nothing is selected).
+          [@tracks_pane.selected_track].compact
         else
           row = @library_pane.selected
           case row&.kind

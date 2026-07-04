@@ -36,6 +36,23 @@ class AppTest < Minitest::Test
     assert_operator @app.engine.queue_items.size, :>=, 2
   end
 
+  def test_enqueue_from_tracks_pane_puts_a_track_in_the_queue
+    # Regression: Array(struct) used to splat the Track into its field values,
+    # enqueuing the Integer id instead of the Track (crashed the decoder thread
+    # on track.physical_path). The queue must hold Track objects.
+    3.times { @app.handle_key("down") } # select the music folder in library pane
+    @app.handle_key("right")            # expand (harmless if leaf) then...
+    @app.handle_key("tab")              # focus the Tracks pane
+    assert_equal :tracks, @app.active_pane
+    refute_nil @app.tracks_pane.selected_track, "tracks pane should have a selected track"
+    @app.handle_key("enter")            # play now
+    refute_empty @app.engine.queue_items
+    @app.engine.queue_items.each do |item|
+      assert_instance_of RubyPlayer::Track, item,
+        "queue must hold Track objects, got #{item.class}: #{item.inspect}"
+    end
+  end
+
   def test_tab_cycles_active_pane
     assert_equal :library, @app.active_pane
     @app.handle_key("tab")
