@@ -25,6 +25,9 @@ module RubyPlayer
       "library" => {
         "up" => "nav_up", "down" => "nav_down",
         "left" => "collapse", "right" => "expand",
+        # Overrides the global "x" => remove_from_queue binding while the
+        # Library pane is focused (pane-local bindings win, see #action_for).
+        "x" => "remove_library_item",
       },
       # Sort bindings are UPPERCASE so their lowercase counterparts stay free
       # for the global map (e.g. "n" => enqueue_end vs "N" => sort_number).

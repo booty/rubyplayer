@@ -78,6 +78,23 @@ module RubyPlayer
       end
     end
 
+    # Cascades a library deletion into the queue. If the currently-playing
+    # track is among `ids`, its removal must go through :skip (like
+    # #remove_at's index-0 case) so the decoder thread's finish_and_advance
+    # shifts it off the head cleanly, rather than yanking @queue.first out
+    # from under a handle that's still open and playing.
+    def remove_track_ids(ids)
+      @mutex.synchronize do
+        ids = Array(ids)
+        if @playing && @current && ids.include?(@current.id)
+          @commands << :skip
+          @queue.remove_track_ids(ids - [@current.id])
+        else
+          @queue.remove_track_ids(ids)
+        end
+      end
+    end
+
     def undo = @mutex.synchronize { @queue.undo }
     def redo = @mutex.synchronize { @queue.redo }
 

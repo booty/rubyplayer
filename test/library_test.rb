@@ -79,6 +79,32 @@ class LibraryTest < Minitest::Test
     assert_equal id, h.first[:track].id
   end
 
+  # Regression-target for the library-item-removal feature: removing a
+  # folder must soft-delete its whole subtree (not just direct children) and
+  # hand back every affected track id so the caller can cascade the removal
+  # into the live playback queue, which the DB knows nothing about.
+  def test_remove_folder_marks_subtree_missing_and_returns_track_ids
+    id1 = add_track("/m/sega/a.vgm")
+    id2 = add_track("/m/sega/b.vgm", rating: 5)
+
+    removed = @lib.remove_folder!(@sub)
+
+    assert_equal [id1, id2].sort, removed.sort
+    assert_empty @lib.tracks_under(@root)
+    assert_empty @lib.favorites
+    assert_empty @lib.children_of(@root) # @sub is now hidden (missing)
+  end
+
+  def test_remove_folder_recurses_into_subfolders
+    grandchild = @lib.upsert_folder(parent_id: @sub, name: "Deep", path: "/m/sega/deep", kind: "dir")
+    deep_id = add_track("/m/sega/deep/c.vgm", folder: grandchild)
+
+    removed = @lib.remove_folder!(@root)
+
+    assert_includes removed, deep_id
+    assert_empty @lib.tracks_under(@root)
+  end
+
   def test_rating_check_constraint
     id = add_track("/m/sega/a.vgm")
     assert_raises(SQLite3::ConstraintException) { @lib.set_rating(id, 9) }

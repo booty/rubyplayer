@@ -24,10 +24,13 @@ class KeymapTest < Minitest::Test
   def test_config_overrides
     k = RubyPlayer::Keymap.new({ "global" => { "x" => "quit" },
                                  "tracks" => { "z" => "toggle_group" } })
-    assert_equal :quit, k.action_for("x", pane: :library)
+    assert_equal :quit, k.action_for("x", pane: :tracks) # global override, no tracks-local "x"
     assert_equal :toggle_group, k.action_for("z", pane: :tracks)
     assert_nil k.action_for("z", pane: :library)
     assert_equal :toggle_play, k.action_for("space", pane: :library) # defaults survive
+    # library's own default for "x" shadows the global override, same as
+    # any other pane-local binding would.
+    assert_equal :remove_library_item, k.action_for("x", pane: :library)
   end
 
   def test_bindings_for_lists_pane_then_global
@@ -48,7 +51,14 @@ class KeymapTest < Minitest::Test
     assert_equal :seek_back, k.action_for("[", pane: :tracks)
     assert_equal :seek_forward, k.action_for("]", pane: :library)
     assert_equal :seek_forward, k.action_for("]", pane: :tracks)
-    assert_equal :remove_from_queue, k.action_for("x", pane: :library)
+    assert_equal :remove_from_queue, k.action_for("x", pane: :tracks)
+  end
+
+  # "x" is pane-scoped: Library removes a library item, everywhere else
+  # (the global default) it removes from the playback queue.
+  def test_remove_key_is_pane_scoped
+    k = RubyPlayer::Keymap.new
+    assert_equal :remove_library_item, k.action_for("x", pane: :library)
     assert_equal :remove_from_queue, k.action_for("x", pane: :tracks)
   end
 end

@@ -162,6 +162,35 @@ class PlaybackEngineTest < Minitest::Test
     assert_equal 1, @lib.find_track(id).errored
   end
 
+  def test_remove_track_ids_removes_a_queued_track_that_is_not_playing
+    t1 = make_track("shantae.gbs", subtune: 7)
+    t2 = make_track("shantae.gbs", subtune: 8)
+    @engine.enqueue_now([t1, t2])
+    wait_for_event(:track_started)
+
+    @engine.remove_track_ids([t2.id])
+
+    wait_for { @engine.queue_items.map(&:id) == [t1.id] }
+  end
+
+  # Removing the currently-playing track can't just yank it out of the queue
+  # array -- the decoder thread has an open handle on it. This must route
+  # through :skip (like #remove_at's index-0 case) so finish_and_advance
+  # closes the handle and moves on cleanly.
+  def test_remove_track_ids_skips_past_the_currently_playing_track
+    t1 = make_track("shantae.gbs", subtune: 9, duration_ms: 60_000)
+    t2 = make_track("shantae.gbs", subtune: 10)
+    @engine.enqueue_now([t1, t2])
+    ev = wait_for_event(:track_started)
+    assert_equal t1.id, ev[1][:track].id
+
+    @engine.remove_track_ids([t1.id])
+
+    ev = wait_for_event(:track_started)
+    assert_equal t2.id, ev[1][:track].id
+    refute_includes @engine.queue_items.map(&:id), t1.id
+  end
+
   def test_decoder_survives_mid_decode_read_failure
     boom_path = File.join(@tmp, "boom.gbs")
     FileUtils.cp(File.join(FIXTURES, "shantae.gbs"), boom_path)

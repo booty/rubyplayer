@@ -43,6 +43,19 @@ module RubyPlayer
       removed
     end
 
+    # Removes every item whose track id is in `ids` (used to cascade a
+    # library deletion into the live queue, which holds Track objects rather
+    # than DB rows). Snapshot is skipped when nothing actually matches, so a
+    # no-op cascade doesn't pollute the undo stack.
+    def remove_track_ids(ids)
+      return if ids.empty?
+      kept = @items.reject { |t| ids.include?(t.id) }
+      return if kept.size == @items.size
+      snapshot!
+      @items = kept
+      changed!
+    end
+
     # Automatic advancement (track ended / skip): drops the head, returns the
     # new head. Deliberately NOT undoable -- undo is scoped to manual queue
     # edits per spec, not to normal playback progression.

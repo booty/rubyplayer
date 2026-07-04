@@ -117,6 +117,35 @@ module RubyPlayer
       row && Track.from_row(row)
     end
 
+    # Removing a folder from the library is a soft delete (same `missing`
+    # flag the Scanner uses for vanished files), not a hard DELETE: tracks
+    # and folders have no ON DELETE CASCADE beyond track_metadata, so a hard
+    # delete would need manual bottom-up cleanup across playback_history too.
+    # Soft delete also means a future rescan naturally restores the folder if
+    # the files are still on disk -- consistent with "library" tracking what's
+    # on disk, not permanent user curation. Returns the removed track ids so
+    # the caller can cascade-remove them from the live playback queue (queue
+    # entries are in-memory Track objects, untouched by this DB update).
+    def remove_folder!(folder_id)
+      rows = @db.read do |s|
+        s.execute(<<~SQL, [folder_id])
+          WITH RECURSIVE sub(id) AS (
+            SELECT id FROM folders WHERE id = ?
+            UNION ALL
+            SELECT f.id FROM folders f JOIN sub ON f.parent_id = sub.id
+          )
+          SELECT 'folder' AS kind, id FROM sub
+          UNION ALL
+          SELECT 'track' AS kind, t.id FROM tracks t WHERE t.folder_id IN (SELECT id FROM sub)
+        SQL
+      end
+      folder_ids = rows.select { |r| r["kind"] == "folder" }.map { |r| r["id"] }
+      track_ids = rows.select { |r| r["kind"] == "track" }.map { |r| r["id"] }
+      mark_missing(track_ids: track_ids, folder_ids: folder_ids)
+      recompute_counts!
+      track_ids
+    end
+
     def mark_missing(track_ids:, folder_ids:)
       return if track_ids.empty? && folder_ids.empty?
       @db.write do |s|

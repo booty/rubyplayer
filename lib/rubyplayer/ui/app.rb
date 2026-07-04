@@ -10,7 +10,8 @@ module RubyPlayer
       RATE_ACTIONS = { rate_0: nil, rate_1: 1, rate_2: 2, rate_3: 3,
                        rate_4: 4, rate_5: 5, rate_6: 6 }.freeze
 
-      attr_reader :engine, :library_pane, :tracks_pane, :active_pane, :input_buffer
+      attr_reader :engine, :library_pane, :tracks_pane, :active_pane, :input_buffer,
+                  :pending_delete
 
       def initialize(argv: [], config_path: nil, data_path: nil, null_audio: false,
                      io_out: $stdout)
@@ -46,6 +47,7 @@ module RubyPlayer
         @screen = Screen.new(out: io_out, rows: rows, cols: cols)
         @active_pane = :library
         @input_buffer = nil
+        @pending_delete = nil
         @quit = false
         @resized = false
         @engine.start
@@ -102,9 +104,20 @@ module RubyPlayer
       end
 
       def handle_key(key)
+        return handle_confirm_key(key) if @pending_delete
         return handle_input_mode_key(key) if @input_buffer
         action = @keymap.action_for(key, pane: @active_pane)
         dispatch(action) if action
+      end
+
+      # While a delete confirmation modal is up, keys are captured here
+      # instead of reaching the keymap -- mirrors how @input_buffer steals
+      # input for the add-path prompt (see handle_input_mode_key).
+      def handle_confirm_key(key)
+        case key
+        when "y", "enter" then confirm_delete
+        when "n", "escape" then @pending_delete = nil
+        end
       end
 
       def handle_input_mode_key(key)
@@ -149,6 +162,7 @@ module RubyPlayer
         when :seek_forward then seek_by(1)
         when :seek_back then seek_by(-1)
         when :remove_from_queue then remove_from_queue
+        when :remove_library_item then request_remove_library_item
         when *RATE_ACTIONS.keys then rate_current(RATE_ACTIONS[action])
         else route_to_pane(action)
         end
@@ -182,6 +196,28 @@ module RubyPlayer
         end
         @engine.remove_at(index)
         @status_line.set_message("Removed from queue (u:undo)")
+      end
+
+      # Only :folder rows are removable -- the three special rows (Playback
+      # Queue, History, Favorite Tracks) are computed views, not library
+      # entries, so there's nothing in the DB for them to remove.
+      def request_remove_library_item
+        row = @library_pane.selected
+        if row&.kind != :folder
+          @status_line.set_message("Only library folders can be removed")
+          return
+        end
+        @pending_delete = row.folder
+      end
+
+      def confirm_delete
+        folder = @pending_delete
+        @pending_delete = nil
+        track_ids = @library.remove_folder!(folder["id"])
+        @engine.remove_track_ids(track_ids) unless track_ids.empty?
+        @library_pane.rebuild!
+        @tracks_pane.show(@library_pane.selected)
+        @status_line.set_message("Removed \"#{folder['name']}\" from library")
       end
 
       def route_to_pane(action)
@@ -300,7 +336,26 @@ module RubyPlayer
                               default: "#{stats[:tracks]} tracks in #{stats[:folders]} folders")
         end
         @hotkey_line.render(@screen, row: rows - 1, w: cols, pane: @active_pane)
+        render_confirm_modal if @pending_delete
         @screen.flush
+      end
+
+      # Screen has no z-order/layers (see Screen#put) -- drawing this last in
+      # #render is what makes it paint over the panes underneath.
+      def render_confirm_modal
+        folder = @pending_delete
+        message = "Remove \"#{folder['name']}\" from library?"
+        hint = "Also removes its tracks from Favorites and the Playback Queue."
+        prompt = "[y] Yes    [n/esc] Cancel"
+        w = [message.size, hint.size, prompt.size].max + 4
+        h = 6
+        x = [(@screen.cols - w) / 2, 0].max
+        y = [(@screen.rows - h) / 2, 0].max
+        (1...(h - 1)).each { |i| @screen.put(y + i, x + 1, " " * (w - 2), bg: :black) }
+        draw_box(x, y, w, h, active: true, title: "Confirm Remove")
+        @screen.put(y + 2, x + 2, message[0, w - 4], fg: :bright_yellow, bold: true)
+        @screen.put(y + 3, x + 2, hint[0, w - 4], fg: :bright_black)
+        @screen.put(y + 4, x + 2, prompt[0, w - 4], fg: :bright_white, bold: true)
       end
 
       def draw_box(x, y, w, h, active:, title:)

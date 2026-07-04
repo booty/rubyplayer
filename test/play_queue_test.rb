@@ -1,6 +1,8 @@
 require "test_helper"
 
 class PlayQueueTest < Minitest::Test
+  Item = Struct.new(:id)
+
   def setup
     @q = RubyPlayer::PlayQueue.new(undo_depth: 3)
   end
@@ -69,5 +71,31 @@ class PlayQueueTest < Minitest::Test
     assert_nil @q.remove_at(9)
     assert_equal %w[a], @q.items
     assert_equal 2, changes # enqueue + successful remove (failed remove: no change)
+  end
+
+  def test_remove_track_ids_removes_matching_items
+    a, b, c = Item.new(1), Item.new(2), Item.new(3)
+    @q.enqueue_end([a, b, c])
+    @q.remove_track_ids([2])
+    assert_equal [a, c], @q.items
+  end
+
+  def test_remove_track_ids_is_a_noop_when_nothing_matches
+    a = Item.new(1)
+    @q.enqueue_end([a])
+    changes = 0
+    @q.on_change { changes += 1 }
+    @q.remove_track_ids([99])
+    assert_equal [a], @q.items
+    assert_equal 0, changes
+  end
+
+  def test_remove_track_ids_is_undoable
+    a, b = Item.new(1), Item.new(2)
+    @q.enqueue_end([a, b])
+    @q.remove_track_ids([1])
+    assert_equal [b], @q.items
+    @q.undo
+    assert_equal [a, b], @q.items
   end
 end

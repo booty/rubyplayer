@@ -170,6 +170,61 @@ class AppTest < Minitest::Test
     assert_equal %w[Charlie Bravo], @app.engine.queue_items.map(&:title)
   end
 
+  def test_remove_library_item_key_prompts_confirmation_without_removing
+    3.times { @app.handle_key("down") } # select the music folder
+    @app.handle_key("x")
+    refute_nil @app.pending_delete
+    assert_equal "music", @app.pending_delete["name"]
+    refute_empty @app.library_pane.rows.select { |r| r.kind == :folder }
+  end
+
+  def test_remove_library_item_is_a_noop_on_special_rows
+    @app.handle_key("x") # selection starts on the Playback Queue row
+    assert_nil @app.pending_delete
+  end
+
+  def test_confirm_removes_the_folder_from_the_library
+    3.times { @app.handle_key("down") }
+    @app.handle_key("x")
+    @app.handle_key("y")
+    assert_nil @app.pending_delete
+    assert_empty @app.library_pane.rows.select { |r| r.kind == :folder }
+  end
+
+  def test_cancel_leaves_the_library_untouched
+    3.times { @app.handle_key("down") }
+    @app.handle_key("x")
+    @app.handle_key("escape")
+    assert_nil @app.pending_delete
+    refute_empty @app.library_pane.rows.select { |r| r.kind == :folder }
+  end
+
+  # Regression target: the playback queue holds Track objects independent of
+  # the DB (see test_enqueue_from_tracks_pane_puts_a_track_in_the_queue), so
+  # a soft-delete in Library alone would leave the deleted folder's tracks
+  # stranded in the queue. Confirming a delete must cascade into the queue.
+  def test_confirm_cascades_the_delete_into_a_queued_folder
+    3.times { @app.handle_key("down") }
+    @app.handle_key("n") # enqueue_end the whole folder (not playing)
+    assert_operator @app.engine.queue_items.size, :>=, 2
+
+    @app.handle_key("x")
+    @app.handle_key("y")
+
+    assert_equal 0, @app.engine.queue_items.size
+  end
+
+  def test_confirm_stops_playback_when_the_playing_track_is_deleted
+    3.times { @app.handle_key("down") }
+    @app.handle_key("enter") # play_now: enqueues the folder and starts playing
+    wait_until { @app.engine.state[:track] }
+
+    @app.handle_key("x")
+    @app.handle_key("y")
+
+    wait_until { @app.engine.queue_items.empty? }
+  end
+
   def test_seek_forward_key_issues_absolute_seek_without_error
     3.times { @app.handle_key("down") }
     @app.handle_key("enter")
