@@ -133,13 +133,16 @@ tracks(
   id INTEGER PRIMARY KEY,
   folder_id INTEGER NOT NULL REFERENCES folders(id),
   physical_path TEXT NOT NULL,                   -- decodable file: file / archive / multitrack file
-  archive_entry TEXT,                            -- path within an archive, else NULL
+  archive_entry TEXT NOT NULL DEFAULT '',        -- path within an archive; '' = not in an archive
+                                                 -- (NOT NULL because SQLite treats NULLs as distinct
+                                                 --  in UNIQUE indexes, which would break upserts)
   subtune_index INTEGER NOT NULL DEFAULT 0,      -- subtune within a multi-track file, else 0
   backend TEXT NOT NULL,                         -- 'gme' | 'openmpt' | 'vgmstream'
   format TEXT NOT NULL,                          -- 'nsf','mod','vgm',...
   title TEXT, album TEXT, artist TEXT, composer TEXT,
   track_number INTEGER,
   duration_ms INTEGER,
+  file_mtime REAL, file_size INTEGER,            -- stat data for the scanner's change diff
   rating INTEGER CHECK (rating IS NULL OR rating BETWEEN 1 AND 6),  -- NULL = unrated
   missing INTEGER NOT NULL DEFAULT 0,
   errored INTEGER NOT NULL DEFAULT 0,            -- failed to open/decode (distinct from missing)

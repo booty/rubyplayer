@@ -1,0 +1,28 @@
+# @TITLE       Air Zonk
+# @ARTIST      Red, Hudson
+# @COMPOSER    Daisuke Morishima, Hisashi Matsushita
+# @DATE        1992-11-20
+# @RIPPER      Ancient Sound Vanished
+# @TAGGER      Kaminari
+
+HC92053.hes::HES,$42,Red,2,,0
+HC92053.hes::HES,$12,Opening,1:50,,0
+HC92053.hes::HES,$13,Mode Select,14,,1
+HC92053.hes::HES,$14,Friend Select,13,-,10
+HC92053.hes::HES,$01,Stage 1 (Aqua Base),1:29,-,10
+HC92053.hes::HES,$08,Stage 2 (Brains Town),2:21,,10
+HC92053.hes::HES,$0A,Stage 3 (Pock'n Stadium),4:03,,10
+HC92053.hes::HES,$0B,Stage 4 (Bubble Marine),1:31,-,10
+HC92053.hes::HES,$0F,Power Up,22,,0
+HC92053.hes::HES,$04,Mid-Boss,43,42,10
+HC92053.hes::HES,$02,Boss,46,42,10
+HC92053.hes::HES,$06,Stage Clear,10,,0
+HC92053.hes::HES,$09,Stage 5-1 (Psycoxy Palace),1:14,-,10
+HC92053.hes::HES,$0D,Stage 5-2 (Holo Genjin),1:50,54,10
+HC92053.hes::HES,$0C,Stage 5-3 (Boss Galore),1:20,1:16,10
+HC92053.hes::HES,$16,Stage 5-4 (Cyber Chickens),1:00,-,10
+HC92053.hes::HES,$15,King Tamagobot,47,44,10
+HC92053.hes::HES,$10,Game Complete,8,,0
+HC92053.hes::HES,$05,Game Over,1:12,,0
+HC92053.hes::HES,$11,Credits,1:10,,10
+HC92053.hes::HES,$0E,Unknown,34,33,10
