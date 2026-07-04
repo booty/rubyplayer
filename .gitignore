@@ -1,0 +1,3 @@
+.DS_Store
+lib/rubyplayer/native/*.dylib
+tmp/
