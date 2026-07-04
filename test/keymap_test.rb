@@ -13,12 +13,25 @@ class KeymapTest < Minitest::Test
     assert_equal :quit, k.action_for("ctrl_c", pane: :library)
   end
 
-  def test_pane_local_beats_global_and_case_matters
+  def test_pane_local_beats_global_and_matching_is_case_insensitive
     k = RubyPlayer::Keymap.new
-    assert_equal :sort_number, k.action_for("N", pane: :tracks) # uppercase: pane sort
-    assert_equal :enqueue_end, k.action_for("n", pane: :tracks) # lowercase: global
-    assert_nil k.action_for("N", pane: :library) # sorts don't exist in library pane
+    assert_equal :toggle_group, k.action_for("g", pane: :tracks) # pane-local
+    assert_equal :toggle_group, k.action_for("G", pane: :tracks) # same key, either case
+    assert_nil k.action_for("g", pane: :library) # group toggle doesn't exist in library pane
     assert_equal :nav_up, k.action_for("up", pane: :library)
+  end
+
+  def test_sort_number_and_sort_artist_avoid_colliding_with_global_letters
+    k = RubyPlayer::Keymap.new
+    # "n"/"a" are global bindings (enqueue_end/add_path); sort_number and
+    # sort_artist must not shadow them via case-folding, so they live on
+    # non-letter keys instead.
+    assert_equal :sort_number, k.action_for("#", pane: :tracks)
+    assert_equal :sort_artist, k.action_for("@", pane: :tracks)
+    assert_equal :enqueue_end, k.action_for("n", pane: :tracks)
+    assert_equal :enqueue_end, k.action_for("N", pane: :tracks)
+    assert_equal :add_path, k.action_for("a", pane: :tracks)
+    assert_equal :add_path, k.action_for("A", pane: :tracks)
   end
 
   def test_config_overrides
@@ -36,7 +49,13 @@ class KeymapTest < Minitest::Test
   def test_bindings_for_lists_pane_then_global
     k = RubyPlayer::Keymap.new
     keys = k.bindings_for(:tracks).map(&:first)
-    assert keys.index("G") < keys.index("space"), "pane-local keys come first"
+    assert keys.index("g") < keys.index("space"), "pane-local keys come first"
+  end
+
+  def test_config_override_keys_are_case_folded
+    k = RubyPlayer::Keymap.new({ "global" => { "Z" => "quit" } })
+    assert_equal :quit, k.action_for("z", pane: :library)
+    assert_equal :quit, k.action_for("Z", pane: :library)
   end
 
   def test_unknown_key_is_nil

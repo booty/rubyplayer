@@ -29,23 +29,32 @@ module RubyPlayer
         # Library pane is focused (pane-local bindings win, see #action_for).
         "x" => "remove_library_item",
       },
-      # Sort bindings are UPPERCASE so their lowercase counterparts stay free
-      # for the global map (e.g. "n" => enqueue_end vs "N" => sort_number).
+      # Matching is case-insensitive (see #action_for), so "t"/"g" here also
+      # match "T"/"G" from the terminal. sort_number/sort_artist use "#"/"@"
+      # rather than "n"/"a" -- those letters are already global bindings
+      # (enqueue_end/add_path), and case-folding would otherwise make the
+      # pane-local sort binding shadow them whenever Tracks is focused.
       "tracks" => {
         "up" => "nav_up", "down" => "nav_down",
-        "G" => "toggle_group",
-        "T" => "sort_title", "N" => "sort_number", "A" => "sort_artist",
+        "g" => "toggle_group",
+        "t" => "sort_title", "#" => "sort_number", "@" => "sort_artist",
         "i" => "show_track_info",
       },
     }.freeze
 
     def initialize(config_keymap = {})
       @map = DEFAULTS.to_h do |scope, keys|
-        [scope, keys.merge((config_keymap || {})[scope] || {})]
+        overrides = ((config_keymap || {})[scope] || {}).transform_keys { |k| k.to_s.downcase }
+        [scope, keys.merge(overrides)]
       end
     end
 
+    # Case-insensitive: the terminal reports Shift-modified letters as their
+    # uppercase form, but rubyplayer has no shift-sensitive bindings, so a
+    # key should fire the same action regardless of case (displayed
+    # uppercase in the UI -- see HotkeyLine).
     def action_for(key, pane:)
+      key = key.downcase
       # Pane-local bindings win over global; fall back to global when the
       # pane has no entry for this key at all.
       action = @map[pane.to_s]&.[](key) || @map["global"][key]

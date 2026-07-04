@@ -74,7 +74,7 @@ module RubyPlayer
         pairs = @keymap.bindings_for(pane).filter_map do |key, action|
           next if action.to_s.start_with?("rate_")
           label = LABELS.fetch(action, action.to_s)
-          label ? "#{key}:#{label}" : nil
+          label ? "#{key.upcase}:#{label}" : nil
         end
         screen.put(row, 0, pairs.join("  ")[0, w], fg: :bright_black)
       end
