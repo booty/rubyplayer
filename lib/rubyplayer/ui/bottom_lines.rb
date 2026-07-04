@@ -49,16 +49,7 @@ module RubyPlayer
       def render(screen, row:, w:, default:)
         active = @message && @clock.call < @expires_at
         text = active ? @message : default
-        # Bold distinguishes the transient message from the default text at the
-        # Cell level (ch+fg+bg+bold), not just visually. Without it, a message
-        # and default string that happen to share a character at the same
-        # column (e.g. both containing "s" at index 8) would produce an
-        # unchanged Cell there, and Screen#flush's diff -- correctly, for a
-        # real terminal -- omits unchanged cells from the emitted escape
-        # sequence. That's invisible on a real terminal (the glyph is already
-        # correct on screen) but would make raw-output assertions in tests
-        # miss part of the string, so we force every cell to differ instead.
-        screen.put(row, 0, text.to_s[0, w], fg: :yellow, bold: active)
+        screen.put(row, 0, text.to_s[0, w], fg: :yellow)
       end
     end
 

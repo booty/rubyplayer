@@ -29,12 +29,15 @@ class BottomLinesTest < Minitest::Test
     now = [100.0]
     line = RubyPlayer::UI::StatusLine.new(seconds: 5, clock: -> { now[0] })
     line.set_message("45 tracks enqueued")
-    line.render(screen, row: 1, w: 60, default: "3 folders")
-    assert_includes screen.flush, "45 tracks enqueued"
+
+    before_screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 3, cols: 60)
+    line.render(before_screen, row: 1, w: 60, default: "3 folders")
+    assert_includes before_screen.flush, "45 tracks enqueued"
+
     now[0] = 106.0
-    screen.clear_back
-    line.render(screen, row: 1, w: 60, default: "3 folders")
-    out = screen.flush
+    after_screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 3, cols: 60)
+    line.render(after_screen, row: 1, w: 60, default: "3 folders")
+    out = after_screen.flush
     assert_includes out, "3 folders"
     refute_includes out, "enqueued"
   end
