@@ -260,6 +260,24 @@ class AppTest < Minitest::Test
     assert_includes out, "SPACE"
   end
 
+  def test_help_modal_lays_out_bindings_in_two_columns
+    @app.handle_key("?")
+    @app.render
+    screen = @app.instance_variable_get(:@screen)
+    back = screen.instance_variable_get(:@back)
+
+    keymap = @app.instance_variable_get(:@keymap)
+    bindings = keymap.bindings_for(:library)
+    rows = (bindings.size / 2.0).ceil
+    assert_operator bindings.size, :>, rows # otherwise there's no 2nd column to prove
+
+    first_key = bindings.first.first.upcase
+    second_col_key = bindings[rows].first.upcase
+    row_with_first_key = back.map { |r| r.map(&:ch).join }.find { |line| line.include?(first_key) }
+    refute_nil row_with_first_key
+    assert_includes row_with_first_key, second_col_key
+  end
+
   def test_starts_on_the_default_theme
     assert_equal :default, @app.theme_id
   end

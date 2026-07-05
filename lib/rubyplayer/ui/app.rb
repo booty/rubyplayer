@@ -481,13 +481,25 @@ module RubyPlayer
         end
         title = "Hotkeys (#{@active_pane})"
         hint = "[?/esc/enter] Close"
-        w = [lines.map(&:size).max, hint.size, title.size].max + 4
-        h = lines.size + 5
+
+        # Two columns instead of one long list -- left column takes the
+        # first (count/2 rounded up) entries, right column the rest, so an
+        # odd count leaves the extra row on the left rather than the right.
+        rows = (lines.size / 2.0).ceil
+        col1 = lines.first(rows)
+        col2 = lines.drop(rows)
+        col_w = lines.map(&:size).max
+        gap = 4
+        w = [col_w * 2 + gap, hint.size, title.size].max + 4
+        h = rows + 5
         x = [(@screen.cols - w) / 2, 0].max
         y = [(@screen.rows - h) / 2, 0].max
         (1...(h - 1)).each { |i| @screen.put(y + i, x + 1, " " * (w - 2), bg: @theme[:surface]) }
         draw_box(x, y, w, h, active: true, title: title)
-        lines.each_with_index { |line, i| @screen.put(y + 2 + i, x + 2, line[0, w - 4], fg: @theme[:primary]) }
+        rows.times do |i|
+          @screen.put(y + 2 + i, x + 2, col1[i][0, col_w], fg: @theme[:primary]) if col1[i]
+          @screen.put(y + 2 + i, x + 2 + col_w + gap, col2[i][0, col_w], fg: @theme[:primary]) if col2[i]
+        end
         @screen.put(y + h - 2, x + 2, hint[0, w - 4], fg: @theme[:text_muted])
       end
 
