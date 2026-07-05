@@ -25,6 +25,7 @@ module RubyPlayer
       attach_function :gme_track_info, [:pointer, :pointer, :int], :string, blocking: true
       attach_function :gme_free_info, [:pointer], :void
       attach_function :gme_delete, [:pointer], :void
+      attach_function :gme_load_m3u, [:pointer, :string], :string, blocking: true
     end
 
     # Mirrors gme_info_t: 16 ints then 16 const char*. Only the named leading
@@ -59,7 +60,7 @@ module RubyPlayer
               artist: presence(info[:author]),
               composer: presence(info[:author]),
               track_number: subtune_index + 1,
-              duration_ms: info[:play_length].positive? ? info[:play_length] : nil,
+              duration_ms: real_length(info),
               format: File.extname(path).delete_prefix(".").downcase,
             }
           end
@@ -84,9 +85,12 @@ module RubyPlayer
           info_ptr = FFI::MemoryPointer.new(:pointer)
           if GmeLib.gme_track_info(@emu, info_ptr, subtune_index).nil?
             info = GmeInfo.new(info_ptr.read_pointer)
+            # info[:length] (see Gme#real_length) is the true reported duration.
+            # play_length is only a fade target for tracks that loop forever --
+            # it defaults to a flat 150000ms (2:30) when nothing else is known,
+            # which is not a real duration and must never be shown as one.
+            @duration_ms = info[:length] >= 0 ? info[:length] : nil
             play_len = info[:play_length]
-            @duration_ms = play_len.positive? ? play_len : nil
-            # Looping chiptunes never end on their own; fade out at play_length.
             GmeLib.gme_set_fade(@emu, play_len) if play_len.positive?
             GmeLib.gme_free_info(info_ptr.read_pointer)
           end
@@ -129,7 +133,26 @@ module RubyPlayer
         out = FFI::MemoryPointer.new(:pointer)
         err = GmeLib.gme_open_file(path, out, sample_rate)
         raise Error, err if err
-        out.read_pointer
+        emu = out.read_pointer
+        load_sibling_m3u(emu, path)
+        emu
+      end
+
+      # NSF/HES-family rips rarely embed real per-track lengths themselves;
+      # an m3u playlist with the same basename is the genre's convention for
+      # supplying them (see fixtures/air-zonk.{hes,m3u}). Best-effort: a
+      # missing or malformed m3u just leaves GME's defaults in place rather
+      # than failing the whole open.
+      def load_sibling_m3u(emu, path)
+        m3u_path = "#{path.sub(/\.[^.]+\z/, '')}.m3u"
+        GmeLib.gme_load_m3u(emu, m3u_path) if File.exist?(m3u_path)
+      end
+
+      # info[:length] is the file's (or a loaded m3u's) actual reported
+      # duration, -1 if neither specifies one -- unlike info[:play_length],
+      # it's never a fabricated default (see Handle#initialize).
+      def real_length(info)
+        info[:length] >= 0 ? info[:length] : nil
       end
 
       def with_emu(path, sample_rate)

@@ -27,6 +27,39 @@ class GmeBackendTest < Minitest::Test
     assert_equal 4, meta[:track_number]
   end
 
+  # Regression: info[:play_length] is GME's own padded fallback (documented
+  # in gme.h as "a default of 150000 (2.5 minutes)" when nothing else is
+  # known) -- it used to be read as the track's real duration, so every
+  # subtune of a file with no embedded/m3u length data showed exactly 2:30.
+  def test_metadata_duration_is_nil_when_gme_has_no_real_length
+    meta = @gme.metadata(File.join(FIXTURES, "mega-man-2.nsf"), 0)
+    assert_nil meta[:duration_ms]
+  end
+
+  # air-zonk.hes ships with a sibling air-zonk.m3u (a genre convention for
+  # NSF/HES rips that don't embed real lengths themselves); loading it gives
+  # GME real per-track lengths and titles instead of generic "Track NN"
+  # placeholders and the 150000ms fallback.
+  def test_metadata_reads_real_length_and_title_from_a_sibling_m3u
+    red = @gme.metadata(File.join(FIXTURES, "air-zonk.hes"), 0)
+    assert_equal "Red", red[:title]
+    assert_equal 2_000, red[:duration_ms] # m3u: "$42,Red,2,,0" -> 2 seconds
+
+    opening = @gme.metadata(File.join(FIXTURES, "air-zonk.hes"), 1)
+    assert_equal "Opening", opening[:title]
+    assert_equal 110_000, opening[:duration_ms] # m3u: "$12,Opening,1:50,,0"
+  end
+
+  def test_open_duration_ms_also_uses_the_m3u_length_not_gmes_default
+    h = @gme.open(File.join(FIXTURES, "air-zonk.hes"), 1, sample_rate: 44_100)
+    assert_equal 110_000, h.duration_ms
+    h.close
+
+    h = @gme.open(File.join(FIXTURES, "mega-man-2.nsf"), 0, sample_rate: 44_100)
+    assert_nil h.duration_ms
+    h.close
+  end
+
   def test_decode_produces_bounded_float_pcm
     h = @gme.open(File.join(FIXTURES, "shantae.gbs"), 0, sample_rate: 44_100)
     data = h.read(1024)
