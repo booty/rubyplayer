@@ -4,6 +4,8 @@ module RubyPlayer
       GME_EXTS = %w[.nsf .nsfe .gbs .hes .sap .spc .vgm .vgz .gym .ay .kss].freeze
       OPENMPT_EXTS = %w[.mod .xm .it .s3m .mptm .mtm .669 .med .okt .stm .ult
                         .amf .dsm .far .ptm].freeze
+      FFMPEG_EXTS = %w[.mp3 .mp4 .m4a .m4b .aac .flac .alac .ogg .oga .opus .wav
+                       .aif .aiff .wma].freeze
       # Formats whose single file can hold many subtunes.
       MULTITRACK_EXTS = %w[.nsf .nsfe .gbs .hes .sap .ay .kss].freeze
 
@@ -11,6 +13,7 @@ module RubyPlayer
         @map = {}
         GME_EXTS.each { |e| @map[e] = :gme }
         OPENMPT_EXTS.each { |e| @map[e] = :openmpt }
+        FFMPEG_EXTS.each { |e| @map[e] = :ffmpeg }
         (overrides || {}).each do |ext, name|
           e = ext.start_with?(".") ? ext.downcase : ".#{ext.downcase}"
           @map[e] = name.to_sym
@@ -36,6 +39,11 @@ module RubyPlayer
           @instances[:openmpt] ||= begin
             require_relative "openmpt"
             Openmpt.new
+          end
+        when :ffmpeg
+          @instances[:ffmpeg] ||= begin
+            require_relative "ffmpeg"
+            Ffmpeg.new
           end
         end
       end
