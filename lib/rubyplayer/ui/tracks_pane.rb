@@ -106,13 +106,36 @@ module RubyPlayer
           if row[:type] == :header
             screen.put(y + i, x, header_line(row[:text], w), fg: theme[:info], bg: bg, bold: true)
           else
-            screen.put(y + i, x, row[:text][0, w],
-                       fg: selected ? theme[:selection_text] : theme[:text], bg: bg, bold: selected)
+            render_track_row(screen, row, x, y + i, w, selected: selected, bg: bg, theme: theme)
           end
         end
       end
 
       private
+
+      ITALIC_FIELDS = %w[artist artist?].freeze
+
+      # Renders row[:segments] (see Template#render_segments) one field at a
+      # time instead of one big string, so title/artist/duration can each
+      # carry their own style -- title always bold, artist always italic,
+      # duration muted when the row isn't the selected one (selection's own
+      # fg takes over then, for readability against the highlight).
+      def render_track_row(screen, row, x, y, w, selected:, bg:, theme:)
+        col = x
+        remaining = w
+        row[:segments].each do |seg|
+          break if remaining <= 0
+          next if seg[:text].empty?
+
+          chunk = seg[:text][0, remaining]
+          fg = selected ? theme[:selection_text] : (seg[:field] == "duration" ? theme[:text_muted] : theme[:text])
+          screen.put(y, col, chunk, fg: fg, bg: bg,
+                     bold: selected || seg[:field] == "title",
+                     italic: ITALIC_FIELDS.include?(seg[:field]))
+          col += chunk.size
+          remaining -= chunk.size
+        end
+      end
 
       # "--- Album Name ------..." with the trailing run of dashes extending
       # to the pane's right edge. Built at render time (not baked into the
@@ -126,7 +149,10 @@ module RubyPlayer
       end
 
       def flat_rows
-        @tracks.map { |t| { type: :track, text: @flat_template.render(t), track: t } }
+        @tracks.map do |t|
+          { type: :track, text: @flat_template.render(t),
+            segments: @flat_template.render_segments(t), track: t }
+        end
       end
 
       def grouped_rows
@@ -135,6 +161,7 @@ module RubyPlayer
           album_artist = tracks.map(&:artist).tally.max_by { |_, n| n }&.first
           [{ type: :header, text: album }] + tracks.map do |t|
             { type: :track, text: @grouped_template.render(t, album_artist: album_artist),
+              segments: @grouped_template.render_segments(t, album_artist: album_artist),
               track: t }
           end
         end

@@ -33,6 +33,30 @@ class TemplateTest < Minitest::Test
     assert_equal "Flash Man", t.render(track(album: nil, track_number: nil))
   end
 
+  def test_render_segments_tags_each_field_and_keeps_literals
+    t = RubyPlayer::Template.new("{track_number} {title} {duration}")
+    segs = t.render_segments(track)
+    assert_equal [
+      { text: "07", field: "track_number" },
+      { text: " ", field: nil },
+      { text: "Flash Man", field: "title" },
+      { text: " ", field: nil },
+      { text: "2:05", field: "duration" },
+    ], segs
+  end
+
+  def test_render_segments_drops_a_hidden_field_without_a_stray_double_space
+    t = RubyPlayer::Template.new("{title} {artist?}")
+    segs = t.render_segments(track, album_artist: "Capcom") # artist matches album_artist: hidden
+    assert_equal [{ text: "Flash Man", field: "title" }], segs
+  end
+
+  def test_render_segments_joins_back_to_the_same_text_as_render
+    t = RubyPlayer::Template.new("{album} {track_number} {title} {duration} {artist?} {rating}")
+    joined = t.render_segments(track, album_artist: "Konami").map { |s| s[:text] }.join
+    assert_equal t.render(track, album_artist: "Konami"), joined
+  end
+
   def test_duration_formatting
     t = RubyPlayer::Template.new("{duration}")
     assert_equal "0:05", t.render(track(duration_ms: 5_400))

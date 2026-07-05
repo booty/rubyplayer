@@ -2,8 +2,8 @@ module RubyPlayer
   module UI
     # Value equality (Struct#==) is what makes the front/back diff in Screen#flush
     # work with a plain `!=` comparison per cell -- no custom comparator needed.
-    Cell = Struct.new(:ch, :fg, :bg, :bold)
-    BLANK = Cell.new(" ", nil, nil, false).freeze
+    Cell = Struct.new(:ch, :fg, :bg, :bold, :italic)
+    BLANK = Cell.new(" ", nil, nil, false, false).freeze
 
     # Immediate-mode, double-buffered screen: views `put` into the back buffer
     # every frame, and `flush` diffs it against the front buffer (what's actually
@@ -36,7 +36,7 @@ module RubyPlayer
         @back = blank_buffer
       end
 
-      def put(row, col, text, fg: nil, bg: nil, bold: false)
+      def put(row, col, text, fg: nil, bg: nil, bold: false, italic: false)
         return if row.negative? || row >= @rows
 
         text.each_char.with_index do |ch, i|
@@ -44,7 +44,7 @@ module RubyPlayer
           next if c.negative?
           break if c >= @cols
 
-          @back[row][c] = Cell.new(ch, fg, bg, bold)
+          @back[row][c] = Cell.new(ch, fg, bg, bold, italic)
         end
       end
 
@@ -65,7 +65,7 @@ module RubyPlayer
             out << "\e[#{r + 1};#{c + 1}H"
             while c < @cols && (@front.nil? || @front[r][c] != @back[r][c])
               cell = @back[r][c]
-              style = [cell.fg, cell.bg, cell.bold]
+              style = [cell.fg, cell.bg, cell.bold, cell.italic]
               if style != last_style
                 out << sgr(cell)
                 last_style = style
@@ -93,6 +93,7 @@ module RubyPlayer
       def sgr(cell)
         codes = ["0"]
         codes << "1" if cell.bold
+        codes << "3" if cell.italic
         codes << color_code(cell.fg, foreground: true) if cell.fg
         codes << color_code(cell.bg, foreground: false) if cell.bg
         "\e[#{codes.join(';')}m"

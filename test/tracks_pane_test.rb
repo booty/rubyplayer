@@ -78,6 +78,35 @@ class TracksPaneTest < Minitest::Test
     assert_includes out, "--- Zebra #{'-' * (40 - '--- Zebra '.size)}"
   end
 
+  def test_track_row_styles_title_bold_artist_italic_duration_muted
+    @pane.show(@folder_row)
+    screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 10, cols: 60)
+    theme = RubyPlayer::Theme::DEFAULT
+    @pane.render(screen, x: 0, y: 0, w: 60, h: 10, active: true, theme: theme)
+    back = screen.instance_variable_get(:@back)
+
+    # Row 1 (not the default selection at row 0) so field colors reflect
+    # each field's own style rather than being overridden by selection.
+    row = @pane.display_rows[1]
+    cell_for = lambda do |field|
+      offset = 0
+      row[:segments].each do |seg|
+        return back[1][offset] if seg[:field] == field
+        offset += seg[:text].size
+      end
+    end
+
+    title_cell = cell_for.call("title")
+    artist_cell = cell_for.call("artist?")
+    duration_cell = cell_for.call("duration")
+
+    assert title_cell.bold
+    refute title_cell.italic
+    assert artist_cell.italic
+    refute artist_cell.bold
+    assert_equal theme[:text_muted], duration_cell.fg
+  end
+
   def test_selection_skips_headers
     @pane.show(@folder_row)
     @pane.handle_action(:toggle_group)

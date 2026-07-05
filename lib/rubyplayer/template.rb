@@ -23,7 +23,37 @@ module RubyPlayer
       out.gsub(/\s+/, " ").strip
     end
 
+    # Same rendering as #render, but keeps each field's name attached to its
+    # text instead of joining into one string -- callers that style fields
+    # differently (bold title, italic artist, ...) need to know which run of
+    # characters came from which field.
+    def render_segments(track, album_artist: nil)
+      raw = @parts.map do |part|
+        if part.key?(:literal)
+          { text: part[:literal], field: nil }
+        else
+          { text: field_value(part[:field], track, album_artist), field: part[:field] }
+        end
+      end
+      normalize_segments(raw)
+    end
+
     private
+
+    # Mirrors #render's `gsub(/\s+/, " ").strip`, but on the segment list
+    # rather than the joined string, so surviving segments keep their field.
+    # A hidden field (e.g. {artist?} matching the album's own artist)
+    # renders empty and must not leave a stray double space behind.
+    def normalize_segments(raw)
+      out = raw.reject { |s| s[:field] && s[:text].empty? }.each_with_object([]) do |seg, kept|
+        blank = seg[:field].nil? && seg[:text].strip.empty?
+        prev_blank = kept.last && kept.last[:field].nil? && kept.last[:text].strip.empty?
+        kept << seg unless blank && prev_blank
+      end
+      out.shift while out.first && out.first[:field].nil? && out.first[:text].strip.empty?
+      out.pop while out.last && out.last[:field].nil? && out.last[:text].strip.empty?
+      out
+    end
 
     def field_value(field, track, album_artist)
       case field
