@@ -56,6 +56,7 @@ module RubyPlayer
     end
 
     def diff_file(path, parent_folder_id, known, seen_tracks, seen_folders, work)
+      return diff_archive(path, parent_folder_id, known, seen_tracks, seen_folders, work) if @registry.archive?(path)
       seen_tracks[path] = true
       # a multi-subtune file also has a virtual folder row keyed by its path
       seen_folders[path] = true if @registry.multitrack?(path)
@@ -65,6 +66,33 @@ module RubyPlayer
         work << WorkItem.new(path: path, parent_folder_id: parent_folder_id, status: :new)
       elsif existing[:mtime] != stat.mtime.to_f || existing[:size] != stat.size
         work << WorkItem.new(path: path, parent_folder_id: parent_folder_id, status: :changed)
+      end
+    end
+
+    # Archives are stat-diffed like plain files (extraction is the pool's
+    # phase-2 job), but their DB footprint is a whole subtree: inner tracks
+    # all share the archive's physical_path, and inner folders live at
+    # "archive_path/entry" paths that never exist on disk.
+    def diff_archive(path, parent_folder_id, known, seen_tracks, seen_folders, work)
+      seen_folders[path] = true # the archive's own "archive"-kind folder row
+      stat = File.stat(path)
+      # Diff against the archive's folder row, not its track rows: an archive
+      # holding only unsupported formats has zero tracks but still gets a
+      # folder row, and must not be re-extracted on every rescan.
+      existing = known[:folders][path]
+      changed = existing.nil? || existing[:mtime] != stat.mtime.to_f || existing[:size] != stat.size
+      if changed
+        work << WorkItem.new(path: path, parent_folder_id: parent_folder_id,
+                             status: existing.nil? ? :new : :changed)
+        # Inner rows stay unseen on purpose: mark_missing flags them all, and
+        # the pool's re-extraction upserts restore the ones still present in
+        # the new archive version (missing=0 on conflict) -- entries that were
+        # removed from the archive stay missing. Runs are sequential (phase 1
+        # reconcile finishes before phase 2 extraction), so no race.
+      else
+        seen_tracks[path] = true
+        prefix = "#{path}/"
+        known[:folders].each_key { |p| seen_folders[p] = true if p.start_with?(prefix) }
       end
     end
   end

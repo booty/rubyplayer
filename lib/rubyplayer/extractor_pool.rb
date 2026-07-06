@@ -4,11 +4,12 @@ module RubyPlayer
   # Phase-2 scan: bounded worker pool extracting metadata via FFI backends.
   # Parallelism is real because FFI calls release the GVL.
   class ExtractorPool
-    def initialize(library:, registry:, thread_count: 0, event_bus: nil)
+    def initialize(library:, registry:, thread_count: 0, event_bus: nil, archive_cache: nil)
       @library = library
       @registry = registry
       @thread_count = thread_count.positive? ? thread_count : Etc.nprocessors
       @event_bus = event_bus
+      @archive_cache = archive_cache
     end
 
     def process(work_items)
@@ -52,6 +53,7 @@ module RubyPlayer
 
     def extract(item)
       stat = File.stat(item.path)
+      return extract_archive(item, stat) if @registry.archive?(item.path)
       backend = @registry.backend_for(item.path)
       count = @registry.multitrack?(item.path) ? backend.track_count(item.path) : 1
       if count > 1
@@ -79,12 +81,73 @@ module RubyPlayer
       false
     end
 
-    def upsert(path, folder_id, subtune, backend, meta, stat)
+    def upsert(path, folder_id, subtune, backend, meta, stat, archive_entry: "")
       @library.upsert_track(
-        folder_id: folder_id, physical_path: path, subtune_index: subtune,
+        folder_id: folder_id, physical_path: path, archive_entry: archive_entry,
+        subtune_index: subtune,
         backend: backend.name, format: meta[:format], title: meta[:title],
         album: meta[:album], artist: meta[:artist], composer: meta[:composer],
         track_number: meta[:track_number], duration_ms: meta[:duration_ms],
+        file_mtime: stat.mtime.to_f, file_size: stat.size
+      )
+    end
+
+    # An archive becomes an "archive"-kind folder whose descendants are its
+    # entries. Track rows keep physical_path = the archive file (so the
+    # Scanner's one stat diffs the whole subtree) and put the inner path in
+    # archive_entry; folder rows use virtual "archive_path/entry" paths.
+    def extract_archive(item, stat)
+      dir = @archive_cache.extract(item.path)
+      folder_id = @library.upsert_folder(parent_id: item.parent_folder_id,
+                                         name: File.basename(item.path), path: item.path,
+                                         kind: "archive", mtime: stat.mtime.to_f, size: stat.size)
+      walk_extracted(dir, folder_id, item.path, "", stat)
+      true
+    end
+
+    def walk_extracted(dir, folder_id, archive_path, entry_prefix, stat)
+      Dir.children(dir).sort.each do |name|
+        next if name.start_with?(".") # includes the cache's .complete marker
+        real = File.join(dir, name)
+        entry = entry_prefix.empty? ? name : "#{entry_prefix}/#{name}"
+        virtual = "#{archive_path}/#{entry}"
+        if File.directory?(real)
+          id = @library.upsert_folder(parent_id: folder_id, name: name, path: virtual, kind: "dir")
+          walk_extracted(real, id, archive_path, entry, stat)
+        elsif @registry.archive?(real)
+          # nested archive: its own cache entry, but tracks still hang off the
+          # OUTER archive's physical_path with a chained entry ("a.zip/b.vgm")
+          id = @library.upsert_folder(parent_id: folder_id, name: name, path: virtual,
+                                      kind: "archive")
+          walk_extracted(@archive_cache.extract(real), id, archive_path, entry, stat)
+        elsif @registry.supported?(real)
+          extract_entry(real, entry, virtual, folder_id, archive_path, stat)
+        end
+      end
+    end
+
+    def extract_entry(real, entry, virtual, folder_id, archive_path, stat)
+      backend = @registry.backend_for(real)
+      count = @registry.multitrack?(real) ? backend.track_count(real) : 1
+      if count > 1
+        sub_id = @library.upsert_folder(parent_id: folder_id, name: File.basename(real),
+                                        path: virtual, kind: "multitrack",
+                                        mtime: stat.mtime.to_f, size: stat.size)
+        count.times do |i|
+          upsert(archive_path, sub_id, i, backend, backend.metadata(real, i), stat,
+                 archive_entry: entry)
+        end
+      else
+        upsert(archive_path, folder_id, 0, backend, backend.metadata(real, 0), stat,
+               archive_entry: entry)
+      end
+    rescue StandardError
+      # One undecodable entry must not sink the whole archive.
+      @library.upsert_track(
+        folder_id: folder_id, physical_path: archive_path, archive_entry: entry,
+        backend: @registry.backend_name_for(real).to_s,
+        format: File.extname(real).delete_prefix(".").downcase,
+        title: File.basename(entry), errored: 1,
         file_mtime: stat.mtime.to_f, file_size: stat.size
       )
     end

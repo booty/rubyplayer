@@ -10,6 +10,13 @@ class ConfigTest < Minitest::Test
     assert_nil c["nope", "nothing"]
   end
 
+  def test_archive_defaults
+    c = RubyPlayer::ConfigStore.new(path: "/nonexistent/config.toml")
+    assert_equal File.join(Dir.home, ".cache", "rubyplayer", "archives"),
+                 c["library", "archive_cache_dir"]
+    assert_equal "bsdtar", c["library", "archive_tool"]
+  end
+
   def test_file_overrides_defaults_deeply
     Dir.mktmpdir do |dir|
       path = File.join(dir, "config.toml")

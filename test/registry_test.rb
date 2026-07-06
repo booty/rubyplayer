@@ -27,6 +27,20 @@ class RegistryTest < Minitest::Test
     refute @reg.multitrack?("/x/a.mod")
   end
 
+  def test_archive_detection
+    assert @reg.archive?("/x/a.zip")
+    assert @reg.archive?("/x/a.7z")
+    assert @reg.archive?("/x/a.RAR") # case-insensitive
+    refute @reg.archive?("/x/a.nsf")
+    refute @reg.archive?("/x/a.jpg")
+  end
+
+  def test_archives_are_supported_but_not_multitrack_and_have_no_backend
+    assert @reg.supported?("/x/a.zip")
+    refute @reg.multitrack?("/x/a.zip")
+    assert_nil @reg.backend_name_for("/x/a.7z")
+  end
+
   def test_config_overrides
     reg = RubyPlayer::Backends::Registry.new({ "vgm" => "openmpt", ".weird" => "gme" })
     assert_equal :openmpt, reg.backend_name_for("/x/a.vgm")

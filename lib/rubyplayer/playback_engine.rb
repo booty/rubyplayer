@@ -8,9 +8,10 @@ module RubyPlayer
   # event_bus.publish. The audio device is started once and runs for the life
   # of the engine; pause/underrun emit silence.
   class PlaybackEngine
-    def initialize(queue:, registry:, audio:, library:, event_bus:, config:)
+    def initialize(queue:, registry:, audio:, library:, event_bus:, config:, archive_cache: nil)
       @queue = queue
       @registry = registry
+      @archive_cache = archive_cache
       @audio = audio
       @library = library
       @bus = event_bus
@@ -204,6 +205,12 @@ module RubyPlayer
       end
     end
 
+    def playable_path(track)
+      entry = track.archive_entry.to_s
+      return track.physical_path if entry.empty? || @archive_cache.nil?
+      @archive_cache.materialize(track.physical_path, entry)
+    end
+
     def play_head
       target = @mutex.synchronize { @queue.first }
       return if target.nil?
@@ -217,8 +224,14 @@ module RubyPlayer
         stop_playback
         return
       end
-      backend = @registry.backend_for(track.physical_path)
-      @handle = backend.open(track.physical_path, track.subtune_index,
+      # Archived tracks resolve to their extracted cache file first: backends
+      # can only read real files, and backend_for must see the entry's own
+      # extension (.vgm), not the container's (.zip). materialize re-extracts
+      # if the cache was cleaned; failure lands in this method's rescue like
+      # any other unplayable track.
+      path = playable_path(track)
+      backend = @registry.backend_for(path)
+      @handle = backend.open(path, track.subtune_index,
                              sample_rate: @audio.sample_rate)
       @audio.paused = true
       @audio.flush

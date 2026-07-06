@@ -26,15 +26,17 @@ module RubyPlayer
         @audio = AudioOutput.new(sample_rate: @config["audio", "sample_rate"],
                                  ring_buffer_ms: @config["audio", "ring_buffer_ms"],
                                  null_backend: null_audio)
+        @archive_cache = ArchiveCache.new(root: @config["library", "archive_cache_dir"],
+                                          tar: @config["library", "archive_tool"])
         @engine = PlaybackEngine.new(
           queue: PlayQueue.new(undo_depth: @config["library", "undo_depth"]),
           registry: @registry, audio: @audio, library: @library,
-          event_bus: @bus, config: @config
+          event_bus: @bus, config: @config, archive_cache: @archive_cache
         )
         @scanner = Scanner.new(library: @library, registry: @registry)
         @pool = ExtractorPool.new(library: @library, registry: @registry,
                                   thread_count: @config["scanner", "thread_count"],
-                                  event_bus: @bus)
+                                  event_bus: @bus, archive_cache: @archive_cache)
         @keymap = Keymap.new(@config["keymap"])
         glyphs = @config["glyphs"]
         @library_pane = LibraryPane.new(library: @library, glyphs: glyphs)

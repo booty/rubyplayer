@@ -51,7 +51,8 @@ class PlaybackEngineTest < Minitest::Test
     @engine = RubyPlayer::PlaybackEngine.new(
       queue: RubyPlayer::PlayQueue.new, registry: RubyPlayer::Backends::Registry.new,
       audio: @audio, library: @lib, event_bus: @bus,
-      config: RubyPlayer::ConfigStore.new(path: "/nonexistent.toml")
+      config: RubyPlayer::ConfigStore.new(path: "/nonexistent.toml"),
+      archive_cache: RubyPlayer::ArchiveCache.new(root: File.join(@tmp, "cache"))
     )
     @engine.start
   end
@@ -114,6 +115,21 @@ class PlaybackEngineTest < Minitest::Test
     @engine.skip # queue empty -> stops
     wait_for { !@engine.state[:playing] }
     assert_nil @engine.state[:track]
+  end
+
+  def test_plays_track_stored_inside_an_archive
+    zip = File.join(FIXTURES, "musha.zip")
+    id = @lib.upsert_track(folder_id: @folder, physical_path: zip,
+                           archive_entry: "10 - Round Clear.vgm",
+                           backend: "gme", format: "vgm",
+                           title: "Round Clear", duration_ms: 2_000)
+    track = @lib.find_track(id)
+    @engine.enqueue_now([track])
+    wait_for { @engine.state[:playing] }
+    assert_equal id, @engine.state[:track]&.id
+    # must NOT be flagged errored (i.e. the engine resolved the entry to a
+    # real extracted file instead of handing the .zip to a backend)
+    assert_equal 0, @lib.find_track(id).errored
   end
 
   def test_history_recorded_after_5_percent

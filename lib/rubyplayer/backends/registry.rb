@@ -8,6 +8,8 @@ module RubyPlayer
                        .aif .aiff .wma].freeze
       # Formats whose single file can hold many subtunes.
       MULTITRACK_EXTS = %w[.nsf .nsfe .gbs .hes .sap .ay .kss].freeze
+      # Archive containers whose entries are extracted and scanned as tracks.
+      ARCHIVE_EXTS = %w[.zip .7z .rar].freeze
 
       def initialize(overrides = {})
         @map = {}
@@ -21,7 +23,11 @@ module RubyPlayer
         @instances = {}
       end
 
-      def supported?(path) = @map.key?(ext_of(path))
+      # Archives count as supported so the Scanner picks them up, but they
+      # have no backend of their own -- the ExtractorPool unpacks them and
+      # dispatches each entry to its real backend.
+      def supported?(path) = @map.key?(ext_of(path)) || archive?(path)
+      def archive?(path) = ARCHIVE_EXTS.include?(ext_of(path))
       def multitrack?(path) = MULTITRACK_EXTS.include?(ext_of(path))
       def backend_name_for(path) = @map[ext_of(path)]
 

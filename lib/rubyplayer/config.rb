@@ -26,6 +26,10 @@ module RubyPlayer
       "history_min_percent" => 5,
       "history_min_seconds_unknown" => 30,
       "undo_depth" => 10,
+      # extracted-archive cache; entries are content-keyed so this is safe
+      # to delete at any time (next scan/play re-extracts)
+      "archive_cache_dir" => File.join(Dir.home, ".cache", "rubyplayer", "archives"),
+      "archive_tool" => "bsdtar", # reads .zip/.7z/.rar; ships with macOS
     },
     "eq" => { "bands" => 16, "fps" => 30 },
     "glyphs" => {
