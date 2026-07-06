@@ -59,6 +59,7 @@ module RubyPlayer
         enqueue_front: "queue next", enqueue_end: "queue last", select_queue: "queue",
         undo: "undo", redo: "redo", toggle_skip_disliked: "skip 1-star", add_path: "add",
         quit: "quit", nav_up: nil, nav_down: nil, collapse: nil, expand: nil,
+        nav_page_up: nil, nav_page_down: nil,
         toggle_group: "group", sort_title: "title", sort_number: "number",
         sort_artist: "artist",
         next_track: "next", seek_back: "seek-", seek_forward: "seek+",
@@ -70,13 +71,29 @@ module RubyPlayer
         @keymap = keymap
       end
 
-      def render(screen, row:, w:, pane:, theme:)
+      def render(screen, row:, w:, pane:, theme:, h: 1)
         pairs = @keymap.bindings_for(pane).filter_map do |key, action|
           next if action.to_s.start_with?("rate_")
           label = LABELS.fetch(action, action.to_s)
           label ? "#{key.upcase}:#{label}" : nil
         end
-        screen.put(row, 0, pairs.join("  ")[0, w], fg: theme[:text_muted])
+        # Greedy word-wrap of whole KEY:label pairs across h rows -- a pair
+        # split mid-hint is unreadable. Overflow past the last row is dropped
+        # (same behavior as the old single-line truncation).
+        lines = [[]]
+        pairs.each do |pair|
+          candidate = (lines.last + [pair]).join("  ")
+          if candidate.size <= w || lines.last.empty?
+            lines.last << pair
+          elsif lines.size < h
+            lines << [pair]
+          else
+            break
+          end
+        end
+        lines.each_with_index do |line, i|
+          screen.put(row + i, 0, line.join("  ")[0, w], fg: theme[:text_muted])
+        end
       end
     end
   end

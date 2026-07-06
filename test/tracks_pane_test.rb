@@ -107,6 +107,23 @@ class TracksPaneTest < Minitest::Test
     assert_equal theme[:text_muted], duration_cell.fg
   end
 
+  def test_page_navigation_jumps_by_rendered_height_and_skips_headers
+    @pane.show(@folder_row)
+    @pane.handle_action(:toggle_group)
+    # grouped rows: [Apple hdr, Alpha, Bravo, Zebra hdr, Charlie]; selection starts at 1
+    screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 2, cols: 40)
+    @pane.render(screen, x: 0, y: 0, w: 40, h: 2, active: true, theme: RubyPlayer::Theme::DEFAULT)
+
+    @pane.handle_action(:nav_page_down) # 1 + 2 = 3 = Zebra header -> nudged to 4
+    assert_equal 4, @pane.selection
+    assert_equal "Charlie", @pane.selected_track.title
+    @pane.handle_action(:nav_page_up) # 4 - 2 = 2 = Bravo
+    assert_equal "Bravo", @pane.selected_track.title
+    # clamps: page up past the top must land on the first track, not header 0
+    @pane.handle_action(:nav_page_up)
+    assert_equal "Alpha", @pane.selected_track.title
+  end
+
   def test_selection_skips_headers
     @pane.show(@folder_row)
     @pane.handle_action(:toggle_group)

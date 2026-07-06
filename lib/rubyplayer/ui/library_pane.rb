@@ -21,6 +21,10 @@ module RubyPlayer
         @selection = 0
         @scroll = 0
         @rows = []
+        # Page-jump distance = the pane's height, captured at render time
+        # (panes don't know their size otherwise; it changes on resize).
+        # 10 is only the never-rendered fallback (tests, first keypress).
+        @page_size = 10
       end
 
       def rebuild!
@@ -36,6 +40,8 @@ module RubyPlayer
         case action
         when :nav_up then @selection = (@selection - 1).clamp(0, @rows.size - 1)
         when :nav_down then @selection = (@selection + 1).clamp(0, @rows.size - 1)
+        when :nav_page_up then @selection = (@selection - @page_size).clamp(0, @rows.size - 1)
+        when :nav_page_down then @selection = (@selection + @page_size).clamp(0, @rows.size - 1)
         when :expand then toggle_expand(true)
         when :collapse then toggle_expand(false)
         when :select_queue then @selection = 0
@@ -45,6 +51,7 @@ module RubyPlayer
       end
 
       def render(screen, x:, y:, w:, h:, active:, theme:)
+        @page_size = h
         follow_selection(h)
         h.times do |i|
           row = @rows[@scroll + i] or break

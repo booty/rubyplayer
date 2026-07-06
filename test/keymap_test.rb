@@ -21,6 +21,20 @@ class KeymapTest < Minitest::Test
     assert_equal :nav_up, k.action_for("up", pane: :library)
   end
 
+  def test_page_navigation_bound_in_both_panes
+    k = RubyPlayer::Keymap.new
+    %i[library tracks].each do |pane|
+      assert_equal :nav_page_up, k.action_for("pgup", pane: pane)
+      assert_equal :nav_page_down, k.action_for("pgdn", pane: pane)
+      # for keyboards without pgup/pgdn keys
+      assert_equal :nav_page_up, k.action_for("shift_up", pane: pane)
+      assert_equal :nav_page_down, k.action_for("shift_down", pane: pane)
+      # vim-ish aliases
+      assert_equal :nav_page_up, k.action_for("ctrl_u", pane: pane)
+      assert_equal :nav_page_down, k.action_for("ctrl_d", pane: pane)
+    end
+  end
+
   def test_sort_number_and_sort_artist_avoid_colliding_with_global_letters
     k = RubyPlayer::Keymap.new
     # "n"/"a" are global bindings (enqueue_end/add_path); sort_number and

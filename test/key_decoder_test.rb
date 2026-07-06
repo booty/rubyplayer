@@ -22,6 +22,13 @@ class KeyDecoderTest < Minitest::Test
     assert_equal ["backspace"], decode("\u007F")
   end
 
+  def test_page_keys
+    assert_equal ["pgup"], decode("\e[5~")
+    assert_equal ["pgdn"], decode("\e[6~")
+    assert_equal ["shift_up"], decode("\e[1;2A")
+    assert_equal ["shift_down"], decode("\e[1;2B")
+  end
+
   def test_ctrl_chords
     assert_equal ["ctrl_r"], decode("\u0012")
     assert_equal ["ctrl_c"], decode("\u0003")

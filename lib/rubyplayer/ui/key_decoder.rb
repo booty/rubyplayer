@@ -2,7 +2,10 @@ module RubyPlayer
   module UI
     # Normalizes raw terminal bytes into Keymap key-name strings.
     module KeyDecoder
-      ESC_SEQS = { "[A" => "up", "[B" => "down", "[C" => "right", "[D" => "left" }.freeze
+      ESC_SEQS = { "[A" => "up", "[B" => "down", "[C" => "right", "[D" => "left",
+                   "[5~" => "pgup", "[6~" => "pgdn",
+                   # xterm-style modifier encoding: "1;2" = shift
+                   "[1;2A" => "shift_up", "[1;2B" => "shift_down" }.freeze
 
       def self.decode(bytes)
         keys = []

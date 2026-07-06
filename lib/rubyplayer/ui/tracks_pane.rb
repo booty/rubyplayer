@@ -12,6 +12,10 @@ module RubyPlayer
         @scroll = 0
         @group_by_album = false
         @sort = nil
+        # Page-jump distance = the pane's height, captured at render time
+        # (panes don't know their size otherwise; it changes on resize).
+        # 10 is only the never-rendered fallback (tests, first keypress).
+        @page_size = 10
         update_config(config)
       end
 
@@ -57,6 +61,10 @@ module RubyPlayer
         case action
         when :nav_up then move_selection(-1)
         when :nav_down then move_selection(1)
+        # Page jumps land by index (headers included), then the shared
+        # clamp_selection below nudges off a header if one was hit.
+        when :nav_page_up then @selection = (@selection - @page_size).clamp(0, [display_rows.size - 1, 0].max)
+        when :nav_page_down then @selection = (@selection + @page_size).clamp(0, [display_rows.size - 1, 0].max)
         when :toggle_group then @group_by_album = !@group_by_album
         when :sort_title then @sort = :title
         when :sort_number then @sort = :number
@@ -96,6 +104,7 @@ module RubyPlayer
       end
 
       def render(screen, x:, y:, w:, h:, active:, theme:)
+        @page_size = h
         rows = display_rows
         follow_selection(h, rows.size)
         h.times do |i|

@@ -24,8 +24,14 @@ module RubyPlayer
         "?" => "show_help",
         "t" => "show_theme_picker",
       },
+      # Page navigation gets three spellings per direction: pgup/pgdn for
+      # full-size keyboards, shift+arrows for keyboards without those keys,
+      # and ctrl_u/ctrl_d for vim habits.
       "library" => {
         "up" => "nav_up", "down" => "nav_down",
+        "pgup" => "nav_page_up", "pgdn" => "nav_page_down",
+        "shift_up" => "nav_page_up", "shift_down" => "nav_page_down",
+        "ctrl_u" => "nav_page_up", "ctrl_d" => "nav_page_down",
         "left" => "collapse", "right" => "expand",
         # Overrides the global "x" => remove_from_queue binding while the
         # Library pane is focused (pane-local bindings win, see #action_for).
@@ -40,6 +46,9 @@ module RubyPlayer
       # whenever Tracks is focused.
       "tracks" => {
         "up" => "nav_up", "down" => "nav_down",
+        "pgup" => "nav_page_up", "pgdn" => "nav_page_down",
+        "shift_up" => "nav_page_up", "shift_down" => "nav_page_down",
+        "ctrl_u" => "nav_page_up", "ctrl_d" => "nav_page_down",
         "g" => "toggle_group",
         "y" => "sort_title", "#" => "sort_number", "@" => "sort_artist",
         "i" => "show_track_info",

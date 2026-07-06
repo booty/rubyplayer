@@ -47,6 +47,31 @@ class LibraryPaneTest < Minitest::Test
     assert_equal @pane.rows.size - 1, @pane.selection
   end
 
+  def test_page_navigation_jumps_by_last_rendered_height
+    # enough roots to page through: 3 specials + Music + 10 = 14 rows
+    10.times do |i|
+      f = @lib.upsert_folder(parent_id: nil, name: "F#{i}", path: "/f#{i}", kind: "dir")
+      @lib.upsert_track(folder_id: f, physical_path: "/f#{i}/t.vgm",
+                        backend: "gme", format: "vgm", title: "T")
+    end
+    @lib.recompute_counts!
+    @pane.rebuild!
+    screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 5, cols: 20)
+    @pane.render(screen, x: 0, y: 0, w: 20, h: 5, active: true, theme: RubyPlayer::Theme::DEFAULT)
+
+    @pane.handle_action(:nav_page_down)
+    assert_equal 5, @pane.selection
+    @pane.handle_action(:nav_page_down)
+    assert_equal 10, @pane.selection
+    @pane.handle_action(:nav_page_up)
+    assert_equal 5, @pane.selection
+    # clamps at both ends
+    5.times { @pane.handle_action(:nav_page_down) }
+    assert_equal @pane.rows.size - 1, @pane.selection
+    5.times { @pane.handle_action(:nav_page_up) }
+    assert_equal 0, @pane.selection
+  end
+
   def test_select_queue_jumps_home
     3.times { @pane.handle_action(:nav_down) }
     @pane.handle_action(:select_queue)

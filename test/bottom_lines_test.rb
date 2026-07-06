@@ -49,4 +49,30 @@ class BottomLinesTest < Minitest::Test
     out = screen.flush
     assert_includes out, "G:group"
   end
+
+  def test_hotkey_line_wraps_whole_pairs_across_h_rows
+    line = RubyPlayer::UI::HotkeyLine.new(keymap: RubyPlayer::Keymap.new)
+    wide = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 4, cols: 60)
+    line.render(wide, row: 1, w: 60, h: 2, pane: :tracks, theme: theme)
+    back = wide.instance_variable_get(:@back)
+    row1 = back[1].map(&:ch).join.rstrip
+    row2 = back[2].map(&:ch).join.rstrip
+    # two rows hold more than one 60-col row could
+    refute_empty row2
+    assert_operator (row1 + row2).size, :>, 60
+    # pairs wrap whole: no row ends or starts mid-pair
+    # pairs are joined by exactly two spaces; labels themselves may contain
+    # single spaces ("play now"), so only the double-space is a separator
+    all_pairs = "#{row1}  #{row2}".split("  ")
+    assert_includes all_pairs, "G:group"
+    assert(all_pairs.all? { |p| p.include?(":") }, "broken pair in #{all_pairs.inspect}")
+  end
+
+  def test_hotkey_line_defaults_to_one_row
+    line = RubyPlayer::UI::HotkeyLine.new(keymap: RubyPlayer::Keymap.new)
+    wide = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 4, cols: 60)
+    line.render(wide, row: 1, w: 60, pane: :tracks, theme: theme)
+    back = wide.instance_variable_get(:@back)
+    assert_empty back[2].map(&:ch).join.rstrip
+  end
 end

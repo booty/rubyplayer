@@ -391,7 +391,7 @@ module RubyPlayer
         @screen.clear_back
         rows = @screen.rows
         cols = @screen.cols
-        content_h = rows - 3
+        content_h = rows - 4 # playback + status + 2-row hotkey hint
         lib_w = cols * @config["ui", "library_pane_percent"] / 100
         draw_box(0, 0, lib_w, content_h, active: @active_pane == :library, title: "Library")
         draw_box(lib_w, 0, cols - lib_w, content_h, active: @active_pane == :tracks, title: "Tracks")
@@ -399,17 +399,17 @@ module RubyPlayer
                              active: @active_pane == :library, theme: @theme)
         @tracks_pane.render(@screen, x: lib_w + 1, y: 1, w: cols - lib_w - 2,
                             h: content_h - 2, active: @active_pane == :tracks, theme: @theme)
-        @playback_line.render(@screen, row: rows - 3, w: cols,
+        @playback_line.render(@screen, row: rows - 4, w: cols,
                               state: @engine.state, levels: @engine.levels, theme: @theme)
         if @input_buffer
-          @screen.put(rows - 2, 0, "Add path: #{@input_buffer}_"[0, cols], fg: @theme[:accent])
+          @screen.put(rows - 3, 0, "Add path: #{@input_buffer}_"[0, cols], fg: @theme[:accent])
         else
           stats = @library.folder_stats
-          @status_line.render(@screen, row: rows - 2, w: cols,
+          @status_line.render(@screen, row: rows - 3, w: cols,
                               default: "#{stats[:tracks]} tracks in #{stats[:folders]} folders",
                               theme: @theme)
         end
-        @hotkey_line.render(@screen, row: rows - 1, w: cols, pane: @active_pane, theme: @theme)
+        @hotkey_line.render(@screen, row: rows - 2, w: cols, h: 2, pane: @active_pane, theme: @theme)
         render_confirm_modal if @pending_delete
         render_info_modal if @info_track
         render_help_modal if @show_help
