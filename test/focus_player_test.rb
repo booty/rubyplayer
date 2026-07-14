@@ -95,7 +95,7 @@ class FocusPlayerTest < Minitest::Test
     wait_until { @audio.writes == [sample] }
 
     expected = ["sox", "-q", "-n", "-t", "raw", "-e", "floating-point", "-b", "32",
-                "-c", "2", "-r", "48000", "-", *sound.sox_args.drop(1)]
+                "-c", "2", "-r", "48000", "-", *sound.sox_args]
     assert_equal expected, calls.first[0]
     assert_equal File::NULL, calls.first[1][:in]
     assert_equal File::NULL, calls.first[1][:err]

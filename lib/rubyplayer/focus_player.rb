@@ -102,7 +102,7 @@ module RubyPlayer
       # These values deliberately match AudioOutput's stereo float32 contract
       # and actual device sample rate, avoiding conversion in Ruby or C.
       ["sox", "-q", "-n", "-t", "raw", *AudioFormat::SOX_RAW_ARGS,
-       "-r", @audio.sample_rate.to_s, "-", *sound.sox_args.drop(1)]
+       "-r", @audio.sample_rate.to_s, "-", *sound.sox_args]
     end
 
     def drain(reader, pid)
