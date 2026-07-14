@@ -8,11 +8,14 @@ module RubyPlayer
   # event_bus.publish. The audio device is started once and runs for the life
   # of the engine; pause/underrun emit silence.
   class PlaybackEngine
-    def initialize(queue:, registry:, audio:, library:, event_bus:, config:, archive_cache: nil)
+    def initialize(queue:, registry:, audio:, library:, event_bus:, config:, focus_player:,
+                   archive_cache: nil)
       @queue = queue
       @registry = registry
       @archive_cache = archive_cache
       @audio = audio
+      @focus_player = focus_player
+      @focus_sound = nil
       @library = library
       @bus = event_bus
       @chunk_frames = config["audio", "decode_chunk_frames"]
@@ -48,8 +51,19 @@ module RubyPlayer
     end
 
     def shutdown
-      @commands << :stop
-      @thread&.join(5)
+      return unless @thread
+
+      error = nil
+      begin
+        stop_focus
+      rescue StandardError => e
+        error = e
+      ensure
+        @commands << :stop
+        @thread.join(5)
+        @thread = nil
+      end
+      raise error if error
     end
 
     # ---- UI-facing commands (any thread) ----
@@ -120,6 +134,12 @@ module RubyPlayer
     end
     def seek(ms) = @commands << [:seek, ms]
 
+    # Focus is a process-backed PCM source, but AudioOutput remains decoder-
+    # thread-owned. Synchronous replies report spawn/teardown errors to UI only
+    # after source switch and native pause/flush ordering has completed.
+    def play_focus(sound) = synchronous_command(:play_focus, sound)
+    def stop_focus = synchronous_command(:stop_focus)
+
     def toggle_skip_disliked
       @skip_disliked = !@skip_disliked
     end
@@ -151,7 +171,8 @@ module RubyPlayer
         # throttles back to short-interval polling. Intentional decode-ahead, not
         # a busy-wait bug.
         cmd = begin
-          @commands.pop(timeout: @playing && !@paused ? 0 : 0.05)
+          active = @focus_sound || (@playing && !@paused)
+          @commands.pop(timeout: active ? 0 : 0.05)
         rescue ThreadError
           nil
         end
@@ -176,9 +197,13 @@ module RubyPlayer
                 # still handles that error after the barrier is released.
                 cmd[1] << true
               end
+            elsif cmd[0] == :play_focus
+              complete_focus_command(cmd[2]) { start_focus(cmd[1]) }
+            elsif cmd[0] == :stop_focus
+              complete_focus_command(cmd[1]) { stop_focus_playback }
             end
           end
-          pump if @playing && !@paused
+          pump if @focus_sound || (@playing && !@paused)
         rescue StandardError => e
           # A backend can raise mid-decode (e.g. gme_play failing on a
           # corrupt-but-openable file). Without this, the exception would
@@ -186,10 +211,14 @@ module RubyPlayer
           # process restarts. Treat it like an open failure: flag the
           # track, tell the UI, and move on -- the thread must run until
           # an explicit :stop.
-          handle_decode_error(e)
+          @focus_sound ? handle_focus_error : handle_decode_error(e)
         end
       end
-      close_handle
+      begin
+        stop_focus_playback
+      ensure
+        close_handle
+      end
     end
 
     # Recovery for any exception raised while a track is current (mid-decode
@@ -209,12 +238,34 @@ module RubyPlayer
       nxt ? open_and_play(nxt) : stop_playback
     end
 
+    def handle_focus_error
+      # Focus has no finite Track to mark errored or advance from. Retire only
+      # this source; queue head remains untouched for later normal playback.
+      stop_focus_playback
+    rescue StandardError
+      nil
+    end
+
     def pump
       if @pending
         written = @audio.write(@pending)
         consumed = written * AudioFormat::BYTES_PER_FRAME
         @pending = consumed < @pending.bytesize ? @pending.byteslice(consumed..) : nil
         sleep 0.005 if @pending # buffer full: yield briefly, stay responsive
+        return
+      end
+
+      if @focus_sound
+        data = @focus_player.read(@chunk_frames)
+        if data.nil?
+          stop_focus_playback
+        elsif data.empty?
+          # Nonblocking pipe has no bytes yet. Yield so SoX can run while command
+          # queue remains responsive to replacement and shutdown requests.
+          sleep 0.005
+        else
+          @pending = data
+        end
         return
       end
       data = @handle&.read(@chunk_frames)
@@ -234,6 +285,7 @@ module RubyPlayer
     end
 
     def play_head
+      stop_focus_playback
       target = @mutex.synchronize { @queue.first }
       return if target.nil?
       close_handle
@@ -306,6 +358,49 @@ module RubyPlayer
         @paused = false
       end
       safe_publish(:playback_state, playing: false, paused: false)
+    end
+
+    def start_focus(sound)
+      # Reuse normal stop semantics so queue remains intact while decoder handle
+      # and buffered track samples are retired before SoX becomes active.
+      stop_focus_playback
+      stop_playback
+      @focus_player.play(sound, sample_rate: @audio.sample_rate)
+      @focus_sound = sound
+      @audio.paused = false
+      true
+    end
+
+    def stop_focus_playback
+      return false unless @focus_sound
+
+      begin
+        @focus_player.stop
+      ensure
+        @focus_sound = nil
+        @pending = nil
+        @audio.paused = true
+        @audio.flush
+      end
+      true
+    end
+
+    def synchronous_command(name, payload = nil)
+      return false unless @thread&.alive?
+
+      reply = Thread::Queue.new
+      command = payload.nil? ? [name, reply] : [name, payload, reply]
+      @commands << command
+      result = reply.pop
+      raise result if result.is_a?(Exception)
+
+      result
+    end
+
+    def complete_focus_command(reply)
+      reply << yield
+    rescue StandardError => e
+      reply << e
     end
 
     def toggle_pause

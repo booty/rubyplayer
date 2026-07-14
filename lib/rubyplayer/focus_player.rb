@@ -1,94 +1,86 @@
 require_relative "audio_format"
 
 module RubyPlayer
-  # Runs SoX as an endless PCM generator, then feeds its stdout through the
-  # same AudioOutput used by normal tracks. Routing SoX through Ruby instead of
-  # letting `play` open the sound device gives the app one audio owner and lets
-  # track playback, Focus playback, pause, flush, and shutdown coordinate.
+  # Owns SoX process and exposes its raw stdout as a pull-based PCM source.
+  # PlaybackEngine calls #read on decoder thread, keeping that thread sole
+  # AudioOutput producer; no FFI write can outlive process replacement/teardown.
   class FocusPlayer
     class Error < StandardError; end
-    # Pipe reads are batched for efficiency. This is a byte count, not a promise
-    # that IO will return exactly this many bytes.
     READ_SIZE = 16 * 1024
-    def initialize(audio:, spawn: Process.method(:spawn), kill: Process.method(:kill),
+
+    def initialize(spawn: Process.method(:spawn), kill: Process.method(:kill),
                    waitpid: Process.method(:waitpid),
                    clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) },
                    sleeper: Kernel.method(:sleep), pipe: IO.method(:pipe))
-      @audio = audio
       @spawn = spawn
       @kill = kill
       @waitpid = waitpid
       @clock = clock
       @sleeper = sleeper
       @pipe = pipe
-      @pid = nil
-      @current = nil
-      @reader = nil
-      @thread = nil
-      @stopping_pid = nil
+      clear_state
     end
 
-    def play(sound)
-      # Focus sounds replace each other; they never overlap or enter the queue.
+    def play(sound, sample_rate:)
       stop
       reader, writer = @pipe.call
-      # SoX writes raw PCM to our pipe. stdin/stderr go to /dev/null so a child
-      # process cannot consume keystrokes or paint diagnostics over the TUI.
-      pid = @spawn.call(*command_for(sound), in: File::NULL, out: writer,
-                        err: File::NULL)
-      # The child owns its duplicated write descriptor. Closing the parent's
-      # copy is what allows the reader to observe EOF when SoX exits.
+      # stdout is raw PCM consumed by PlaybackEngine. stdin/stderr use null so
+      # child cannot consume TUI keys or paint diagnostics over terminal frame.
+      pid = @spawn.call(*command_for(sound, sample_rate), in: File::NULL,
+                        out: writer, err: File::NULL)
+      # Child owns duplicated write descriptor; parent must close its copy for
+      # reader to observe EOF when SoX exits.
       writer.close
-      @reader = reader
       @pid = pid
+      @reader = reader
       @current = sound
-      @audio.paused = false
-      @thread = Thread.new { drain(reader, pid) }
+      @pending = +"".b
       true
     rescue SystemCallError => e
-      # Process setup can fail after both pipe descriptors exist. Close both
-      # parent copies before translating OS-specific errors into this class's
-      # stable API; callers should not need to understand Process internals.
       writer&.close unless writer&.closed?
       reader&.close unless reader&.closed?
       message = e.is_a?(Errno::ENOENT) ? "sox executable not found" : "unable to start sox: #{e.message}"
       raise Error, message, cause: e
     end
 
+    # Returns at most requested complete frames. IO#readpartial may split a
+    # float or stereo frame anywhere, so incomplete tail remains for next read.
+    def read(frame_count)
+      return nil unless @reader
+
+      target_bytes = frame_count * AudioFormat::BYTES_PER_FRAME
+      complete = take_complete_frames(target_bytes)
+      return complete if complete
+
+      # Nonblocking read is essential because this runs on decoder thread; a
+      # stalled child must not prevent that thread from receiving stop/shutdown.
+      chunk = @reader.read_nonblock(READ_SIZE, exception: false)
+      return +"".b if chunk == :wait_readable
+      if chunk.nil?
+        finish_after_eof
+        return nil
+      end
+
+      @pending << chunk
+      take_complete_frames(target_bytes) || +"".b
+    rescue EOFError, IOError
+      finish_after_eof
+      nil
+    end
+
     def stop
+      return false unless @pid
+
       pid = @pid
       reader = @reader
-      thread = @thread
-      return false unless pid
-
-      # Closing the pipe makes drain see IOError. Mark this as intentional so
-      # that thread does not compete with us to terminate/reap the same child.
-      @stopping_pid = pid
-
-      # Keep ownership fields intact until teardown finishes. If termination
-      # raises, the ensure blocks still join the PCM writer before AudioOutput
-      # can be freed; clearing state early previously left an orphan writer
-      # calling rp_write against a null C ring buffer.
       begin
         reader&.close unless reader&.closed?
         terminate(pid)
       ensure
-        begin
-          thread&.join
-          @audio.paused = true
-          @audio.flush
-        ensure
-          @pid = nil
-          @current = nil
-          @reader = nil
-          @thread = nil
-          @stopping_pid = nil
-        end
+        clear_state
       end
       true
     rescue SystemCallError => e
-      # Teardown above has already joined the writer and cleared ownership.
-      # Expose one FocusPlayer error type while retaining errno as the cause.
       raise Error, "unable to stop sox: #{e.message}", cause: e
     end
 
@@ -97,77 +89,45 @@ module RubyPlayer
 
     private
 
-    def command_for(sound)
-      # `-t raw` needs every format detail because raw bytes carry no header.
-      # These values deliberately match AudioOutput's stereo float32 contract
-      # and actual device sample rate, avoiding conversion in Ruby or C.
+    def command_for(sound, sample_rate)
+      # Raw bytes have no header; AudioFormat supplies exact representation
+      # expected by native output while runtime sample rate prevents resampling.
       ["sox", "-q", "-n", "-t", "raw", *AudioFormat::SOX_RAW_ARGS,
-       "-r", @audio.sample_rate.to_s, "-", *sound.sox_args]
+       "-r", sample_rate.to_s, "-", *sound.sox_args]
     end
 
-    def drain(reader, pid)
-      # IO#readpartial may split anywhere, including in the middle of an
-      # 8-byte frame. Preserve that tail and only send complete frames to FFI.
-      pending = +"".b
-      loop do
-        pending << reader.readpartial(READ_SIZE)
-        pending = write_complete_frames(pending)
+    def finish_after_eof
+      begin
+        pid = @pid
+        @reader&.close unless @reader&.closed?
+        terminate(pid) if pid
+      rescue SystemCallError => e
+        raise Error, "unable to stop sox: #{e.message}", cause: e
+      ensure
+        clear_state
       end
-    rescue EOFError, IOError
-      nil
-    ensure
-      reader.close unless reader.closed?
-      finish_after_drain(pid, reader)
     end
 
-    def finish_after_drain(pid, reader)
-      # EOF without #stop means SoX died or closed stdout. It can no longer
-      # produce audio, so terminate/reap any lingering process and retire this
-      # generation. Identity checks prevent an old drain thread from clearing a
-      # replacement sound that has already installed a different pipe or PID.
-      return if @stopping_pid == pid
-      return unless @pid == pid && @reader.equal?(reader)
+    def take_complete_frames(target_bytes)
+      complete_bytes = @pending.bytesize - (@pending.bytesize % AudioFormat::BYTES_PER_FRAME)
+      return if complete_bytes.zero?
 
-      terminate(pid)
-      return unless @pid == pid && @reader.equal?(reader)
+      byte_count = [complete_bytes, target_bytes].min
+      data = @pending.byteslice(0, byte_count)
+      @pending = @pending.byteslice(byte_count..) || +"".b
+      data
+    end
 
-      @audio.paused = true
-      @audio.flush
+    def clear_state
       @pid = nil
-      @current = nil
       @reader = nil
-      @thread = nil
-    rescue SystemCallError
-      # Explicit #stop remains available to retry cleanup. Worker-thread errors
-      # cannot be raised usefully to UI and must not kill process-wide playback.
-      nil
-    end
-
-    def write_complete_frames(data)
-      byte_count = data.bytesize - (data.bytesize % AudioFormat::BYTES_PER_FRAME)
-      return data if byte_count.zero?
-
-      write_fully(data.byteslice(0, byte_count))
-      data.byteslice(byte_count..) || +"".b
-    end
-
-    def write_fully(data)
-      remaining = data
-      until remaining.empty?
-        frames = @audio.write(remaining)
-        if frames.zero?
-          # A full ring is normal backpressure: CoreAudio must consume some
-          # frames before the producer can continue. Sleep avoids busy-spinning.
-          @sleeper.call(0.005)
-          next
-        end
-        remaining = remaining.byteslice(frames * AudioFormat::BYTES_PER_FRAME..)
-      end
+      @current = nil
+      @pending = +"".b
     end
 
     def terminate(pid)
-      # Give SoX a chance to exit and be reaped cleanly. Escalate only if it
-      # ignores TERM, preventing an endless generator from surviving the app.
+      # TERM normally reaps immediately. One-second monotonic deadline handles
+      # wedged generators, then KILL guarantees endless SoX cannot outlive app.
       @kill.call("TERM", pid)
       return if reaped?(pid)
 

@@ -40,19 +40,49 @@ class PlaybackEngineTest < Minitest::Test
     end
   end
 
+  class FakeFocusSource
+    attr_reader :played, :read_threads, :stop_calls
+
+    def initialize
+      @played = []
+      @read_threads = []
+      @stop_calls = 0
+      @playing = false
+    end
+
+    def play(sound, sample_rate:)
+      @played << [sound, sample_rate]
+      @playing = true
+    end
+
+    def read(frames)
+      return nil unless @playing
+
+      @read_threads << Thread.current
+      ([0.0] * frames * RubyPlayer::AudioFormat::CHANNELS).pack("e*")
+    end
+
+    def stop
+      @stop_calls += 1
+      @playing = false
+    end
+  end
+
   def setup
     @tmp = Dir.mktmpdir
     @db = RubyPlayer::Database.new(path: File.join(@tmp, "library.sqlite3"))
     @lib = RubyPlayer::Library.new(@db)
     @folder = @lib.upsert_folder(parent_id: nil, name: "m", path: @tmp, kind: "dir")
     @bus = FakeBus.new
+    @focus_source = FakeFocusSource.new
     @audio = RubyPlayer::AudioOutput.new(sample_rate: 44_100, ring_buffer_ms: 200,
                                          null_backend: true)
     @engine = RubyPlayer::PlaybackEngine.new(
       queue: RubyPlayer::PlayQueue.new, registry: RubyPlayer::Backends::Registry.new,
       audio: @audio, library: @lib, event_bus: @bus,
       config: RubyPlayer::ConfigStore.new(path: "/nonexistent.toml"),
-      archive_cache: RubyPlayer::ArchiveCache.new(root: File.join(@tmp, "cache"))
+      archive_cache: RubyPlayer::ArchiveCache.new(root: File.join(@tmp, "cache")),
+      focus_player: @focus_source
     )
     @engine.start
   end
@@ -128,6 +158,21 @@ class PlaybackEngineTest < Minitest::Test
 
     assert_equal [first.id, second.id], @engine.queue_items.map(&:id)
     assert_nil @engine.state[:track]
+  end
+
+  def test_focus_pcm_is_pumped_by_decoder_thread_without_changing_queue
+    queued = make_track("shantae.gbs")
+    @engine.enqueue_end([queued])
+    sound = RubyPlayer::FocusSounds::ALL.first
+
+    @engine.play_focus(sound)
+    wait_for { @focus_source.read_threads.any? }
+
+    assert_equal [[sound, 44_100]], @focus_source.played
+    assert @focus_source.read_threads.all? { |thread| thread.name == "decoder" }
+    assert_equal [queued.id], @engine.queue_items.map(&:id)
+  ensure
+    @engine.stop_focus
   end
 
   def test_plays_track_stored_inside_an_archive

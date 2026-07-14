@@ -29,11 +29,12 @@ module RubyPlayer
                                  null_backend: null_audio)
         @archive_cache = ArchiveCache.new(root: @config["library", "archive_cache_dir"],
                                           tar: @config["library", "archive_tool"])
-        @focus_player = focus_player || FocusPlayer.new(audio: @audio)
+        @focus_player = focus_player || FocusPlayer.new
         @engine = PlaybackEngine.new(
           queue: PlayQueue.new(undo_depth: @config["library", "undo_depth"]),
           registry: @registry, audio: @audio, library: @library,
-          event_bus: @bus, config: @config, archive_cache: @archive_cache
+          event_bus: @bus, config: @config, archive_cache: @archive_cache,
+          focus_player: @focus_player
         )
         @scanner = Scanner.new(library: @library, registry: @registry)
         @pool = ExtractorPool.new(library: @library, registry: @registry,
@@ -104,8 +105,7 @@ module RubyPlayer
       # Shutdown is best-effort across independent resources. Focus process
       # failure must not leave decoder thread, native audio, or SQLite open;
       # preserve the first error so callers still learn cleanup was incomplete.
-      [-> { @focus_player.stop }, -> { @engine.shutdown },
-       -> { @audio.close }, -> { @db.close }].each do |cleanup|
+      [-> { @engine.shutdown }, -> { @audio.close }, -> { @db.close }].each do |cleanup|
         cleanup.call
       rescue StandardError => e
         first_error ||= e
@@ -198,7 +198,6 @@ module RubyPlayer
         when :cycle_pane
           @active_pane = @active_pane == :library ? :tracks : :library
         when :toggle_play
-          @focus_player.stop unless @engine.state[:playing]
           @engine.toggle_play
         when :play_now then play_now
         when :enqueue_front then enqueue(:front)
@@ -322,7 +321,7 @@ module RubyPlayer
         end
         tracks = selected_tracks
         return if tracks.empty?
-        @focus_player.stop
+        @engine.stop_focus
         case where
         when :now then @engine.enqueue_now(tracks)
         when :front then @engine.enqueue_front(tracks)
@@ -339,12 +338,10 @@ module RubyPlayer
       end
 
       def play_focus(sound)
-        # PlaybackEngine#stop waits for its decoder thread to pause and flush
-        # the shared AudioOutput while preserving the queue. Only then may Focus
-        # unpause that output and become its producer; without this ordering, a
-        # late decoder flush could discard newly generated Focus samples.
-        @engine.stop
-        @focus_player.play(sound)
+        # Decoder thread owns both normal-track and Focus writes. This command
+        # performs source handoff there, preserving queue while preventing any
+        # second Ruby thread from entering AudioOutput's native ring writer.
+        @engine.play_focus(sound)
         @status_line.set_message("Playing focus: #{sound.title}")
       rescue FocusPlayer::Error => e
         @status_line.set_message(e.message)

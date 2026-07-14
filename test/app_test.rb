@@ -7,22 +7,32 @@ require "rubyplayer/ui/app"
 class AppTest < Minitest::Test
   class FakeFocusPlayer
     attr_reader :played, :stop_calls
-    attr_accessor :stop_error
+    attr_accessor :before_play, :stop_error
 
     def initialize
       @played = []
       @stop_calls = 0
+      @playing = false
     end
 
-    def play(sound)
+    def play(sound, sample_rate:)
+      @before_play&.call
       @played << sound
+      @playing = true
       true
+    end
+
+    def read(frames)
+      return nil unless @playing
+
+      ([0.0] * frames * RubyPlayer::AudioFormat::CHANNELS).pack("e*")
     end
 
     def stop
       raise @stop_error if @stop_error
 
       @stop_calls += 1
+      @playing = false
       true
     end
   end
@@ -114,6 +124,7 @@ class AppTest < Minitest::Test
     database = @app.instance_variable_get(:@db)
     database_close = database.method(:close)
 
+    @app.engine.play_focus(RubyPlayer::FocusSounds::ALL.first)
     @focus_player.stop_error = RubyPlayer::FocusPlayer::Error.new("focus cleanup failed")
     @app.engine.define_singleton_method(:shutdown) do
       cleanup_calls << :engine
@@ -169,18 +180,15 @@ class AppTest < Minitest::Test
 
     playing_when_focus_started = nil
     engine = @app.engine
-    focus_player = FakeFocusPlayer.new
-    focus_player.define_singleton_method(:play) do |sound|
+    @focus_player.before_play = lambda do
       playing_when_focus_started = engine.state[:playing]
-      super(sound)
     end
-    @app.instance_variable_set(:@focus_player, focus_player)
 
     @app.handle_key("enter")
 
     refute playing_when_focus_started,
       "decoder playback must stop before Focus starts writing to shared audio"
-    assert_equal [RubyPlayer::FocusSounds::ALL.first], focus_player.played
+    assert_equal [RubyPlayer::FocusSounds::ALL.first], @focus_player.played
     assert_equal queued_ids, @app.engine.queue_items.map(&:id)
   end
 
