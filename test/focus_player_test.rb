@@ -102,7 +102,7 @@ class FocusPlayerTest < Minitest::Test
     assert_equal File::NULL, calls.first[1][:in]
     assert_equal File::NULL, calls.first[1][:err]
     refute calls.first[1].key?(:pgroup)
-    assert_equal [false], @audio.pause_values
+    assert_equal false, @audio.pause_values.first
   ensure
     player&.stop
   end
@@ -236,5 +236,27 @@ class FocusPlayerTest < Minitest::Test
     assert_match(/unable to start sox/, error.message)
     assert reader.closed?
     assert writer.closed?
+  end
+
+  def test_unexpected_sox_exit_is_reaped_and_clears_playing_state
+    wait_calls = []
+    reader = FragmentReader.new([])
+    writer = FakeWriter.new
+    player = build_player(
+      spawn: ->(*, **) { 42 },
+      waitpid: lambda do |*args|
+        wait_calls << args
+        42
+      end,
+      pipe: -> { [reader, writer] }
+    )
+
+    player.play(RubyPlayer::FocusSounds::ALL.first)
+    wait_until { !player.playing? }
+
+    assert_includes wait_calls, [42, Process::WNOHANG]
+    assert_nil player.current
+    assert_equal [false, true], @audio.pause_values
+    assert_equal 1, @audio.flushes
   end
 end

@@ -26,6 +26,7 @@ module RubyPlayer
       @current = nil
       @reader = nil
       @thread = nil
+      @stopping_pid = nil
     end
 
     def play(sound)
@@ -34,15 +35,16 @@ module RubyPlayer
       reader, writer = @pipe.call
       # SoX writes raw PCM to our pipe. stdin/stderr go to /dev/null so a child
       # process cannot consume keystrokes or paint diagnostics over the TUI.
-      @pid = @spawn.call(*command_for(sound), in: File::NULL, out: writer,
-                         err: File::NULL)
+      pid = @spawn.call(*command_for(sound), in: File::NULL, out: writer,
+                        err: File::NULL)
       # The child owns its duplicated write descriptor. Closing the parent's
       # copy is what allows the reader to observe EOF when SoX exits.
       writer.close
       @reader = reader
+      @pid = pid
       @current = sound
       @audio.paused = false
-      @thread = Thread.new { drain(reader) }
+      @thread = Thread.new { drain(reader, pid) }
       true
     rescue SystemCallError => e
       # Process setup can fail after both pipe descriptors exist. Close both
@@ -59,6 +61,10 @@ module RubyPlayer
       reader = @reader
       thread = @thread
       return false unless pid
+
+      # Closing the pipe makes drain see IOError. Mark this as intentional so
+      # that thread does not compete with us to terminate/reap the same child.
+      @stopping_pid = pid
 
       # Keep ownership fields intact until teardown finishes. If termination
       # raises, the ensure blocks still join the PCM writer before AudioOutput
@@ -77,6 +83,7 @@ module RubyPlayer
           @current = nil
           @reader = nil
           @thread = nil
+          @stopping_pid = nil
         end
       end
       true
@@ -99,7 +106,7 @@ module RubyPlayer
        "-c", "2", "-r", @audio.sample_rate.to_s, "-", *sound.sox_args.drop(1)]
     end
 
-    def drain(reader)
+    def drain(reader, pid)
       # IO#readpartial may split anywhere, including in the middle of an
       # 8-byte frame. Preserve that tail and only send complete frames to FFI.
       pending = +"".b
@@ -111,6 +118,30 @@ module RubyPlayer
       nil
     ensure
       reader.close unless reader.closed?
+      finish_after_drain(pid, reader)
+    end
+
+    def finish_after_drain(pid, reader)
+      # EOF without #stop means SoX died or closed stdout. It can no longer
+      # produce audio, so terminate/reap any lingering process and retire this
+      # generation. Identity checks prevent an old drain thread from clearing a
+      # replacement sound that has already installed a different pipe or PID.
+      return if @stopping_pid == pid
+      return unless @pid == pid && @reader.equal?(reader)
+
+      terminate(pid)
+      return unless @pid == pid && @reader.equal?(reader)
+
+      @audio.paused = true
+      @audio.flush
+      @pid = nil
+      @current = nil
+      @reader = nil
+      @thread = nil
+    rescue SystemCallError
+      # Explicit #stop remains available to retry cleanup. Worker-thread errors
+      # cannot be raised usefully to UI and must not kill process-wide playback.
+      nil
     end
 
     def write_complete_frames(data)
