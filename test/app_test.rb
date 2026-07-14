@@ -666,6 +666,7 @@ class AppTest < Minitest::Test
     output = @app.instance_variable_get(:@io_out).string
     assert_includes output, "Configuration Error"
     assert_includes output, "SyntaxError"
+    assert_includes output, "config.rb"
   end
 
   def test_config_error_modal_dismisses_and_corrected_save_clears_it
@@ -686,6 +687,21 @@ class AppTest < Minitest::Test
 
     assert_nil @app.config_error
     assert_equal :amber_navy, @app.theme_id
+  end
+
+  def test_config_error_modal_keeps_wrapped_message_content_visible
+    message = "#{'x' * 70}VISIBLE_SUFFIX"
+    @app.instance_variable_set(
+      :@config_error,
+      RubyPlayer::ConfigError.new(path: "config.rb", message: message)
+    )
+
+    @app.render
+
+    screen = @app.instance_variable_get(:@screen)
+    rendered = screen.instance_variable_get(:@back).map { |row| row.map(&:ch).join }.join("\n")
+    assert_includes rendered, "VISI"
+    assert_includes rendered, "BLE_SUFFIX"
   end
 
   def test_startup_fallback_error_is_available_to_modal

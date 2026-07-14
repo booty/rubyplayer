@@ -752,7 +752,7 @@ module RubyPlayer
         max_lines = [@screen.rows - 5, 1].max
         lines = lines.first(max_lines)
         hint = "[esc/enter] Keep last known good config"
-        w = [max_w, hint.size + 4].min
+        w = max_w
         h = lines.size + 4
         x = [(@screen.cols - w) / 2, 0].max
         y = [(@screen.rows - h) / 2, 0].max
