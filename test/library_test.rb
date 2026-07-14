@@ -70,6 +70,63 @@ class LibraryTest < Minitest::Test
     assert_equal ["/m/sega/a.vgm"], @lib.favorites.map(&:physical_path)
   end
 
+  def test_recently_added_excludes_missing_and_orders_newest_first
+    old_id = add_track("/m/sega/old.vgm", title: "Old")
+    new_id = add_track("/m/sega/new.vgm", title: "New")
+    missing_id = add_track("/m/sega/missing.vgm", title: "Missing")
+    @db.write do |db|
+      db.execute("UPDATE tracks SET added_at = ? WHERE id = ?", ["2026-01-01T00:00:00Z", old_id])
+      db.execute("UPDATE tracks SET added_at = ? WHERE id = ?", ["2026-02-01T00:00:00Z", new_id])
+    end
+    @lib.mark_missing(track_ids: [missing_id], folder_ids: [])
+
+    assert_equal %w[New Old], @lib.recently_added.map(&:title)
+  end
+
+  def test_unrated_excludes_rated_and_missing_tracks
+    unrated_id = add_track("/m/sega/unrated.vgm", title: "Unrated")
+    add_track("/m/sega/rated.vgm", title: "Rated", rating: 4)
+    missing_id = add_track("/m/sega/missing.vgm", title: "Missing")
+    @lib.mark_missing(track_ids: [missing_id], folder_ids: [])
+
+    assert_equal [unrated_id], @lib.unrated.map(&:id)
+  end
+
+  def test_missing_tracks_order_by_path_then_title
+    z_id = add_track("/m/sega/z.vgm", title: "Zed")
+    a_id = add_track("/m/sega/a.vgm", title: "Alpha")
+    add_track("/m/sega/live.vgm", title: "Live")
+    @lib.mark_missing(track_ids: [z_id, a_id], folder_ids: [])
+
+    assert_equal %w[Alpha Zed], @lib.missing_tracks.map(&:title)
+  end
+
+  def test_failed_tracks_include_missing_failures
+    failed_id = add_track("/m/sega/failed.vgm", title: "Failed")
+    missing_failed_id = add_track("/m/sega/gone.vgm", title: "Gone")
+    healthy_id = add_track("/m/sega/healthy.vgm", title: "Healthy")
+    @lib.set_errored(failed_id)
+    @lib.set_errored(missing_failed_id)
+    @lib.mark_missing(track_ids: [missing_failed_id], folder_ids: [])
+
+    assert_equal [failed_id, missing_failed_id].sort, @lib.failed_tracks.map(&:id).sort
+    refute_includes @lib.failed_tracks.map(&:id), healthy_id
+  end
+
+  def test_most_played_orders_by_count_then_total_duration_and_excludes_missing
+    most_id = add_track("/m/sega/most.vgm", title: "Most")
+    long_id = add_track("/m/sega/long.vgm", title: "Long")
+    short_id = add_track("/m/sega/short.vgm", title: "Short")
+    missing_id = add_track("/m/sega/missing.vgm", title: "Missing")
+    3.times { |i| record_play(most_id, day: i + 1, seconds: 10) }
+    2.times { |i| record_play(long_id, day: i + 1, seconds: 30) }
+    2.times { |i| record_play(short_id, day: i + 1, seconds: 5) }
+    4.times { |i| record_play(missing_id, day: i + 1, seconds: 60) }
+    @lib.mark_missing(track_ids: [missing_id], folder_ids: [])
+
+    assert_equal %w[Most Long Short], @lib.most_played.map(&:title)
+  end
+
   def test_history_round_trip
     id = add_track("/m/sega/a.vgm")
     @lib.record_history(track_id: id, started_at: "2026-07-04T00:00:00Z",
@@ -121,5 +178,14 @@ class LibraryTest < Minitest::Test
   def test_rating_check_constraint
     id = add_track("/m/sega/a.vgm")
     assert_raises(SQLite3::ConstraintException) { @lib.set_rating(id, 9) }
+  end
+
+
+  private
+
+  def record_play(track_id, day:, seconds:)
+    started = Time.utc(2026, 1, day, 0, 0, 0)
+    @lib.record_history(track_id: track_id, started_at: started.iso8601,
+                        ended_at: (started + seconds).iso8601)
   end
 end

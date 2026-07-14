@@ -51,6 +51,11 @@ module RubyPlayer
                 when :history then "History"
                 when :favorites then "Favorite Tracks"
                 when :focus then "Focus"
+                when :recent then "Recently Added"
+                when :unrated then "Unrated"
+                when :missing then "Missing"
+                when :failed then "Failed to Scan"
+                when :most_played then "Most Played"
                 when Array then ["Tracks", @breadcrumb].compact.join(" · ")
                 else "Tracks"
                 end
@@ -89,6 +94,11 @@ module RubyPlayer
           when :focus then @focus_source.call
           when :history then @library.history(limit: @history_limit).map { |h| h[:track] }
           when :favorites then @library.favorites
+          when :recent then @library.recently_added
+          when :unrated then @library.unrated
+          when :missing then @library.missing_tracks
+          when :failed then @library.failed_tracks
+          when :most_played then @library.most_played
           when Array then @library.tracks_under(@mode[1])
           else []
           end

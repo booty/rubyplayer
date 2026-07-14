@@ -1,6 +1,6 @@
 module RubyPlayer
   module UI
-    # Flattens fixed special rows (queue/history/favorites/focus) plus the
+    # Flattens fixed source/smart rows plus the
     # folder tree into a single visible-row list. Focus belongs here because it
     # is an app-level audio source, not a folder or database query, while shared
     # nav/selection logic still benefits from one row model.
@@ -12,6 +12,11 @@ module RubyPlayer
         [:history, "History"],
         [:favorites, "Favorite Tracks"],
         [:focus, "Focus"],
+        [:recent, "Recently Added"],
+        [:unrated, "Unrated"],
+        [:missing, "Missing"],
+        [:failed, "Failed to Scan"],
+        [:most_played, "Most Played"],
       ].freeze
 
       attr_reader :selection
@@ -122,6 +127,11 @@ module RubyPlayer
         when :history then ["#{@glyphs['playlist']} History", ""]
         when :favorites then ["#{@glyphs['star']} Favorite Tracks", ""]
         when :focus then ["#{@glyphs['focus']} Focus", ""]
+        when :recent then ["#{@glyphs['playlist']} Recently Added", ""]
+        when :unrated then ["#{@glyphs['playlist']} Unrated", ""]
+        when :missing then ["#{@glyphs['missing']} Missing", ""]
+        when :failed then ["#{@glyphs['errored']} Failed to Scan", ""]
+        when :most_played then ["#{@glyphs['play']} Most Played", ""]
         when :folder
           f = row.folder
           icon = @glyphs[f["kind"]] || @glyphs["dir"]

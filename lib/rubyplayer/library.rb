@@ -82,6 +82,41 @@ module RubyPlayer
       rows.map { |r| Track.from_row(r) }
     end
 
+    # Smart views stay as direct queries rather than cached collections so
+    # scanner, rating, and playback-history changes appear on next pane reload.
+    def recently_added
+      query_tracks("missing = 0 ORDER BY added_at DESC, title COLLATE NOCASE")
+    end
+
+    def unrated
+      query_tracks("missing = 0 AND rating IS NULL ORDER BY title COLLATE NOCASE")
+    end
+
+    def missing_tracks
+      query_tracks("missing = 1 ORDER BY physical_path, title COLLATE NOCASE")
+    end
+
+    def failed_tracks
+      # Deliberately includes missing rows: failure and file presence describe
+      # independent states, and Failed to Scan is diagnostic rather than playable.
+      query_tracks("errored = 1 ORDER BY physical_path, title COLLATE NOCASE")
+    end
+
+    def most_played
+      rows = @db.read do |s|
+        s.execute(<<~SQL)
+          SELECT t.*
+          FROM tracks t JOIN playback_history h ON h.track_id = t.id
+          WHERE t.missing = 0
+          GROUP BY t.id
+          ORDER BY COUNT(h.id) DESC,
+                   SUM((julianday(h.ended_at) - julianday(h.started_at)) * 86400000) DESC,
+                   t.title COLLATE NOCASE
+        SQL
+      end
+      rows.map { |row| Track.from_row(row) }
+    end
+
     def history(limit: 100)
       rows = @db.read do |s|
         s.execute(<<~SQL, [limit])
@@ -226,6 +261,11 @@ module RubyPlayer
     end
 
     private
+
+    def query_tracks(where_and_order)
+      rows = @db.read { |s| s.execute("SELECT * FROM tracks WHERE #{where_and_order}") }
+      rows.map { |row| Track.from_row(row) }
+    end
 
     def visible_folders(where, params = [])
       @db.read do |s|

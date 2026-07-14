@@ -26,8 +26,12 @@ class LibraryPaneTest < Minitest::Test
   def kinds = @pane.rows.map(&:kind)
 
   def test_specials_then_visible_roots_only
-    assert_equal %i[queue history favorites focus folder], kinds
-    assert_equal "Music", @pane.rows[4].folder["name"] # Empty (0 tracks) hidden
+    assert_equal %i[queue history favorites focus recent unrated missing failed most_played folder], kinds
+    assert_equal "Music", @pane.rows[9].folder["name"] # Empty (0 tracks) hidden
+  end
+
+  def test_smart_views_follow_focus_in_declared_order
+    assert_equal %i[recent unrated missing failed most_played], @pane.rows[4, 5].map(&:kind)
   end
 
   def test_focus_is_below_favorite_tracks
@@ -40,17 +44,17 @@ class LibraryPaneTest < Minitest::Test
   end
 
   def test_expand_and_collapse
-    4.times { @pane.handle_action(:nav_down) } # select Music
+    9.times { @pane.handle_action(:nav_down) } # select Music after fixed views
     assert_equal :folder, @pane.selected.kind
     @pane.handle_action(:expand)
     assert_equal %w[Music Sega], @pane.rows.select { |r| r.kind == :folder }.map { |r| r.folder["name"] }
     assert_equal 1, @pane.rows.last.depth
     @pane.handle_action(:collapse)
-    assert_equal 5, @pane.rows.size
+    assert_equal 10, @pane.rows.size
   end
 
   def test_breadcrumb_uses_folder_ancestry
-    4.times { @pane.handle_action(:nav_down) }
+    9.times { @pane.handle_action(:nav_down) }
     @pane.handle_action(:expand)
     @pane.handle_action(:nav_down)
 
@@ -66,7 +70,7 @@ class LibraryPaneTest < Minitest::Test
   end
 
   def test_page_navigation_jumps_by_last_rendered_height
-    # enough roots to page through: 3 specials + Music + 10 = 14 rows
+    # enough roots to page through fixed views + Music + 10 roots
     10.times do |i|
       f = @lib.upsert_folder(parent_id: nil, name: "F#{i}", path: "/f#{i}", kind: "dir")
       @lib.upsert_track(folder_id: f, physical_path: "/f#{i}/t.vgm",
@@ -106,8 +110,8 @@ class LibraryPaneTest < Minitest::Test
   end
 
   def test_render_draws_scrollbar_only_when_rows_overflow
-    short = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 5, cols: 20)
-    @pane.render(short, x: 0, y: 0, w: 20, h: 5, active: true,
+    short = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 10, cols: 20)
+    @pane.render(short, x: 0, y: 0, w: 20, h: 10, active: true,
                  theme: RubyPlayer::Theme::DEFAULT)
     refute_includes short.instance_variable_get(:@back).map { |row| row[19].ch }, "█"
 

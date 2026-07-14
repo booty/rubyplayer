@@ -54,6 +54,13 @@ class TracksPaneTest < Minitest::Test
     assert_equal "Playback Queue · 3", @pane.title
   end
 
+  def test_smart_view_loads_library_query_and_uses_dynamic_title
+    @pane.show(RubyPlayer::UI::LibraryPane::Row.new(kind: :unrated, depth: 0))
+
+    assert_equal 3, @pane.display_rows.count { |row| row[:type] == :track }
+    assert_equal "Unrated · 3", @pane.title
+  end
+
   def test_title_left_truncates_to_preserve_leaf_and_count
     @pane.show(@folder_row, breadcrumb: "A Very Long Root / Sega")
 

@@ -292,8 +292,7 @@ module RubyPlayer
         @status_line.set_message("Removed from queue (u:undo)")
       end
 
-      # Only :folder rows are removable -- four special rows (Playback Queue,
-      # History, Favorite Tracks, Focus) are computed views, not library
+      # Only :folder rows are removable -- fixed smart/source rows are computed views, not library
       # entries, so there's nothing in the DB for them to remove.
       def request_remove_library_item
         row = @library_pane.selected
@@ -403,6 +402,11 @@ module RubyPlayer
           case row&.kind
           when :folder then @library.tracks_under(row.folder["id"])
           when :favorites then @library.favorites
+          when :recent then @library.recently_added
+          when :unrated then @library.unrated
+          when :missing then @library.missing_tracks
+          when :failed then @library.failed_tracks
+          when :most_played then @library.most_played
           else []
           end
         end
