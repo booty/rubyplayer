@@ -113,6 +113,7 @@ module RubyPlayer
     def validate!(data)
       validate_known_tree!(data, RubyPlayer::DEFAULTS)
       validate_special_values!(data)
+      validate_dynamic_maps!(data)
       data
     end
 
@@ -173,6 +174,23 @@ module RubyPlayer
 
       theme = dig(data, "ui.theme")
       raise SettingError, "ui.theme must name a known theme" unless Theme::ALL_IDS.include?(theme.to_sym)
+    end
+
+    def validate_dynamic_maps!(data)
+      data.fetch("backends").each do |extension, backend|
+        next if backend.is_a?(String) || backend.is_a?(Symbol)
+
+        raise SettingError, "backends[#{extension.inspect}] must be a String or Symbol"
+      end
+
+      data.fetch("keymap").each do |scope, bindings|
+        bindings.each do |key, action|
+          next if action.is_a?(String) || action.is_a?(Symbol)
+
+          raise SettingError,
+                "keymap.#{scope}[#{key.inspect}] must be a String or Symbol"
+        end
+      end
     end
 
     def dig(data, path)

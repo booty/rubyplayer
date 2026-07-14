@@ -113,6 +113,22 @@ class ConfigTest < Minitest::Test
     assert_includes error.message, "positive Integer"
   end
 
+  def test_invalid_dynamic_map_values_fail_during_config_load
+    {
+      'config.backends[".foo"] = 12' => 'backends[".foo"]',
+      'config.keymap.global["x"] = 12' => 'keymap.global["x"]',
+    }.each do |assignment, setting|
+      write_config "RubyPlayer.configure { |config| #{assignment} }\n"
+
+      error = assert_raises(RubyPlayer::ConfigError) do
+        RubyPlayer::ConfigStore.new(path: @path)
+      end
+
+      assert_includes error.message, setting
+      assert_includes error.message, "String or Symbol"
+    end
+  end
+
   def test_runtime_exception_includes_source_location
     write_config <<~RUBY
       RubyPlayer.configure do |_config|
