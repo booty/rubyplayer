@@ -1,8 +1,9 @@
 module RubyPlayer
   module UI
     # Flattens fixed special rows (queue/history/favorites/focus) plus the
-    # folder tree into a single visible-row list, so nav/selection logic
-    # doesn't need to distinguish "special" vs "folder" areas.
+    # folder tree into a single visible-row list. Focus belongs here because it
+    # is an app-level audio source, not a folder or database query, while shared
+    # nav/selection logic still benefits from one row model.
     class LibraryPane
       Row = Struct.new(:kind, :folder, :depth, keyword_init: true)
 

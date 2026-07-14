@@ -108,6 +108,9 @@ module RubyPlayer
     end
 
     def skip = @commands << :skip
+    # Focus playback needs to silence the decoder without consuming or clearing
+    # its queue. Like other engine controls, this is queued so only the decoder
+    # thread mutates handles and playback state.
     def stop = @commands << :stop_playback
     def seek(ms) = @commands << [:seek, ms]
 

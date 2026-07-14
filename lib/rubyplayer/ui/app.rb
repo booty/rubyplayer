@@ -306,6 +306,9 @@ module RubyPlayer
       end
 
       def enqueue(where)
+        # Focus sounds are infinite generators, not finite Tracks. Letting one
+        # into PlayQueue would break duration, advance, history, and persistence
+        # assumptions throughout PlaybackEngine.
         if selected_focus_sound
           @status_line.set_message("Focus sounds cannot be queued")
           return
@@ -329,6 +332,9 @@ module RubyPlayer
       end
 
       def play_focus(sound)
+        # PlaybackEngine processes stop on its decoder thread, preserving the
+        # queue. Focus uses the same synchronized AudioOutput, then remains the
+        # source until a normal track is selected or another Focus sound starts.
         @engine.stop
         @focus_player.play(sound)
         @status_line.set_message("Playing focus: #{sound.title}")

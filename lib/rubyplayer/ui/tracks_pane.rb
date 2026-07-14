@@ -41,6 +41,10 @@ module RubyPlayer
       end
 
       def reload!
+        # Focus reuses this pane's navigation and rendering shell, but its rows
+        # carry FocusSound values rather than Track records. Keeping a distinct
+        # row type prevents queue/rating/info actions from treating recipes as
+        # database-backed tracks.
         @tracks =
           case @mode
           when :queue then @queue_source.call
@@ -97,6 +101,8 @@ module RubyPlayer
       end
 
       def selected_focus_sound
+        # Callers must opt into the Focus type explicitly; selected_track stays
+        # nil in this mode so generic enqueue paths cannot accept these rows.
         row = display_rows[@selection]
         row && row[:type] == :focus ? row[:focus_sound] : nil
       end

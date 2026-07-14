@@ -1,7 +1,14 @@
 module RubyPlayer
+  # Runs SoX as an endless PCM generator, then feeds its stdout through the
+  # same AudioOutput used by normal tracks. Routing SoX through Ruby instead of
+  # letting `play` open the sound device gives the app one audio owner and lets
+  # track playback, Focus playback, pause, flush, and shutdown coordinate.
   class FocusPlayer
     class Error < StandardError; end
+    # Pipe reads are batched for efficiency. This is a byte count, not a promise
+    # that IO will return exactly this many bytes.
     READ_SIZE = 16 * 1024
+    # SoX is configured for stereo float32: two channels * four bytes each.
     BYTES_PER_FRAME = 8
 
     def initialize(audio:, spawn: Process.method(:spawn), kill: Process.method(:kill),
@@ -22,10 +29,15 @@ module RubyPlayer
     end
 
     def play(sound)
+      # Focus sounds replace each other; they never overlap or enter the queue.
       stop
       reader, writer = @pipe.call
+      # SoX writes raw PCM to our pipe. stdin/stderr go to /dev/null so a child
+      # process cannot consume keystrokes or paint diagnostics over the TUI.
       @pid = @spawn.call(*command_for(sound), in: File::NULL, out: writer,
                          err: File::NULL)
+      # The child owns its duplicated write descriptor. Closing the parent's
+      # copy is what allows the reader to observe EOF when SoX exits.
       writer.close
       @reader = reader
       @current = sound
@@ -44,6 +56,10 @@ module RubyPlayer
       thread = @thread
       return false unless pid
 
+      # Keep ownership fields intact until teardown finishes. If termination
+      # raises, the ensure blocks still join the PCM writer before AudioOutput
+      # can be freed; clearing state early previously left an orphan writer
+      # calling rp_write against a null C ring buffer.
       begin
         reader&.close unless reader&.closed?
         terminate(pid)
@@ -68,11 +84,16 @@ module RubyPlayer
     private
 
     def command_for(sound)
+      # `-t raw` needs every format detail because raw bytes carry no header.
+      # These values deliberately match AudioOutput's stereo float32 contract
+      # and actual device sample rate, avoiding conversion in Ruby or C.
       ["sox", "-q", "-n", "-t", "raw", "-e", "floating-point", "-b", "32",
        "-c", "2", "-r", @audio.sample_rate.to_s, "-", *sound.sox_args.drop(1)]
     end
 
     def drain(reader)
+      # IO#readpartial may split anywhere, including in the middle of an
+      # 8-byte frame. Preserve that tail and only send complete frames to FFI.
       pending = +"".b
       loop do
         pending << reader.readpartial(READ_SIZE)
@@ -97,6 +118,8 @@ module RubyPlayer
       until remaining.empty?
         frames = @audio.write(remaining)
         if frames.zero?
+          # A full ring is normal backpressure: CoreAudio must consume some
+          # frames before the producer can continue. Sleep avoids busy-spinning.
           @sleeper.call(0.005)
           next
         end
@@ -105,6 +128,8 @@ module RubyPlayer
     end
 
     def terminate(pid)
+      # Give SoX a chance to exit and be reaped cleanly. Escalate only if it
+      # ignores TERM, preventing an endless generator from surviving the app.
       @kill.call("TERM", pid)
       return if reaped?(pid)
 

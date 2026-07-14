@@ -1,7 +1,13 @@
 module RubyPlayer
+  # Focus sounds are recipes rather than library Tracks: no file, duration, or
+  # queue identity exists. Arguments are stored as an array (not a shell string)
+  # so Process.spawn passes them directly to SoX without shell parsing.
   FocusSound = Struct.new(:id, :title, :sox_args, keyword_init: true)
 
   module FocusSounds
+    # Each recipe begins with SoX's null input (`-n`). FocusPlayer supplies that
+    # itself while adding the raw-output format needed by AudioOutput, hence its
+    # command builder drops this first argument and keeps the effects unchanged.
     ALL = [
       FocusSound.new(
         id: :green, title: "Green Noise",
