@@ -91,6 +91,11 @@ unsigned int rp_buffered_frames(void) {
 
 /* Copy up to frame_count frames in; returns frames accepted (may be 0 when full). */
 unsigned int rp_write(const float *frames, unsigned int frame_count) {
+    /* Ruby guards normal lifecycle, but native validation is still required:
+     * an FFI caller can invoke this function directly, and a stale Ruby writer
+     * must degrade to a short write rather than dereference a freed ring. */
+    if (!g_initialized || g_rb == NULL || g_rb_capacity == 0 || frames == NULL || frame_count == 0)
+        return 0;
     uint64_t r = atomic_load(&g_read);
     uint64_t w = atomic_load(&g_write);
     uint64_t space = g_rb_capacity - (w - r);

@@ -37,6 +37,7 @@ module RubyPlayer
       # pointer. Serialize handoffs so neither thread can mutate either resource
       # while the other is inside FFI.
       @write_mutex = Mutex.new
+      @closed = false
       rate = sample_rate == "auto" ? 0 : Integer(sample_rate)
       code = @native.rp_init(rate, ring_buffer_ms, null_backend ? 1 : 0)
       raise "rp_audio init failed (code #{code})" unless code.zero?
@@ -54,6 +55,10 @@ module RubyPlayer
       end
 
       @write_mutex.synchronize do
+        # Ruby owns lifecycle knowledge, so reject stale producer threads here
+        # instead of letting them cross FFI into storage already freed by C.
+        raise IOError, "audio output is closed" if @closed
+
         frame_count = frames_string.bytesize / BYTES_PER_FRAME
         # FFI::MemoryPointer owns C-addressable memory. Reuse the largest one
         # allocated so the hot audio loop does not malloc on every chunk.
@@ -74,6 +79,16 @@ module RubyPlayer
     def buffered_frames = @native.rp_buffered_frames
     def frames_played = @native.rp_frames_played
     def flush = @write_mutex.synchronize { @native.rp_flush }
-    def close = @write_mutex.synchronize { @native.rp_free }
+    def close
+      @write_mutex.synchronize do
+        return false if @closed
+
+        # Mark closed before freeing: even if native teardown raises, retrying a
+        # write against partially dismantled device state would be unsafe.
+        @closed = true
+        @native.rp_free
+        true
+      end
+    end
   end
 end
