@@ -8,6 +8,7 @@
 #define MA_NO_DECODING
 #define MA_NO_ENCODING
 #include "miniaudio.h"
+#include "ring_cursor.h"
 #include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,7 +30,7 @@ static void data_callback(ma_device *dev, void *output, const void *input, ma_ui
     float *out = (float *)output;
     uint64_t r = atomic_load(&g_read);
     uint64_t w = atomic_load(&g_write);
-    uint64_t avail = w - r;
+    uint64_t avail = rp_ring_buffered(r, w, g_rb_capacity);
     ma_uint32 n = 0;
     if (!atomic_load(&g_paused))
         n = (ma_uint32)(avail < frame_count ? avail : frame_count);
@@ -41,7 +42,9 @@ static void data_callback(ma_device *dev, void *output, const void *input, ma_ui
     if (n < frame_count)  /* underrun or paused: emit silence */
         memset(out + (size_t)n * RP_CHANNELS, 0,
                ((size_t)frame_count - n) * RP_CHANNELS * sizeof(float));
-    atomic_store(&g_read, r + n);
+    /* A concurrent flush may have advanced g_read after our snapshot. CAS
+     * prevents this callback from restoring its older cursor afterward. */
+    rp_ring_commit_read(&g_read, r, n);
     atomic_fetch_add(&g_frames_played, n);
 }
 
@@ -82,11 +85,15 @@ int rp_stop(void)  { return ma_device_stop(&g_device)  == MA_SUCCESS ? 0 : -1; }
 void rp_set_paused(int p) { atomic_store(&g_paused, p ? 1 : 0); }
 
 unsigned int rp_writable_frames(void) {
-    return (unsigned int)(g_rb_capacity - (atomic_load(&g_write) - atomic_load(&g_read)));
+    return (unsigned int)rp_ring_writable(atomic_load(&g_read),
+                                          atomic_load(&g_write),
+                                          g_rb_capacity);
 }
 
 unsigned int rp_buffered_frames(void) {
-    return (unsigned int)(atomic_load(&g_write) - atomic_load(&g_read));
+    return (unsigned int)rp_ring_buffered(atomic_load(&g_read),
+                                          atomic_load(&g_write),
+                                          g_rb_capacity);
 }
 
 /* Copy up to frame_count frames in; returns frames accepted (may be 0 when full). */
@@ -98,7 +105,7 @@ unsigned int rp_write(const float *frames, unsigned int frame_count) {
         return 0;
     uint64_t r = atomic_load(&g_read);
     uint64_t w = atomic_load(&g_write);
-    uint64_t space = g_rb_capacity - (w - r);
+    uint64_t space = rp_ring_writable(r, w, g_rb_capacity);
     unsigned int n = (unsigned int)(space < frame_count ? space : frame_count);
     for (unsigned int i = 0; i < n; i++) {
         uint64_t idx = ((w + i) % g_rb_capacity) * RP_CHANNELS;
@@ -111,8 +118,8 @@ unsigned int rp_write(const float *frames, unsigned int frame_count) {
 
 unsigned long long rp_frames_played(void) { return atomic_load(&g_frames_played); }
 
-/* Drop all buffered audio (seek/skip). Callers should pause first to avoid a
- * benign race where the callback resurrects a few frames. */
+/* Drop all buffered audio (seek/skip). A callback that already copied samples
+ * may still emit that device period, but its CAS cannot undo this cursor. */
 void rp_flush(void) { atomic_store(&g_read, atomic_load(&g_write)); }
 
 void rp_free(void) {
