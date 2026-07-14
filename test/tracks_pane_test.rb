@@ -39,6 +39,63 @@ class TracksPaneTest < Minitest::Test
     assert_equal 3, titles.size
   end
 
+  def test_filter_matches_track_metadata_case_insensitively
+    @pane.show(@folder_row)
+
+    @pane.filter = "y"
+
+    assert_equal %w[Bravo], titles
+    @pane.filter = "APPLE"
+    assert_equal %w[Alpha Bravo], titles.sort
+    @pane.filter = "c.vgm"
+    assert_equal %w[Charlie], titles
+  end
+
+  def test_filter_matches_focus_titles
+    @pane.show(RubyPlayer::UI::LibraryPane::Row.new(kind: :focus, depth: 0))
+
+    @pane.filter = "dark"
+
+    assert_equal ["Beach Rain (Dark)"], @pane.display_rows.map { |row| row[:text] }
+  end
+
+  def test_filter_without_matches_renders_edit_guidance
+    @pane.show(@folder_row)
+
+    @pane.filter = "no-such-track"
+
+    assert_equal [{ type: :empty, text: "No matches — press / to edit filter" }],
+                 @pane.display_rows
+  end
+
+  def test_filter_and_selection_restore_per_view
+    queue_row = RubyPlayer::UI::LibraryPane::Row.new(kind: :queue, depth: 0)
+    @queue = @lib.tracks_under(@folder)
+    @pane.show(@folder_row)
+    @pane.filter = "a"
+    @pane.handle_action(:nav_down)
+    selected_id = @pane.selected_track.id
+
+    @pane.show(queue_row)
+    @pane.filter = "bravo"
+    @pane.show(@folder_row)
+
+    assert_equal "a", @pane.filter
+    assert_equal selected_id, @pane.selected_track.id
+
+    @pane.show(queue_row)
+    assert_equal "bravo", @pane.filter
+  end
+
+  def test_selected_queue_track_returns_underlying_track_when_filtered
+    @queue = @lib.tracks_under(@folder)
+    @pane.show(RubyPlayer::UI::LibraryPane::Row.new(kind: :queue, depth: 0))
+
+    @pane.filter = "bravo"
+
+    assert_same @queue.find { |track| track.title == "Bravo" }, @pane.selected_queue_track
+  end
+
   def test_sorting
     @pane.show(@folder_row)
     @pane.handle_action(:sort_title)

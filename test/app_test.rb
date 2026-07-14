@@ -111,6 +111,43 @@ class AppTest < Minitest::Test
     assert_nil @app.input_buffer
   end
 
+  def test_filter_mode_updates_live_and_enter_accepts
+    select_tracks_for(:folder)
+
+    @app.handle_key("/")
+    "space".each_char { |char| @app.handle_key(char) }
+
+    assert_equal "space", @app.filter_buffer
+    assert_equal ["space_debris"], @app.tracks_pane.display_rows.map { |row| row[:track].title }
+    @app.handle_key("enter")
+    assert_nil @app.filter_buffer
+    assert_equal "space", @app.tracks_pane.filter
+  end
+
+  def test_filter_escape_restores_previous_filter
+    select_tracks_for(:folder)
+    @app.tracks_pane.filter = "space"
+
+    @app.handle_key("/")
+    @app.handle_key("backspace")
+    @app.handle_key("escape")
+
+    assert_nil @app.filter_buffer
+    assert_equal "space", @app.tracks_pane.filter
+  end
+
+  def test_submitting_empty_filter_clears_existing_filter
+    select_tracks_for(:folder)
+    @app.tracks_pane.filter = "space"
+
+    @app.handle_key("/")
+    5.times { @app.handle_key("backspace") }
+    @app.handle_key("enter")
+
+    assert_equal "", @app.tracks_pane.filter
+    assert_operator @app.tracks_pane.display_rows.size, :>=, 2
+  end
+
   def test_quit_key
     @app.handle_key("ctrl_c")
     assert @app.quit?
@@ -240,6 +277,19 @@ class AppTest < Minitest::Test
 
     @app.handle_key("x")                # remove_from_queue
     assert_equal before_size - 1, @app.engine.queue_items.size
+  end
+
+  def test_remove_from_filtered_queue_removes_visible_track
+    4.times { @app.handle_key("down") }
+    @app.handle_key("n")
+    target = @app.engine.queue_items.find { |track| track.title == "space_debris" }
+    @app.handle_key("p")
+    @app.handle_key("tab")
+    @app.tracks_pane.filter = "space"
+
+    @app.handle_key("x")
+
+    refute_includes @app.engine.queue_items.map(&:id), target.id
   end
 
   def test_remove_from_queue_is_a_noop_outside_the_queue_view

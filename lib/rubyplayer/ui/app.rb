@@ -12,7 +12,7 @@ module RubyPlayer
 
       attr_reader :engine, :library_pane, :tracks_pane, :active_pane, :input_buffer,
                   :pending_delete, :info_track, :show_help, :theme_id, :theme_picker,
-                  :focus_player
+                  :focus_player, :filter_buffer
 
       def initialize(argv: [], config_path: nil, data_path: nil, null_audio: false,
                      io_out: $stdout, focus_player: nil)
@@ -53,6 +53,8 @@ module RubyPlayer
         @screen = Screen.new(out: io_out, rows: rows, cols: cols)
         @active_pane = :library
         @input_buffer = nil
+        @filter_buffer = nil
+        @filter_before_edit = nil
         @pending_delete = nil
         @info_track = nil
         @show_help = false
@@ -127,6 +129,7 @@ module RubyPlayer
         return handle_help_key(key) if @show_help
         return handle_info_key(key) if @info_track
         return handle_confirm_key(key) if @pending_delete
+        return handle_filter_mode_key(key) if @filter_buffer
         return handle_input_mode_key(key) if @input_buffer
         action = @keymap.action_for(key, pane: @active_pane)
         dispatch(action) if action
@@ -192,6 +195,29 @@ module RubyPlayer
         end
       end
 
+      def handle_filter_mode_key(key)
+        case key
+        when "enter"
+          @filter_buffer = nil
+          @filter_before_edit = nil
+        when "escape"
+          @tracks_pane.filter = @filter_before_edit
+          @filter_buffer = nil
+          @filter_before_edit = nil
+        when "backspace"
+          @filter_buffer = @filter_buffer[0..-2]
+          @tracks_pane.filter = @filter_buffer
+        when "space"
+          @filter_buffer += " "
+          @tracks_pane.filter = @filter_buffer
+        else
+          if key.length == 1
+            @filter_buffer += key
+            @tracks_pane.filter = @filter_buffer
+          end
+        end
+      end
+
       def dispatch(action)
         case action
         when :quit then @quit = true
@@ -213,6 +239,10 @@ module RubyPlayer
           on = @engine.toggle_skip_disliked
           @status_line.set_message("Skip disliked tracks: #{on ? 'ON' : 'OFF'}")
         when :add_path then @input_buffer = ""
+        when :filter_tracks
+          @active_pane = :tracks
+          @filter_before_edit = @tracks_pane.filter
+          @filter_buffer = @tracks_pane.filter.dup
         when :next_track
           @engine.skip
           @status_line.set_message("Skipped")
@@ -249,7 +279,10 @@ module RubyPlayer
           @status_line.set_message("Select a track in the Playback Queue to remove")
           return
         end
-        index = @tracks_pane.selected_track_index
+        selected = @tracks_pane.selected_queue_track
+        # Filtering changes display positions. Resolve selected object against
+        # live queue identity so removing visible row cannot delete hidden row.
+        index = @engine.queue_items.index { |track| track.equal?(selected) }
         if index.nil?
           @status_line.set_message("Select a track in the Playback Queue to remove")
           return
@@ -451,7 +484,9 @@ module RubyPlayer
                             h: content_h - 2, active: @active_pane == :tracks, theme: @theme)
         @playback_line.render(@screen, row: rows - 4, w: cols,
                               state: @engine.state, levels: @engine.levels, theme: @theme)
-        if @input_buffer
+        if @filter_buffer
+          @screen.put(rows - 3, 0, "Filter: #{@filter_buffer}_"[0, cols], fg: @theme[:accent])
+        elsif @input_buffer
           @screen.put(rows - 3, 0, "Add path: #{@input_buffer}_"[0, cols], fg: @theme[:accent])
         else
           stats = @library.folder_stats

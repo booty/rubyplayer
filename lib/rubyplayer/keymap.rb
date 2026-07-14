@@ -16,6 +16,7 @@ module RubyPlayer
         "ctrl_r" => "redo",
         "s" => "toggle_skip_disliked",
         "a" => "add_path",
+        "/" => "filter_tracks",
         "0" => "rate_0", "1" => "rate_1", "2" => "rate_2", "3" => "rate_3",
         "4" => "rate_4", "5" => "rate_5", "6" => "rate_6",
         "ctrl_c" => "quit",

@@ -11,6 +11,7 @@ class KeymapTest < Minitest::Test
     assert_equal :redo, k.action_for("ctrl_r", pane: :library)
     assert_equal :rate_3, k.action_for("3", pane: :tracks)
     assert_equal :quit, k.action_for("ctrl_c", pane: :library)
+    assert_equal :filter_tracks, k.action_for("/", pane: :tracks)
   end
 
   def test_pane_local_beats_global_and_matching_is_case_insensitive

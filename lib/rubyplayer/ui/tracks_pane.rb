@@ -1,7 +1,7 @@
 module RubyPlayer
   module UI
     class TracksPane
-      attr_reader :selection
+      attr_reader :selection, :filter
 
       def initialize(library:, config:, queue_source:, focus_source: -> { FocusSounds::ALL })
         @library = library
@@ -13,6 +13,8 @@ module RubyPlayer
         @scroll = 0
         @group_by_album = false
         @sort = nil
+        @filter = ""
+        @view_states = {}
         # Page-jump distance = the pane's height, captured at render time
         # (panes don't know their size otherwise; it changes on resize).
         # 10 is only the never-rendered fallback (tests, first keypress).
@@ -28,6 +30,7 @@ module RubyPlayer
       end
 
       def show(library_row)
+        save_view_state if @mode
         @mode = library_row.kind == :folder ? [:folder, library_row.folder["id"]] : library_row.kind
         # @group_by_album/@sort are the user's preference and are shared across
         # views (folder/history/favorites/queue) -- they are NOT reset here.
@@ -35,12 +38,30 @@ module RubyPlayer
         # a side effect of merely peeking the queue. Instead, apply_sort and
         # display_rows force the queue to render flat/unsorted regardless of
         # these flags (see below), so the stored preference survives the trip.
-        @selection = 0
-        @scroll = 0
-        reload!
+        state = @view_states.fetch(@mode, {})
+        @filter = state.fetch(:filter, "")
+        load_tracks
+        restore_view_state(state)
       end
 
       def reload!
+        identity = selected_identity
+        previous_selection = @selection
+        previous_scroll = @scroll
+        load_tracks
+        restore_selection(identity, previous_selection)
+        @scroll = previous_scroll
+      end
+
+      def filter=(value)
+        identity = selected_identity
+        @filter = value.to_s
+        restore_selection(identity, 0)
+      end
+
+      def clear_filter = self.filter = ""
+
+      def load_tracks
         # Focus reuses this pane's navigation and rendering shell, but its rows
         # carry FocusSound values rather than Track records. Keeping a distinct
         # row type prevents queue/rating/info actions from treating recipes as
@@ -55,7 +76,6 @@ module RubyPlayer
           else []
           end
         apply_sort
-        clamp_selection
       end
 
       def handle_action(action)
@@ -86,7 +106,7 @@ module RubyPlayer
       end
 
       def display_rows
-        return [{ type: :empty, text: empty_message }] if @tracks.empty?
+        return [{ type: :empty, text: empty_message }] if filtered_tracks.empty?
 
         # The queue is an ordered play list (see #show); album headers would
         # break the row-index-to-queue-index mapping that selected_track_index
@@ -110,11 +130,15 @@ module RubyPlayer
         row && row[:type] == :focus ? row[:focus_sound] : nil
       end
 
-      # Index of the selected row among :track rows only (headers don't
-      # count). In the queue view there are no headers, so this equals the
-      # queue position directly -- that's what callers removing from the
-      # live queue (App#dispatch :remove_from_queue) need.
+      def selected_queue_track
+        @mode == :queue ? selected_track : nil
+      end
+
+      # Resolve queue position from selected Track identity. Display indexes
+      # become unsafe once filtering can hide rows before selected item.
       def selected_track_index
+        return @tracks.index { |track| track.equal?(selected_track) } if @mode == :queue
+
         rows = display_rows
         row = rows[@selection]
         return nil unless row && row[:type] == :track
@@ -146,6 +170,8 @@ module RubyPlayer
       ITALIC_FIELDS = %w[artist artist?].freeze
 
       def empty_message
+        return "No matches — press / to edit filter" unless @filter.empty? || @tracks.empty?
+
         case @mode
         when :queue then "Queue empty — press N to add selected tracks"
         when :history then "No playback history yet"
@@ -188,21 +214,21 @@ module RubyPlayer
       end
 
       def flat_rows
-        @tracks.map do |t|
+        filtered_tracks.map do |t|
           { type: :track, text: @flat_template.render(t),
             segments: @flat_template.render_segments(t), track: t }
         end
       end
 
       def focus_rows
-        @tracks.map do |sound|
+        filtered_tracks.map do |sound|
           { type: :focus, text: sound.title,
             segments: [{ text: sound.title, field: "title" }], focus_sound: sound }
         end
       end
 
       def grouped_rows
-        groups = @tracks.group_by { |t| t.album.to_s }.sort_by { |album, _| album }
+        groups = filtered_tracks.group_by { |t| t.album.to_s }.sort_by { |album, _| album }
         groups.flat_map do |album, tracks|
           album_artist = tracks.map(&:artist).tally.max_by { |_, n| n }&.first
           [{ type: :header, text: album }] + tracks.map do |t|
@@ -224,6 +250,53 @@ module RubyPlayer
         when :number then @tracks.sort_by! { |t| [t.album.to_s, t.track_number || 0] }
         when :artist then @tracks.sort_by! { |t| [t.artist.to_s.downcase, t.title.to_s.downcase] }
         end
+      end
+
+      def filtered_tracks
+        query = @filter.strip.downcase
+        return @tracks if query.empty?
+
+        @tracks.select do |item|
+          values = if @mode == :focus
+                     [item.title]
+                   else
+                     [item.title, item.artist, item.album, item.composer,
+                      item.physical_path, item.archive_entry]
+                   end
+          values.compact.any? { |value| value.to_s.downcase.include?(query) }
+        end
+      end
+
+      def selected_identity
+        row = display_rows[@selection]
+        case row&.dig(:type)
+        when :track then [:track, row[:track].id]
+        when :focus then [:focus, row[:focus_sound].id]
+        end
+      end
+
+      def save_view_state
+        @view_states[@mode] = {
+          filter: @filter, selection_identity: selected_identity,
+          selection: @selection, scroll: @scroll
+        }
+      end
+
+      def restore_view_state(state)
+        restore_selection(state[:selection_identity], state.fetch(:selection, 0))
+        @scroll = state.fetch(:scroll, 0)
+      end
+
+      def restore_selection(identity, fallback)
+        rows = display_rows
+        match = rows.index do |row|
+          case identity&.first
+          when :track then row[:type] == :track && row[:track].id == identity[1]
+          when :focus then row[:type] == :focus && row[:focus_sound].id == identity[1]
+          end
+        end
+        @selection = match || fallback
+        clamp_selection
       end
 
       def move_selection(delta)
