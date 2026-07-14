@@ -140,6 +140,54 @@ class TracksPaneTest < Minitest::Test
     assert_equal %w[Queued], titles
   end
 
+  def test_empty_queue_renders_enqueue_guidance
+    @pane.show(RubyPlayer::UI::LibraryPane::Row.new(kind: :queue, depth: 0))
+
+    assert_equal [{ type: :empty, text: "Queue empty — press N to add selected tracks" }],
+                 @pane.display_rows
+  end
+
+  def test_empty_history_and_favorites_render_contextual_guidance
+    @pane.show(RubyPlayer::UI::LibraryPane::Row.new(kind: :history, depth: 0))
+    assert_equal "No playback history yet", @pane.display_rows.first[:text]
+
+    @pane.show(RubyPlayer::UI::LibraryPane::Row.new(kind: :favorites, depth: 0))
+    assert_equal "No favorites yet — press 1–6 while a track plays",
+                 @pane.display_rows.first[:text]
+  end
+
+  def test_empty_folder_renders_generic_view_guidance
+    empty_folder = @lib.upsert_folder(parent_id: nil, name: "empty", path: "/empty", kind: "dir")
+    row = RubyPlayer::UI::LibraryPane::Row.new(
+      kind: :folder, folder: { "id" => empty_folder }, depth: 0
+    )
+
+    @pane.show(row)
+
+    assert_equal "No tracks in this view", @pane.display_rows.first[:text]
+  end
+
+  def test_empty_guidance_renders_muted_without_becoming_a_track
+    @pane.show(RubyPlayer::UI::LibraryPane::Row.new(kind: :queue, depth: 0))
+    screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 3, cols: 60)
+
+    @pane.render(screen, x: 0, y: 0, w: 60, h: 3, active: true,
+                 theme: RubyPlayer::Theme::DEFAULT)
+
+    assert_includes screen.flush, "Queue empty"
+    assert_nil @pane.selected_track
+  end
+
+  def test_queue_and_focus_sort_actions_return_disabled_reason
+    @pane.show(RubyPlayer::UI::LibraryPane::Row.new(kind: :queue, depth: 0))
+    assert_equal [:disabled, "Queue order cannot be sorted or grouped"],
+                 @pane.handle_action(:sort_title)
+
+    @pane.show(RubyPlayer::UI::LibraryPane::Row.new(kind: :focus, depth: 0))
+    assert_equal [:disabled, "Focus sounds cannot be sorted or grouped"],
+                 @pane.handle_action(:toggle_group)
+  end
+
   def test_focus_view_lists_catalog_in_declared_order
     focus = RubyPlayer::FocusSounds::ALL
     pane = RubyPlayer::UI::TracksPane.new(library: @lib, config: @config,

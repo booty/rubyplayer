@@ -284,7 +284,10 @@ module RubyPlayer
       # never reached while the Library pane is active.
       def request_show_track_info
         track = @tracks_pane.selected_track
-        return unless track
+        unless track
+          @status_line.set_message("Select a track to view info")
+          return
+        end
         @info_track = track
       end
 
@@ -307,7 +310,10 @@ module RubyPlayer
           @library_pane.handle_action(action)
           @tracks_pane.show(@library_pane.selected) if @library_pane.selected != before
         else
-          @tracks_pane.handle_action(action)
+          outcome = @tracks_pane.handle_action(action)
+          # Panes describe unavailable actions but do not own StatusLine;
+          # App remains sole coordinator for transient user-facing feedback.
+          @status_line.set_message(outcome[1]) if outcome.is_a?(Array) && outcome[0] == :disabled
         end
       end
 
@@ -370,7 +376,10 @@ module RubyPlayer
 
       def rate_current(rating)
         track = @engine.state[:track]
-        return unless track
+        unless track
+          @status_line.set_message("Play a library track before rating")
+          return
+        end
         @library.set_rating(track.id, rating)
         @status_line.set_message(rating ? "Rated #{rating}/6" : "Rating cleared")
         @tracks_pane.reload!

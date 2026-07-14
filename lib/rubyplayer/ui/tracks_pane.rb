@@ -64,7 +64,8 @@ module RubyPlayer
         # (see below), so honoring these here would just flip flags with no
         # visible effect -- swallow them instead of confusing the user.
         if %i[queue focus].include?(@mode) && %i[toggle_group sort_title sort_number sort_artist].include?(action)
-          return true
+          noun = @mode == :queue ? "Queue order" : "Focus sounds"
+          return [:disabled, "#{noun} cannot be sorted or grouped"]
         end
         case action
         when :nav_up then move_selection(-1)
@@ -85,6 +86,8 @@ module RubyPlayer
       end
 
       def display_rows
+        return [{ type: :empty, text: empty_message }] if @tracks.empty?
+
         # The queue is an ordered play list (see #show); album headers would
         # break the row-index-to-queue-index mapping that selected_track_index
         # relies on, so ignore @group_by_album here regardless of its value
@@ -130,6 +133,8 @@ module RubyPlayer
           screen.put(y + i, x, " " * w, bg: bg) if selected
           if row[:type] == :header
             screen.put(y + i, x, header_line(row[:text], w), fg: theme[:info], bg: bg, bold: true)
+          elsif row[:type] == :empty
+            screen.put(y + i, x, row[:text][0, w], fg: theme[:text_muted])
           else
             render_track_row(screen, row, x, y + i, w, selected: selected, bg: bg, theme: theme)
           end
@@ -139,6 +144,15 @@ module RubyPlayer
       private
 
       ITALIC_FIELDS = %w[artist artist?].freeze
+
+      def empty_message
+        case @mode
+        when :queue then "Queue empty — press N to add selected tracks"
+        when :history then "No playback history yet"
+        when :favorites then "No favorites yet — press 1–6 while a track plays"
+        else "No tracks in this view"
+        end
+      end
 
       # Renders row[:segments] (see Template#render_segments) one field at a
       # time instead of one big string, so title/artist/duration can each

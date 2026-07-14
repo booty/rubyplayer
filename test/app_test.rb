@@ -358,6 +358,34 @@ class AppTest < Minitest::Test
     assert_nil @app.info_track
   end
 
+  def test_show_track_info_without_a_selected_track_explains_why
+    select_tracks_for(:queue)
+
+    @app.handle_key("i")
+    @app.render
+
+    assert_includes @app.instance_variable_get(:@io_out).string,
+                    "Select a track to view info"
+  end
+
+  def test_rating_without_a_playing_library_track_explains_why
+    @app.handle_key("1")
+    @app.render
+
+    assert_includes @app.instance_variable_get(:@io_out).string,
+                    "Play a library track before rating"
+  end
+
+  def test_disabled_queue_sort_explains_why
+    select_tracks_for(:queue)
+
+    @app.handle_key("Y")
+    @app.render
+
+    assert_includes @app.instance_variable_get(:@io_out).string,
+                    "Queue order cannot be sorted or grouped"
+  end
+
   def test_escape_dismisses_the_track_info_modal
     4.times { @app.handle_key("down") }
     @app.handle_key("tab")
