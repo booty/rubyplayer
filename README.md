@@ -31,6 +31,15 @@ Any paths given on the command line are scanned into the library on startup, in 
 
 Select **Focus** in the Library pane, then choose a noise recipe in Tracks and press Enter to play it indefinitely. Focus sounds use SoX, are not added to the queue or library history, and stop when normal playback begins.
 
+### Navigation and views
+
+- Press `/` to filter current Tracks view live across title, artist, album, composer, and path. Enter accepts filter; Escape restores previous filter. Each view remembers its filter, cursor, and scroll position.
+- Tracks pane title shows current source or folder breadcrumb plus visible item count. Long breadcrumbs keep leaf name and count visible.
+- Pane-edge scrollbar appears only when rows overflow viewport.
+- Terminals narrower than 72 columns show one full-width pane; Tab switches panes. Wider terminals retain two-pane layout.
+- Fixed smart views expose **Recently Added**, **Unrated**, **Missing**, **Failed to Scan**, and **Most Played** track lists.
+- Playback footer shows current track timing and queued next track. During Focus playback it identifies active recipe, infinite duration, paused queue, and next queued track.
+
 ## Testing
 
 ```sh
@@ -79,7 +88,7 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | `config.rb` | `ConfigStore`: loads `~/.config/rubyplayer/config.toml`, deep-merges it over `DEFAULTS`, and supports hot-reload (`reload_if_changed`, polled by the main loop) when the file's mtime changes. Invalid TOML never crashes the app — defaults win. Also defines `RubyPlayer.config_path`, `data_dir`, and `logger`. |
 | `database.rb` | `Database`: owns the SQLite connection (WAL mode, foreign keys on), the schema (`folders`, `tracks`, `track_metadata`, `playback_history`), and a single-writer-mutex `write`/multi-reader `read` API. Backs up the existing DB file on open and rebuilds from scratch if the schema version doesn't match. |
 | `track.rb` | `Track`: a keyword-init `Struct` mirroring a `tracks` row, with `Track.from_row` to build one from a SQLite result hash. This is the value object passed around the whole playback pipeline (queue, engine, UI panes). |
-| `library.rb` | `Library`: the query/mutation layer over `Database` — upserting folders/tracks during a scan, reading them back for display (`roots`, `children_of`, `tracks_under`, `favorites`, `history`), rating tracks, and soft-deleting a folder subtree (`remove_folder!`, `mark_missing`). No SQL lives outside this file (and `database.rb`'s schema). |
+| `library.rb` | `Library`: the query/mutation layer over `Database` — upserting folders/tracks during a scan, reading folders plus source/smart views (`favorites`, `history`, Recently Added, Unrated, Missing, Failed to Scan, Most Played), rating tracks, and soft-deleting folder subtrees. No SQL lives outside this file (and `database.rb`'s schema). |
 | `scanner.rb` | `Scanner`: phase 1 of a library scan. Walks a directory tree (or a single file), diffs what it finds against what the DB already knows (by mtime/size), and emits `WorkItem`s for anything new or changed — without opening a single music file. Archives are stat-diffed as a single unit (one mtime check covers every entry inside). Also marks anything that's vanished from disk as missing. |
 | `extractor_pool.rb` | `ExtractorPool`: phase 2 of a scan. A bounded thread pool (size configurable, default = CPU core count) that opens each `WorkItem` through the right backend to extract metadata, expands multi-subtune files into virtual folders + child tracks, and flags anything undecodable rather than losing it. Archives are unpacked via `ArchiveCache` and their entries (including nested archives and multi-subtune files) scanned recursively. |
 | `archive_cache.rb` | `ArchiveCache`: extracts `.zip`/`.7z`/`.rar` containers into a content-addressed on-disk cache (keyed by path+mtime+size) so the FFI backends — which can only read real files — can decode entries stored inside archives. Uses `bsdtar` (libarchive, bundled with macOS), which reads all three formats and refuses path-traversal entry names. `materialize` resolves a track's `(physical_path, archive_entry)` pair to a real extracted file, chaining through nested archives. The cache directory is safe to delete at any time. |
@@ -106,9 +115,9 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 |---|---|
 | `app.rb` | `UI::App`: wires every other component together and owns the main loop — key dispatch, event handling, config hot-reload, and the top-level `render`. This is the natural place to look first to see how a keypress becomes an action and how state changes reach the screen. |
 | `screen.rb` | `Screen`: the double-buffered renderer described above (`put`/`clear_back`/`flush`), plus truecolor and named ANSI color support. Has no knowledge of panes, tracks, or layout — purely a drawing primitive. |
-| `library_pane.rb` | `LibraryPane`: the left-hand tree view — three fixed special rows (Playback Queue, History, Favorite Tracks) followed by the folder tree, flattened into one navigable row list so cursor movement doesn't need to special-case "special" vs. "folder" rows. |
-| `tracks_pane.rb` | `TracksPane`: the right-hand list view. Shows the tracks under whatever's selected in the library pane (or the queue/history/favorites), with optional album grouping and sorting — except when showing the live Playback Queue, which always renders flat and unsorted so on-screen row index matches actual queue position. |
-| `bottom_lines.rb` | Three small renderers for the bottom of the screen: `PlaybackLine` (now-playing track + EQ bars), `StatusLine` (transient status messages with a timeout), and `HotkeyLine` (context-sensitive keybinding hints, sourced from the active `Keymap`). |
+| `library_pane.rb` | `LibraryPane`: left-hand source tree with queue/history/favorites/Focus, five smart views, and folder hierarchy. Owns folder breadcrumbs, selection, scrolling, and overflow indicator. |
+| `tracks_pane.rb` | `TracksPane`: right-hand item list for every source. Owns live filtering, per-view cursor/scroll memory, dynamic titles/counts, grouping/sorting where valid, and overflow indicator. Queue remains flat and ordered; filtered removal resolves underlying track identity. |
+| `bottom_lines.rb` | Three bottom renderers: `PlaybackLine` (normal/Focus context, next queue item, EQ bars), `StatusLine` (transient feedback), and `HotkeyLine` (context-sensitive bindings). |
 | `key_decoder.rb` | `KeyDecoder`: turns raw bytes read from a raw-mode terminal into the normalized key-name strings `Keymap` understands (arrow-key escape sequences, Enter, Tab, Ctrl-combinations, etc). |
 
 ### Native audio (`ext/rp_audio/`)
