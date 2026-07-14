@@ -39,6 +39,27 @@ class TracksPaneTest < Minitest::Test
     assert_equal 3, titles.size
   end
 
+  def test_title_contains_breadcrumb_and_visible_count
+    @pane.show(@folder_row, breadcrumb: "Music / Sega")
+
+    assert_equal "Tracks · Music / Sega · 3", @pane.title
+    @pane.filter = "bravo"
+    assert_equal "Tracks · Music / Sega · 1", @pane.title
+  end
+
+  def test_special_view_title_contains_name_and_count
+    @queue = @lib.tracks_under(@folder)
+    @pane.show(RubyPlayer::UI::LibraryPane::Row.new(kind: :queue, depth: 0))
+
+    assert_equal "Playback Queue · 3", @pane.title
+  end
+
+  def test_title_left_truncates_to_preserve_leaf_and_count
+    @pane.show(@folder_row, breadcrumb: "A Very Long Root / Sega")
+
+    assert_equal "…oot / Sega · 3", @pane.title(max_width: 15)
+  end
+
   def test_filter_matches_track_metadata_case_insensitively
     @pane.show(@folder_row)
 
@@ -133,6 +154,18 @@ class TracksPaneTest < Minitest::Test
     out = screen.flush
     assert_includes out, "--- Apple #{'-' * (40 - '--- Apple '.size)}"
     assert_includes out, "--- Zebra #{'-' * (40 - '--- Zebra '.size)}"
+  end
+
+  def test_render_draws_proportional_scrollbar_when_rows_overflow
+    @pane.show(@folder_row)
+    screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 2, cols: 20)
+
+    @pane.render(screen, x: 0, y: 0, w: 20, h: 2, active: true,
+                 theme: RubyPlayer::Theme::DEFAULT)
+
+    edge = screen.instance_variable_get(:@back).map { |row| row[19].ch }
+    assert_includes edge, "█"
+    assert_includes edge, "│"
   end
 
   def test_track_row_styles_title_bold_artist_italic_duration_muted

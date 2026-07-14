@@ -30,13 +30,21 @@ module RubyPlayer
       end
 
       def rebuild!
+        @breadcrumbs = {}
         @rows = SPECIALS.map { |kind, _| Row.new(kind: kind, depth: 0) }
-        @library.roots.each { |f| append_folder(f, 0) }
+        @library.roots.each { |f| append_folder(f, 0, []) }
         @selection = @selection.clamp(0, [@rows.size - 1, 0].max)
       end
 
       def rows = @rows
       def selected = @rows[@selection]
+
+      def breadcrumb_for(row)
+        return "" unless row
+        return SPECIALS.to_h.fetch(row.kind) unless row.kind == :folder
+
+        @breadcrumbs.fetch(row.folder["id"], row.folder["name"].to_s)
+      end
 
       def handle_action(action)
         case action
@@ -55,29 +63,44 @@ module RubyPlayer
       def render(screen, x:, y:, w:, h:, active:, theme:)
         @page_size = h
         follow_selection(h)
+        scrollbar = @rows.size > h
+        content_w = scrollbar ? w - 1 : w
         h.times do |i|
           row = @rows[@scroll + i] or break
           selected = (@scroll + i) == @selection
           bg = selected ? (active ? theme[:selection_bg] : theme[:surface_alt]) : nil
           fg = selected ? theme[:selection_text] : theme[:text]
-          screen.put(y + i, x, " " * w, bg: bg) if selected
+          screen.put(y + i, x, " " * content_w, bg: bg) if selected
           label, suffix = label_for(row)
           indent = "  " * row.depth
-          screen.put(y + i, x, "#{indent}#{label}"[0, w], fg: fg, bg: bg, bold: selected)
+          screen.put(y + i, x, "#{indent}#{label}"[0, content_w], fg: fg, bg: bg, bold: selected)
           unless suffix.empty?
             col = x + indent.size + label.size + 1
-            screen.put(y + i, col, suffix[0, [w - (col - x), 0].max],
+            screen.put(y + i, col, suffix[0, [content_w - (col - x), 0].max],
                        fg: selected ? fg : theme[:text_muted], bg: bg)
           end
         end
+        draw_scrollbar(screen, x: x + w - 1, y: y, h: h, total: @rows.size,
+                       theme: theme) if scrollbar
       end
 
       private
 
-      def append_folder(folder, depth)
+      def append_folder(folder, depth, ancestors)
+        path = ancestors + [folder["name"]]
+        @breadcrumbs[folder["id"]] = path.join(" / ")
         @rows << Row.new(kind: :folder, folder: folder, depth: depth)
         return unless @expanded[folder["id"]]
-        @library.children_of(folder["id"]).each { |c| append_folder(c, depth + 1) }
+        @library.children_of(folder["id"]).each { |c| append_folder(c, depth + 1, path) }
+      end
+
+      def draw_scrollbar(screen, x:, y:, h:, total:, theme:)
+        thumb_size = [h * h / total, 1].max
+        thumb_start = @scroll * (h - thumb_size) / [total - h, 1].max
+        h.times do |offset|
+          glyph = offset.between?(thumb_start, thumb_start + thumb_size - 1) ? "█" : "│"
+          screen.put(y + offset, x, glyph, fg: theme[:text_muted])
+        end
       end
 
       def toggle_expand(open)

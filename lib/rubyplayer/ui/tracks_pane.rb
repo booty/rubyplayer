@@ -29,9 +29,10 @@ module RubyPlayer
         @history_limit = config["library", "history_limit"]
       end
 
-      def show(library_row)
+      def show(library_row, breadcrumb: nil)
         save_view_state if @mode
         @mode = library_row.kind == :folder ? [:folder, library_row.folder["id"]] : library_row.kind
+        @breadcrumb = breadcrumb || library_row.folder&.fetch("name", nil)
         # @group_by_album/@sort are the user's preference and are shared across
         # views (folder/history/favorites/queue) -- they are NOT reset here.
         # Resetting them on entering :queue used to destroy a folder's sort as
@@ -42,6 +43,22 @@ module RubyPlayer
         @filter = state.fetch(:filter, "")
         load_tracks
         restore_view_state(state)
+      end
+
+      def title(max_width: nil)
+        label = case @mode
+                when :queue then "Playback Queue"
+                when :history then "History"
+                when :favorites then "Favorite Tracks"
+                when :focus then "Focus"
+                when Array then ["Tracks", @breadcrumb].compact.join(" · ")
+                else "Tracks"
+                end
+        text = "#{label} · #{filtered_tracks.size}"
+        return text unless max_width && text.size > max_width
+        return text[-max_width, max_width] if max_width <= 1
+
+        "…#{text[-(max_width - 1), max_width - 1]}"
       end
 
       def reload!
@@ -150,19 +167,23 @@ module RubyPlayer
         @page_size = h
         rows = display_rows
         follow_selection(h, rows.size)
+        scrollbar = rows.size > h
+        content_w = scrollbar ? w - 1 : w
         h.times do |i|
           row = rows[@scroll + i] or break
           selected = (@scroll + i) == @selection
           bg = selected ? (active ? theme[:selection_bg] : theme[:surface_alt]) : nil
-          screen.put(y + i, x, " " * w, bg: bg) if selected
+          screen.put(y + i, x, " " * content_w, bg: bg) if selected
           if row[:type] == :header
-            screen.put(y + i, x, header_line(row[:text], w), fg: theme[:info], bg: bg, bold: true)
+            screen.put(y + i, x, header_line(row[:text], content_w), fg: theme[:info], bg: bg, bold: true)
           elsif row[:type] == :empty
-            screen.put(y + i, x, row[:text][0, w], fg: theme[:text_muted])
+            screen.put(y + i, x, row[:text][0, content_w], fg: theme[:text_muted])
           else
-            render_track_row(screen, row, x, y + i, w, selected: selected, bg: bg, theme: theme)
+            render_track_row(screen, row, x, y + i, content_w, selected: selected, bg: bg, theme: theme)
           end
         end
+        draw_scrollbar(screen, x: x + w - 1, y: y, h: h, total: rows.size,
+                       theme: theme) if scrollbar
       end
 
       private
@@ -297,6 +318,17 @@ module RubyPlayer
         end
         @selection = match || fallback
         clamp_selection
+      end
+
+      def draw_scrollbar(screen, x:, y:, h:, total:, theme:)
+        # Thumb area is viewport/total; travel maps current scroll across
+        # remaining track so first and last pages reach opposite pane edges.
+        thumb_size = [h * h / total, 1].max
+        thumb_start = @scroll * (h - thumb_size) / [total - h, 1].max
+        h.times do |offset|
+          glyph = offset.between?(thumb_start, thumb_start + thumb_size - 1) ? "█" : "│"
+          screen.put(y + offset, x, glyph, fg: theme[:text_muted])
+        end
       end
 
       def move_selection(delta)

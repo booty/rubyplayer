@@ -49,6 +49,15 @@ class LibraryPaneTest < Minitest::Test
     assert_equal 5, @pane.rows.size
   end
 
+  def test_breadcrumb_uses_folder_ancestry
+    4.times { @pane.handle_action(:nav_down) }
+    @pane.handle_action(:expand)
+    @pane.handle_action(:nav_down)
+
+    assert_equal "Music / Sega", @pane.breadcrumb_for(@pane.selected)
+    assert_equal "Playback Queue", @pane.breadcrumb_for(@pane.rows.first)
+  end
+
   def test_nav_clamps
     @pane.handle_action(:nav_up)
     assert_equal 0, @pane.selection
@@ -94,5 +103,19 @@ class LibraryPaneTest < Minitest::Test
     assert_includes out, "Playback Queue"
     assert_includes out, "Music"
     assert_includes out, "(1)"
+  end
+
+  def test_render_draws_scrollbar_only_when_rows_overflow
+    short = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 5, cols: 20)
+    @pane.render(short, x: 0, y: 0, w: 20, h: 5, active: true,
+                 theme: RubyPlayer::Theme::DEFAULT)
+    refute_includes short.instance_variable_get(:@back).map { |row| row[19].ch }, "█"
+
+    overflowing = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 2, cols: 20)
+    @pane.render(overflowing, x: 0, y: 0, w: 20, h: 2, active: true,
+                 theme: RubyPlayer::Theme::DEFAULT)
+    edge = overflowing.instance_variable_get(:@back).map { |row| row[19].ch }
+    assert_includes edge, "█"
+    assert_includes edge, "│"
   end
 end

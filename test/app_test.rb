@@ -92,6 +92,35 @@ class AppTest < Minitest::Test
     assert_equal :tracks, @app.active_pane
   end
 
+  def test_narrow_layout_renders_only_active_pane
+    out = StringIO.new
+    @app.instance_variable_set(:@io_out, out)
+    @app.instance_variable_set(:@screen, RubyPlayer::UI::Screen.new(out: out, rows: 20, cols: 71))
+
+    @app.render
+    library_frame = @app.instance_variable_get(:@screen).instance_variable_get(:@back)
+    assert_includes library_frame[0].map(&:ch).join, "Library"
+    refute_includes library_frame[0].map(&:ch).join, "Playback Queue"
+
+    @app.handle_key("tab")
+    @app.render
+    tracks_frame = @app.instance_variable_get(:@screen).instance_variable_get(:@back)
+    assert_includes tracks_frame[0].map(&:ch).join, "Playback Queue · 0"
+    refute_includes tracks_frame[0].map(&:ch).join, "Library"
+  end
+
+  def test_two_pane_layout_starts_at_72_columns
+    out = StringIO.new
+    @app.instance_variable_set(:@io_out, out)
+    @app.instance_variable_set(:@screen, RubyPlayer::UI::Screen.new(out: out, rows: 20, cols: 72))
+
+    @app.render
+    title_row = @app.instance_variable_get(:@screen).instance_variable_get(:@back)[0].map(&:ch).join
+
+    assert_includes title_row, "Library"
+    assert_includes title_row, "Playback Queue · 0"
+  end
+
   def test_undo_restores_queue_and_selects_queue
     4.times { @app.handle_key("down") }
     @app.handle_key("n")

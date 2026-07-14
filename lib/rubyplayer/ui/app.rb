@@ -7,6 +7,7 @@ require_relative "../playback_engine"
 module RubyPlayer
   module UI
     class App
+      SINGLE_PANE_MAX_WIDTH = 71
       RATE_ACTIONS = { rate_0: nil, rate_1: 1, rate_2: 2, rate_3: 3,
                        rate_4: 4, rate_5: 5, rate_6: 6 }.freeze
 
@@ -66,7 +67,7 @@ module RubyPlayer
         @resized = false
         @engine.start
         @library_pane.rebuild!
-        @tracks_pane.show(@library_pane.selected)
+        show_selected_tracks
       end
 
       def quit? = @quit
@@ -309,7 +310,7 @@ module RubyPlayer
         track_ids = @library.remove_folder!(folder["id"])
         @engine.remove_track_ids(track_ids) unless track_ids.empty?
         @library_pane.rebuild!
-        @tracks_pane.show(@library_pane.selected)
+        show_selected_tracks
         @status_line.set_message("Removed \"#{folder['name']}\" from library")
       end
 
@@ -341,7 +342,7 @@ module RubyPlayer
         if @active_pane == :library
           before = @library_pane.selected
           @library_pane.handle_action(action)
-          @tracks_pane.show(@library_pane.selected) if @library_pane.selected != before
+          show_selected_tracks if @library_pane.selected != before
         else
           outcome = @tracks_pane.handle_action(action)
           # Panes describe unavailable actions but do not own StatusLine;
@@ -420,7 +421,7 @@ module RubyPlayer
 
       def select_queue
         @library_pane.handle_action(:select_queue)
-        @tracks_pane.show(@library_pane.selected)
+        show_selected_tracks
         @active_pane = :library
       end
 
@@ -475,13 +476,7 @@ module RubyPlayer
         rows = @screen.rows
         cols = @screen.cols
         content_h = rows - 4 # playback + status + 2-row hotkey hint
-        lib_w = cols * @config["ui", "library_pane_percent"] / 100
-        draw_box(0, 0, lib_w, content_h, active: @active_pane == :library, title: "Library")
-        draw_box(lib_w, 0, cols - lib_w, content_h, active: @active_pane == :tracks, title: "Tracks")
-        @library_pane.render(@screen, x: 1, y: 1, w: lib_w - 2, h: content_h - 2,
-                             active: @active_pane == :library, theme: @theme)
-        @tracks_pane.render(@screen, x: lib_w + 1, y: 1, w: cols - lib_w - 2,
-                            h: content_h - 2, active: @active_pane == :tracks, theme: @theme)
+        render_panes(cols, content_h)
         @playback_line.render(@screen, row: rows - 4, w: cols,
                               state: @engine.state, levels: @engine.levels, theme: @theme)
         if @filter_buffer
@@ -500,6 +495,39 @@ module RubyPlayer
         render_help_modal if @show_help
         render_theme_picker_modal if @theme_picker
         @screen.flush
+      end
+
+      def render_panes(cols, content_h)
+        # Below 72 columns, two bordered panes leave too little usable text.
+        # Keep full-width active pane and let existing Tab binding switch it.
+        if cols <= SINGLE_PANE_MAX_WIDTH
+          if @active_pane == :library
+            draw_box(0, 0, cols, content_h, active: true, title: "Library")
+            @library_pane.render(@screen, x: 1, y: 1, w: cols - 2, h: content_h - 2,
+                                 active: true, theme: @theme)
+          else
+            title = @tracks_pane.title(max_width: cols - 6)
+            draw_box(0, 0, cols, content_h, active: true, title: title)
+            @tracks_pane.render(@screen, x: 1, y: 1, w: cols - 2, h: content_h - 2,
+                                active: true, theme: @theme)
+          end
+          return
+        end
+
+        lib_w = cols * @config["ui", "library_pane_percent"] / 100
+        tracks_w = cols - lib_w
+        draw_box(0, 0, lib_w, content_h, active: @active_pane == :library, title: "Library")
+        draw_box(lib_w, 0, tracks_w, content_h, active: @active_pane == :tracks,
+                 title: @tracks_pane.title(max_width: tracks_w - 6))
+        @library_pane.render(@screen, x: 1, y: 1, w: lib_w - 2, h: content_h - 2,
+                             active: @active_pane == :library, theme: @theme)
+        @tracks_pane.render(@screen, x: lib_w + 1, y: 1, w: tracks_w - 2,
+                            h: content_h - 2, active: @active_pane == :tracks, theme: @theme)
+      end
+
+      def show_selected_tracks
+        row = @library_pane.selected
+        @tracks_pane.show(row, breadcrumb: @library_pane.breadcrumb_for(row))
       end
 
       # Screen has no z-order/layers (see Screen#put) -- drawing this last in
