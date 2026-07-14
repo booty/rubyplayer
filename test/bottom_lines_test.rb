@@ -18,6 +18,59 @@ class BottomLinesTest < Minitest::Test
     assert_includes out, glyphs["eq_chars"][-1] # full-level bar char present
   end
 
+  def test_playback_line_shows_next_track_while_playing
+    line = RubyPlayer::UI::PlaybackLine.new(glyphs: glyphs)
+    next_track = RubyPlayer::Track.new(title: "Bubble Man")
+    state = { track: track, next_track: next_track, playing: true, paused: false,
+              position_ms: 65_000, focus_sound: nil }
+
+    line.render(screen, row: 0, w: 60, state: state, levels: [], theme: theme)
+
+    assert_includes screen.flush, "Next: Bubble Man"
+  end
+
+  def test_playback_line_shows_focus_and_paused_queue
+    line = RubyPlayer::UI::PlaybackLine.new(glyphs: glyphs)
+    sound = RubyPlayer::FocusSounds::ALL.first
+    next_track = RubyPlayer::Track.new(title: "Bubble Man")
+    state = { track: nil, next_track: next_track, focus_sound: sound,
+              playing: false, paused: false, position_ms: 0 }
+
+    line.render(screen, row: 0, w: 60, state: state, levels: [], theme: theme)
+    out = screen.flush
+
+    assert_includes out, "Focus"
+    assert_includes out, sound.title
+    assert_includes out, "∞"
+    assert_includes out, "Queue paused"
+    assert_includes out, "Next: Bubble Man"
+  end
+
+  def test_playback_line_shows_queued_next_when_stopped
+    line = RubyPlayer::UI::PlaybackLine.new(glyphs: glyphs)
+    next_track = RubyPlayer::Track.new(title: "Bubble Man")
+    state = { track: nil, next_track: next_track, focus_sound: nil,
+              playing: false, paused: false, position_ms: 0 }
+
+    line.render(screen, row: 0, w: 60, state: state, levels: [], theme: theme)
+
+    assert_includes screen.flush, "stopped · Next: Bubble Man"
+  end
+
+  def test_playback_line_truncates_context_before_eq_bars
+    line = RubyPlayer::UI::PlaybackLine.new(glyphs: glyphs)
+    narrow = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 3, cols: 24)
+    next_track = RubyPlayer::Track.new(title: "A Very Long Upcoming Track")
+    state = { track: track, next_track: next_track, focus_sound: nil,
+              playing: true, paused: false, position_ms: 65_000 }
+
+    line.render(narrow, row: 0, w: 24, state: state, levels: [1.0, 1.0], theme: theme)
+    back = narrow.instance_variable_get(:@back)[0].map(&:ch).join
+
+    assert_equal 24, back.size
+    assert_equal glyphs["eq_chars"][-1] * 2, back[-2, 2]
+  end
+
   def test_playback_line_stopped
     line = RubyPlayer::UI::PlaybackLine.new(glyphs: glyphs)
     line.render(screen, row: 0, w: 60,

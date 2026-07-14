@@ -177,6 +177,43 @@ class PlaybackEngineTest < Minitest::Test
     @engine.stop_focus
   end
 
+  def test_state_exposes_focus_sound_and_queued_track
+    queued = make_track("shantae.gbs")
+    @engine.enqueue_end([queued])
+    sound = RubyPlayer::FocusSounds::ALL.first
+
+    @engine.play_focus(sound)
+    state = @engine.state
+
+    assert_equal sound, state[:focus_sound]
+    assert_equal queued.id, state[:next_track].id
+    assert_nil state[:track]
+  ensure
+    @engine.stop_focus
+  end
+
+  def test_state_exposes_track_after_current_as_next
+    first = make_track("shantae.gbs")
+    second = make_track("shantae.gbs", subtune: 1)
+    @engine.enqueue_now([first, second])
+    wait_for_event(:track_started)
+
+    state = @engine.state
+
+    assert_nil state[:focus_sound]
+    assert_equal second.id, state[:next_track].id
+  end
+
+  def test_state_exposes_queue_head_as_next_while_stopped
+    queued = make_track("shantae.gbs")
+    @engine.enqueue_end([queued])
+
+    state = @engine.state
+
+    assert_nil state[:focus_sound]
+    assert_equal queued.id, state[:next_track].id
+  end
+
   def test_plays_track_stored_inside_an_archive
     zip = File.join(FIXTURES, "musha.zip")
     id = @lib.upsert_track(folder_id: @folder, physical_path: zip,

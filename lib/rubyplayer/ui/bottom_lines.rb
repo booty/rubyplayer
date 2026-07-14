@@ -6,20 +6,31 @@ module RubyPlayer
       end
 
       def render(screen, row:, w:, state:, levels:, theme:)
-        if state[:track].nil?
-          screen.put(row, 0, "#{@glyphs['pause']} stopped", fg: theme[:text_muted])
-          return
-        end
-        t = state[:track]
-        icon = state[:paused] ? @glyphs["pause"] : @glyphs["play"]
-        time = "#{fmt(state[:position_ms])}/#{fmt(t.duration_ms)}"
-        text = "#{icon} #{t.title}#{t.artist ? " — #{t.artist}" : ''}  #{time}"
-        bars = eq_bars(levels)
-        screen.put(row, 0, text[0, w - bars.size - 1], fg: theme[:primary], bold: true)
-        screen.put(row, w - bars.size, bars, fg: theme[:success])
+        text, color = playback_text(state, theme)
+        bars = eq_bars(levels)[0, w]
+        # EQ remains anchored at right edge. Context yields first on narrow
+        # terminals because clipped labels are less harmful than moving meters.
+        text_width = [w - bars.size - (bars.empty? ? 0 : 1), 0].max
+        screen.put(row, 0, text[0, text_width], fg: color, bold: true)
+        screen.put(row, w - bars.size, bars, fg: theme[:success]) unless bars.empty?
       end
 
       private
+
+      def playback_text(state, theme)
+        next_text = state[:next_track] ? " · Next: #{state[:next_track].title}" : ""
+        if state[:focus_sound]
+          ["Focus — #{state[:focus_sound].title} ∞ Queue paused#{next_text}", theme[:primary]]
+        elsif state[:track]
+          track = state[:track]
+          icon = state[:paused] ? @glyphs["pause"] : @glyphs["play"]
+          time = "#{fmt(state[:position_ms])}/#{fmt(track.duration_ms)}"
+          artist = track.artist ? " — #{track.artist}" : ""
+          ["#{icon} #{track.title}#{artist}  #{time}#{next_text}", theme[:primary]]
+        else
+          ["#{@glyphs['pause']} stopped#{next_text}", theme[:text_muted]]
+        end
+      end
 
       def eq_bars(levels)
         chars = @glyphs["eq_chars"]
