@@ -3,9 +3,10 @@ require_relative "audio_format"
 
 module RubyPlayer
   # FFI turns these Ruby method calls into calls to functions exported by the
-  # bundled C library. The arrays describe each function's C argument types;
-  # the final symbol is its return type. `blocking: true` releases Ruby's GVL
-  # while C copies samples into the ring buffer, so other Ruby threads may run.
+  # bundled C library. Arrays describe each function's C argument types; final
+  # symbol is return type. rp_write deliberately keeps GVL: it performs only a
+  # bounded memory copy, and decoder thread is now sole caller, so releasing and
+  # reacquiring GVL per audio chunk adds coordination cost without concurrency.
   module RpAudio
     extend FFI::Library
     ffi_lib File.expand_path("native/librp_audio.dylib", __dir__)
@@ -14,7 +15,7 @@ module RubyPlayer
     attach_function :rp_start, [], :int
     attach_function :rp_stop, [], :int
     attach_function :rp_set_paused, [:int], :void
-    attach_function :rp_write, [:pointer, :uint], :uint, blocking: true
+    attach_function :rp_write, [:pointer, :uint], :uint
     attach_function :rp_writable_frames, [], :uint
     attach_function :rp_buffered_frames, [], :uint
     attach_function :rp_frames_played, [], :uint64
