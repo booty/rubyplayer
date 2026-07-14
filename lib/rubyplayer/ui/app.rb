@@ -11,10 +11,11 @@ module RubyPlayer
                        rate_4: 4, rate_5: 5, rate_6: 6 }.freeze
 
       attr_reader :engine, :library_pane, :tracks_pane, :active_pane, :input_buffer,
-                  :pending_delete, :info_track, :show_help, :theme_id, :theme_picker
+                  :pending_delete, :info_track, :show_help, :theme_id, :theme_picker,
+                  :focus_player
 
       def initialize(argv: [], config_path: nil, data_path: nil, null_audio: false,
-                     io_out: $stdout)
+                     io_out: $stdout, focus_player: nil)
         @argv = argv
         @io_out = io_out
         @config = ConfigStore.new(path: config_path || RubyPlayer.config_path)
@@ -28,6 +29,7 @@ module RubyPlayer
                                  null_backend: null_audio)
         @archive_cache = ArchiveCache.new(root: @config["library", "archive_cache_dir"],
                                           tar: @config["library", "archive_tool"])
+        @focus_player = focus_player || FocusPlayer.new(audio: @audio)
         @engine = PlaybackEngine.new(
           queue: PlayQueue.new(undo_depth: @config["library", "undo_depth"]),
           registry: @registry, audio: @audio, library: @library,
@@ -41,7 +43,8 @@ module RubyPlayer
         glyphs = @config["glyphs"]
         @library_pane = LibraryPane.new(library: @library, glyphs: glyphs)
         @tracks_pane = TracksPane.new(library: @library, config: @config,
-                                      queue_source: -> { @engine.queue_items })
+                                      queue_source: -> { @engine.queue_items },
+                                      focus_source: -> { FocusSounds::ALL })
         @playback_line = PlaybackLine.new(glyphs: glyphs)
         @status_line = StatusLine.new(seconds: @config["ui", "status_message_seconds"])
         @hotkey_line = HotkeyLine.new(keymap: @keymap)
@@ -97,6 +100,7 @@ module RubyPlayer
       end
 
       def shutdown
+        @focus_player.stop
         @engine.shutdown
         @audio.close
         @db.close
@@ -186,8 +190,10 @@ module RubyPlayer
         when :quit then @quit = true
         when :cycle_pane
           @active_pane = @active_pane == :library ? :tracks : :library
-        when :toggle_play then @engine.toggle_play
-        when :play_now then enqueue(:now)
+        when :toggle_play
+          @focus_player.stop unless @engine.state[:playing]
+          @engine.toggle_play
+        when :play_now then play_now
         when :enqueue_front then enqueue(:front)
         when :enqueue_end then enqueue(:end)
         when :select_queue then select_queue
@@ -300,14 +306,38 @@ module RubyPlayer
       end
 
       def enqueue(where)
+        if selected_focus_sound
+          @status_line.set_message("Focus sounds cannot be queued")
+          return
+        end
         tracks = selected_tracks
         return if tracks.empty?
+        @focus_player.stop
         case where
         when :now then @engine.enqueue_now(tracks)
         when :front then @engine.enqueue_front(tracks)
         when :end then @engine.enqueue_end(tracks)
         end
         @status_line.set_message("#{tracks.size} track#{'s' if tracks.size != 1} enqueued (u:undo)")
+      end
+
+      def play_now
+        sound = selected_focus_sound
+        return play_focus(sound) if sound
+
+        enqueue(:now)
+      end
+
+      def play_focus(sound)
+        @engine.stop
+        @focus_player.play(sound)
+        @status_line.set_message("Playing focus: #{sound.title}")
+      rescue FocusPlayer::Error => e
+        @status_line.set_message(e.message)
+      end
+
+      def selected_focus_sound
+        @active_pane == :tracks && @tracks_pane.selected_focus_sound
       end
 
       def selected_tracks

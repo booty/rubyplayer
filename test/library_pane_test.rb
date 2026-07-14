@@ -26,18 +26,27 @@ class LibraryPaneTest < Minitest::Test
   def kinds = @pane.rows.map(&:kind)
 
   def test_specials_then_visible_roots_only
-    assert_equal %i[queue history favorites folder], kinds
-    assert_equal "Music", @pane.rows[3].folder["name"] # Empty (0 tracks) hidden
+    assert_equal %i[queue history favorites focus folder], kinds
+    assert_equal "Music", @pane.rows[4].folder["name"] # Empty (0 tracks) hidden
+  end
+
+  def test_focus_is_below_favorite_tracks
+    row = @pane.rows[3]
+
+    assert_equal :focus, row.kind
+    screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 10, cols: 40)
+    @pane.render(screen, x: 0, y: 0, w: 40, h: 10, active: true, theme: RubyPlayer::Theme::DEFAULT)
+    assert_includes screen.flush, "Focus"
   end
 
   def test_expand_and_collapse
-    3.times { @pane.handle_action(:nav_down) } # select Music
+    4.times { @pane.handle_action(:nav_down) } # select Music
     assert_equal :folder, @pane.selected.kind
     @pane.handle_action(:expand)
     assert_equal %w[Music Sega], @pane.rows.select { |r| r.kind == :folder }.map { |r| r.folder["name"] }
     assert_equal 1, @pane.rows.last.depth
     @pane.handle_action(:collapse)
-    assert_equal 4, @pane.rows.size
+    assert_equal 5, @pane.rows.size
   end
 
   def test_nav_clamps

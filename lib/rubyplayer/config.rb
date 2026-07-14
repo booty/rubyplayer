@@ -32,6 +32,7 @@ module RubyPlayer
       "archive_tool" => "bsdtar", # reads .zip/.7z/.rar; ships with macOS
     },
     "eq" => { "bands" => 16, "fps" => 30 },
+    # PROTIP: Use https://www.nerdfonts.com/cheat-sheet as a reference if you're adding new glyphs
     "glyphs" => {
       "dir" => "\u{f07b}",        #  folder
       "archive" => "\u{f1c6}",    #  zip
@@ -43,6 +44,7 @@ module RubyPlayer
       "play" => "\u{f04b}",       #
       "pause" => "\u{f04c}",      #
       "eq_chars" => " \u{2581}\u{2582}\u{2583}\u{2584}\u{2585}\u{2586}\u{2587}\u{2588}",
+      "focus" => "\u{e28c}"
     },
     "keymap" => { "global" => {}, "library" => {}, "tracks" => {} },
   }.freeze

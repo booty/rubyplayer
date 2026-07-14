@@ -5,16 +5,36 @@ require "stringio"
 require "rubyplayer/ui/app"
 
 class AppTest < Minitest::Test
+  class FakeFocusPlayer
+    attr_reader :played, :stop_calls
+
+    def initialize
+      @played = []
+      @stop_calls = 0
+    end
+
+    def play(sound)
+      @played << sound
+      true
+    end
+
+    def stop
+      @stop_calls += 1
+      true
+    end
+  end
+
   def setup
     @tmp = Dir.mktmpdir
     @music = File.join(@tmp, "music")
     FileUtils.mkdir_p(@music)
     FileUtils.cp(File.join(FIXTURES, "space-debris.mod"), @music)
     FileUtils.cp(File.join(FIXTURES, "shantae.gbs"), @music)
+    @focus_player = FakeFocusPlayer.new
     @app = RubyPlayer::UI::App.new(
       config_path: File.join(@tmp, "config.toml"),
       data_path: File.join(@tmp, "library.sqlite3"),
-      null_audio: true, io_out: StringIO.new
+      null_audio: true, io_out: StringIO.new, focus_player: @focus_player
     )
     @app.scan_paths([@music], wait: true)
   end
@@ -26,12 +46,12 @@ class AppTest < Minitest::Test
 
   def test_scan_populates_library_and_panes
     rows = @app.library_pane.rows
-    assert_equal :folder, rows[3].kind
-    assert_operator rows[3].folder["track_count"], :>=, 2
+    assert_equal :folder, rows[4].kind
+    assert_operator rows[4].folder["track_count"], :>=, 2
   end
 
   def test_navigate_and_enqueue_folder
-    3.times { @app.handle_key("down") } # select the music folder
+    4.times { @app.handle_key("down") } # select the music folder
     @app.handle_key("n")                # enqueue_end the whole folder
     assert_operator @app.engine.queue_items.size, :>=, 2
   end
@@ -40,7 +60,7 @@ class AppTest < Minitest::Test
     # Regression: Array(struct) used to splat the Track into its field values,
     # enqueuing the Integer id instead of the Track (crashed the decoder thread
     # on track.physical_path). The queue must hold Track objects.
-    3.times { @app.handle_key("down") } # select the music folder in library pane
+    4.times { @app.handle_key("down") } # select the music folder in library pane
     @app.handle_key("right")            # expand (harmless if leaf) then...
     @app.handle_key("tab")              # focus the Tracks pane
     assert_equal :tracks, @app.active_pane
@@ -60,7 +80,7 @@ class AppTest < Minitest::Test
   end
 
   def test_undo_restores_queue_and_selects_queue
-    3.times { @app.handle_key("down") }
+    4.times { @app.handle_key("down") }
     @app.handle_key("n")
     before = @app.engine.queue_items.size
     @app.handle_key("u")
@@ -95,8 +115,57 @@ class AppTest < Minitest::Test
     end
   end
 
+  def select_tracks_for(kind)
+    @app.instance_variable_set(:@active_pane, :library)
+    20.times { @app.handle_key("up") }
+    index = @app.library_pane.rows.index { |row| row.kind == kind }
+    index.times { @app.handle_key("down") }
+    @app.handle_key("tab")
+  end
+
+  def start_normal_playback
+    select_tracks_for(:folder)
+    @app.handle_key("enter")
+    wait_until { @app.engine.state[:playing] }
+  end
+
+  def test_focus_enter_stops_queue_playback_and_keeps_queue
+    start_normal_playback
+    queued_ids = @app.engine.queue_items.map(&:id)
+    select_tracks_for(:focus)
+
+    @app.handle_key("enter")
+
+    wait_until { !@app.engine.state[:playing] }
+    assert_equal [RubyPlayer::FocusSounds::ALL.first], @focus_player.played
+    assert_equal queued_ids, @app.engine.queue_items.map(&:id)
+  end
+
+  def test_normal_playback_stops_focus
+    select_tracks_for(:focus)
+    @app.handle_key("enter")
+    select_tracks_for(:folder)
+
+    @app.handle_key("enter")
+
+    assert_operator @focus_player.stop_calls, :>=, 1
+  end
+
+  def test_focus_cannot_be_queued
+    select_tracks_for(:focus)
+    before = @app.engine.queue_items
+
+    @app.handle_key("q")
+    @app.render
+    assert_equal before, @app.engine.queue_items
+    assert_includes @app.instance_variable_get(:@io_out).string, "Focus sounds cannot be queued"
+
+    @app.handle_key("n")
+    assert_equal before, @app.engine.queue_items
+  end
+
   def test_next_track_key_advances_queue
-    3.times { @app.handle_key("down") } # select the music folder (>=2 tracks)
+    4.times { @app.handle_key("down") } # select the music folder (>=2 tracks)
     @app.handle_key("enter")            # play_now: enqueues the folder and starts playing
     wait_until { @app.engine.state[:track] }
     before_size = @app.engine.queue_items.size
@@ -108,7 +177,7 @@ class AppTest < Minitest::Test
   end
 
   def test_remove_from_queue_key_removes_selected_queue_track
-    3.times { @app.handle_key("down") } # select the music folder
+    4.times { @app.handle_key("down") } # select the music folder
     @app.handle_key("n")                # enqueue_end (not playing, so no auto-skip semantics)
     before_size = @app.engine.queue_items.size
     assert_operator before_size, :>=, 2
@@ -122,7 +191,7 @@ class AppTest < Minitest::Test
   end
 
   def test_remove_from_queue_is_a_noop_outside_the_queue_view
-    3.times { @app.handle_key("down") } # select the music folder
+    4.times { @app.handle_key("down") } # select the music folder
     @app.handle_key("n")                # enqueue_end
     before_size = @app.engine.queue_items.size
 
@@ -171,7 +240,7 @@ class AppTest < Minitest::Test
   end
 
   def test_remove_library_item_key_prompts_confirmation_without_removing
-    3.times { @app.handle_key("down") } # select the music folder
+    4.times { @app.handle_key("down") } # select the music folder
     @app.handle_key("x")
     refute_nil @app.pending_delete
     assert_equal "music", @app.pending_delete["name"]
@@ -184,7 +253,7 @@ class AppTest < Minitest::Test
   end
 
   def test_confirm_removes_the_folder_from_the_library
-    3.times { @app.handle_key("down") }
+    4.times { @app.handle_key("down") }
     @app.handle_key("x")
     @app.handle_key("y")
     assert_nil @app.pending_delete
@@ -192,7 +261,7 @@ class AppTest < Minitest::Test
   end
 
   def test_cancel_leaves_the_library_untouched
-    3.times { @app.handle_key("down") }
+    4.times { @app.handle_key("down") }
     @app.handle_key("x")
     @app.handle_key("escape")
     assert_nil @app.pending_delete
@@ -204,7 +273,7 @@ class AppTest < Minitest::Test
   # a soft-delete in Library alone would leave the deleted folder's tracks
   # stranded in the queue. Confirming a delete must cascade into the queue.
   def test_confirm_cascades_the_delete_into_a_queued_folder
-    3.times { @app.handle_key("down") }
+    4.times { @app.handle_key("down") }
     @app.handle_key("n") # enqueue_end the whole folder (not playing)
     assert_operator @app.engine.queue_items.size, :>=, 2
 
@@ -215,7 +284,7 @@ class AppTest < Minitest::Test
   end
 
   def test_confirm_stops_playback_when_the_playing_track_is_deleted
-    3.times { @app.handle_key("down") }
+    4.times { @app.handle_key("down") }
     @app.handle_key("enter") # play_now: enqueues the folder and starts playing
     wait_until { @app.engine.state[:track] }
 
@@ -226,7 +295,7 @@ class AppTest < Minitest::Test
   end
 
   def test_show_track_info_key_populates_info_track
-    3.times { @app.handle_key("down") } # select the music folder
+    4.times { @app.handle_key("down") } # select the music folder
     @app.handle_key("tab")              # focus the Tracks pane
     @app.handle_key("i")
     assert_instance_of RubyPlayer::Track, @app.info_track
@@ -238,7 +307,7 @@ class AppTest < Minitest::Test
   end
 
   def test_escape_dismisses_the_track_info_modal
-    3.times { @app.handle_key("down") }
+    4.times { @app.handle_key("down") }
     @app.handle_key("tab")
     @app.handle_key("i")
     @app.handle_key("escape")
@@ -340,7 +409,7 @@ class AppTest < Minitest::Test
   end
 
   def test_seek_forward_key_issues_absolute_seek_without_error
-    3.times { @app.handle_key("down") }
+    4.times { @app.handle_key("down") }
     @app.handle_key("enter")
     wait_until { @app.engine.state[:track] }
 
@@ -363,7 +432,7 @@ class AppTest < Minitest::Test
   end
 
   def test_refresh_panes_preserves_tracks_pane_cursor
-    3.times { @app.handle_key("down") } # select the music folder (populates tracks pane)
+    4.times { @app.handle_key("down") } # select the music folder (populates tracks pane)
     assert_operator @app.tracks_pane.display_rows.size, :>=, 2
 
     @app.handle_key("tab")              # move focus to tracks pane

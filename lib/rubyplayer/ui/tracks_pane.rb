@@ -3,9 +3,10 @@ module RubyPlayer
     class TracksPane
       attr_reader :selection
 
-      def initialize(library:, config:, queue_source:)
+      def initialize(library:, config:, queue_source:, focus_source: -> { FocusSounds::ALL })
         @library = library
         @queue_source = queue_source
+        @focus_source = focus_source
         @mode = nil
         @tracks = []
         @selection = 0
@@ -43,6 +44,7 @@ module RubyPlayer
         @tracks =
           case @mode
           when :queue then @queue_source.call
+          when :focus then @focus_source.call
           when :history then @library.history(limit: @history_limit).map { |h| h[:track] }
           when :favorites then @library.favorites
           when Array then @library.tracks_under(@mode[1])
@@ -57,7 +59,9 @@ module RubyPlayer
         # display_rows already force flat/unsorted rendering in :queue mode
         # (see below), so honoring these here would just flip flags with no
         # visible effect -- swallow them instead of confusing the user.
-        return true if @mode == :queue && %i[toggle_group sort_title sort_number sort_artist].include?(action)
+        if %i[queue focus].include?(@mode) && %i[toggle_group sort_title sort_number sort_artist].include?(action)
+          return true
+        end
         case action
         when :nav_up then move_selection(-1)
         when :nav_down then move_selection(1)
@@ -82,6 +86,7 @@ module RubyPlayer
         # relies on, so ignore @group_by_album here regardless of its value
         # for other views.
         return flat_rows if @mode == :queue
+        return focus_rows if @mode == :focus
         return flat_rows unless @group_by_album
         grouped_rows
       end
@@ -89,6 +94,11 @@ module RubyPlayer
       def selected_track
         row = display_rows[@selection]
         row && row[:type] == :track ? row[:track] : nil
+      end
+
+      def selected_focus_sound
+        row = display_rows[@selection]
+        row && row[:type] == :focus ? row[:focus_sound] : nil
       end
 
       # Index of the selected row among :track rows only (headers don't
@@ -164,6 +174,13 @@ module RubyPlayer
         end
       end
 
+      def focus_rows
+        @tracks.map do |sound|
+          { type: :focus, text: sound.title,
+            segments: [{ text: sound.title, field: "title" }], focus_sound: sound }
+        end
+      end
+
       def grouped_rows
         groups = @tracks.group_by { |t| t.album.to_s }.sort_by { |album, _| album }
         groups.flat_map do |album, tracks|
@@ -180,7 +197,7 @@ module RubyPlayer
         # The queue's displayed order must equal engine.queue_items (playback
         # order), since App#dispatch(:remove_from_queue) removes by displayed
         # index -- a lingering @sort from another view must not reorder it.
-        return if @mode == :queue
+        return if %i[queue focus].include?(@mode)
 
         case @sort
         when :title then @tracks.sort_by! { |t| t.title.to_s.downcase }
@@ -195,7 +212,7 @@ module RubyPlayer
         loop do
           i += delta
           return unless i.between?(0, rows.size - 1)
-          break if rows[i][:type] == :track
+          break if %i[track focus].include?(rows[i][:type])
         end
         @selection = i
       end

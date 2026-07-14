@@ -108,6 +108,7 @@ module RubyPlayer
     end
 
     def skip = @commands << :skip
+    def stop = @commands << :stop_playback
     def seek(ms) = @commands << [:seek, ms]
 
     def toggle_skip_disliked
@@ -153,6 +154,7 @@ module RubyPlayer
           case cmd
           when :play_head then play_head
           when :skip then finish_and_advance
+          when :stop_playback then stop_playback
           when :toggle_pause then toggle_pause
           when Array then handle_seek(cmd[1]) if cmd[0] == :seek
           end

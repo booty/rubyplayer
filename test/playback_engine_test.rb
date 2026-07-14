@@ -117,6 +117,19 @@ class PlaybackEngineTest < Minitest::Test
     assert_nil @engine.state[:track]
   end
 
+  def test_stop_ends_playback_without_advancing_queue
+    first = make_track("shantae.gbs")
+    second = make_track("shantae.gbs", subtune: 1)
+    @engine.enqueue_now([first, second])
+    wait_for_event(:track_started)
+
+    @engine.stop
+    wait_for { !@engine.state[:playing] }
+
+    assert_equal [first.id, second.id], @engine.queue_items.map(&:id)
+    assert_nil @engine.state[:track]
+  end
+
   def test_plays_track_stored_inside_an_archive
     zip = File.join(FIXTURES, "musha.zip")
     id = @lib.upsert_track(folder_id: @folder, physical_path: zip,

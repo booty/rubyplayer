@@ -5,7 +5,7 @@ A terminal (TUI) music player for retro game-music and tracker formats — chipt
 ## Requirements
 
 - Ruby 4.x (managed via [mise](https://mise.jdx.dev/); see `.ruby-version`)
-- Homebrew: `libgme`, `libopenmpt`
+- Homebrew: `libgme`, `libopenmpt`, `sox`
 - Xcode command-line tools (`clang`) to build the native audio shim
 
 ## Setup
@@ -25,6 +25,8 @@ bin/rubyplayer [path ...]
 `rake compile` builds the native audio shim (`lib/rubyplayer/native/librp_audio.dylib`) automatically as a prerequisite of `rake test`; `bin/rubyplayer` expects it to already exist, so run `rake compile` (or `rake test`) at least once after a fresh checkout.
 
 Any paths given on the command line are scanned into the library on startup, in addition to any roots already remembered from a previous run.
+
+Select **Focus** in the Library pane, then choose a noise recipe in Tracks and press Enter to play it indefinitely. Focus sounds use SoX, are not added to the queue or library history, and stop when normal playback begins.
 
 ## Testing
 

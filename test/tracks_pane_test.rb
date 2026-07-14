@@ -140,6 +140,32 @@ class TracksPaneTest < Minitest::Test
     assert_equal %w[Queued], titles
   end
 
+  def test_focus_view_lists_catalog_in_declared_order
+    focus = RubyPlayer::FocusSounds::ALL
+    pane = RubyPlayer::UI::TracksPane.new(library: @lib, config: @config,
+                                          queue_source: -> { @queue }, focus_source: -> { focus })
+    pane.show(RubyPlayer::UI::LibraryPane::Row.new(kind: :focus, depth: 0))
+
+    assert_equal focus.map(&:title), pane.display_rows.map { |row| row[:text] }
+    assert_equal focus.first, pane.selected_focus_sound
+    assert_nil pane.selected_track
+  end
+
+  def test_focus_view_is_not_grouped_or_sorted
+    focus = RubyPlayer::FocusSounds::ALL
+    pane = RubyPlayer::UI::TracksPane.new(library: @lib, config: @config,
+                                          queue_source: -> { @queue }, focus_source: -> { focus })
+    pane.show(RubyPlayer::UI::LibraryPane::Row.new(kind: :focus, depth: 0))
+
+    pane.handle_action(:toggle_group)
+    pane.handle_action(:sort_title)
+    pane.handle_action(:nav_down)
+
+    refute pane.display_rows.any? { |row| row[:type] == :header }
+    assert_equal focus.map(&:title), pane.display_rows.map { |row| row[:text] }
+    assert_equal focus[1], pane.selected_focus_sound
+  end
+
   # Regression test for the queue-index desync bug: TracksPane used to keep
   # @sort/@group_by_album across show(), so switching to the Playback Queue
   # after sorting/grouping a folder view left the queue displayed out of

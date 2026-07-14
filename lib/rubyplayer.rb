@@ -4,6 +4,8 @@ end
 
 require_relative "rubyplayer/config"
 require_relative "rubyplayer/theme"
+require_relative "rubyplayer/focus_sounds"
+require_relative "rubyplayer/focus_player"
 require_relative "rubyplayer/database"
 require_relative "rubyplayer/track"
 require_relative "rubyplayer/library"

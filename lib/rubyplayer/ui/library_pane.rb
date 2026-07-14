@@ -1,6 +1,6 @@
 module RubyPlayer
   module UI
-    # Flattens three fixed special rows (queue/history/favorites) plus the
+    # Flattens fixed special rows (queue/history/favorites/focus) plus the
     # folder tree into a single visible-row list, so nav/selection logic
     # doesn't need to distinguish "special" vs "folder" areas.
     class LibraryPane
@@ -10,6 +10,7 @@ module RubyPlayer
         [:queue, "Playback Queue"],
         [:history, "History"],
         [:favorites, "Favorite Tracks"],
+        [:focus, "Focus"],
       ].freeze
 
       attr_reader :selection
@@ -96,6 +97,7 @@ module RubyPlayer
         when :queue then ["#{@glyphs['play']} Playback Queue", ""]
         when :history then ["#{@glyphs['playlist']} History", ""]
         when :favorites then ["#{@glyphs['star']} Favorite Tracks", ""]
+        when :focus then ["#{@glyphs['focus']} Focus", ""]
         when :folder
           f = row.folder
           icon = @glyphs[f["kind"]] || @glyphs["dir"]
