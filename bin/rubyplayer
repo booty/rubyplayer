@@ -1,5 +1,18 @@
 #!/usr/bin/env ruby
 $LOAD_PATH.unshift File.expand_path("../lib", __dir__)
+
+# Check before ui/app: loading App immediately loads AudioOutput's native dylib,
+# which would otherwise abort on first FFI error instead of reporting every
+# missing runtime dependency and its installation command together.
+require "rubyplayer/runtime_dependencies"
+
+begin
+  RubyPlayer::RuntimeDependencies.verify!
+rescue RubyPlayer::RuntimeDependencies::MissingError => e
+  warn e.message
+  exit 1
+end
+
 require "rubyplayer"
 require "rubyplayer/ui/app"
 

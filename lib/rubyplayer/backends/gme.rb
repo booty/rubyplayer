@@ -1,10 +1,11 @@
 require "ffi"
+require_relative "../runtime_dependencies"
 
 module RubyPlayer
   module Backends
     module GmeLib
       extend FFI::Library
-      ffi_lib ["gme", "libgme.dylib", "/opt/homebrew/lib/libgme.dylib"]
+      ffi_lib RubyPlayer::RuntimeDependencies::GME_LIBRARY_CANDIDATES
 
       GME_INFO_ONLY = -1 # special sample_rate: open for metadata only
 

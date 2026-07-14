@@ -159,8 +159,8 @@ Run:
 ```bash
 mise exec -- bundle exec ruby -Itest test/startup_preflight_test.rb
 mise exec -- bundle exec ruby -Itest test/registry_test.rb
-mise exec -- bundle exec ruby -Itest test/gme_test.rb
-mise exec -- bundle exec ruby -Itest test/openmpt_test.rb
+mise exec -- bundle exec ruby -Itest test/gme_backend_test.rb
+mise exec -- bundle exec ruby -Itest test/openmpt_backend_test.rb
 ```
 
 Expected: all tests pass.

@@ -1,10 +1,11 @@
 require "ffi"
+require_relative "../runtime_dependencies"
 
 module RubyPlayer
   module Backends
     module OpenmptLib
       extend FFI::Library
-      ffi_lib ["openmpt", "libopenmpt.dylib", "/opt/homebrew/lib/libopenmpt.dylib"]
+      ffi_lib RubyPlayer::RuntimeDependencies::OPENMPT_LIBRARY_CANDIDATES
 
       # create_from_memory2 parses the whole module and get_duration_seconds/
       # get_metadata do real work scanning its patterns; each call is scoped to
