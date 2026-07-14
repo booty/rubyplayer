@@ -45,7 +45,7 @@ class AppTest < Minitest::Test
     FileUtils.cp(File.join(FIXTURES, "shantae.gbs"), @music)
     @focus_player = FakeFocusPlayer.new
     @app = RubyPlayer::UI::App.new(
-      config_path: File.join(@tmp, "config.toml"),
+      config_path: File.join(@tmp, "config.rb"),
       data_path: File.join(@tmp, "library.sqlite3"),
       null_audio: true, io_out: StringIO.new, focus_player: @focus_player
     )
@@ -53,7 +53,7 @@ class AppTest < Minitest::Test
   end
 
   def teardown
-    @app.shutdown
+    @app&.shutdown
     FileUtils.remove_entry(@tmp)
   end
 
@@ -644,6 +644,70 @@ class AppTest < Minitest::Test
     assert_equal RubyPlayer::Theme::ALL_IDS.last, @app.theme_id
   end
 
+  def test_invalid_hot_reload_keeps_active_config_and_shows_modal
+    config_path = File.join(@tmp, "config.rb")
+    File.write(config_path, <<~RUBY)
+      RubyPlayer.configure { |config| config.ui.theme = "ocean_mist" }
+    RUBY
+    force_config_reload
+    assert_equal :ocean_mist, @app.theme_id
+
+    File.write(config_path, "RubyPlayer.configure do |config|\n")
+    File.utime(Time.now + 3, Time.now + 3, config_path)
+    force_config_reload
+
+    assert_instance_of RubyPlayer::ConfigError, @app.config_error
+    assert_equal :ocean_mist, @app.theme_id
+    before = @app.active_pane
+    @app.handle_key("tab")
+    assert_equal before, @app.active_pane
+
+    @app.render
+    output = @app.instance_variable_get(:@io_out).string
+    assert_includes output, "Configuration Error"
+    assert_includes output, "SyntaxError"
+  end
+
+  def test_config_error_modal_dismisses_and_corrected_save_clears_it
+    config_path = File.join(@tmp, "config.rb")
+    File.write(config_path, "RubyPlayer.configure do |config|\n")
+    File.utime(Time.now + 2, Time.now + 2, config_path)
+    force_config_reload
+    refute_nil @app.config_error
+
+    @app.handle_key("escape")
+    assert_nil @app.config_error
+
+    File.write(config_path, <<~RUBY)
+      RubyPlayer.configure { |config| config.ui.theme = "amber_navy" }
+    RUBY
+    File.utime(Time.now + 4, Time.now + 4, config_path)
+    force_config_reload
+
+    assert_nil @app.config_error
+    assert_equal :amber_navy, @app.theme_id
+  end
+
+  def test_startup_fallback_error_is_available_to_modal
+    path = File.join(@tmp, "fallback-config.rb")
+    previous = File.join(@tmp, "config-previous.rb")
+    File.write(previous, <<~RUBY)
+      RubyPlayer.configure { |config| config.ui.theme = "ocean_mist" }
+    RUBY
+    File.write(path, "RubyPlayer.configure do |config|\n")
+    @app.shutdown
+    @app = nil
+    fallback_app = RubyPlayer::UI::App.new(
+      config_path: path, data_path: File.join(@tmp, "fallback.sqlite3"),
+      null_audio: true, io_out: StringIO.new, focus_player: FakeFocusPlayer.new
+    )
+
+    assert_instance_of RubyPlayer::ConfigError, fallback_app.config_error
+    assert_equal :ocean_mist, fallback_app.theme_id
+  ensure
+    fallback_app&.shutdown
+  end
+
   def test_seek_forward_key_issues_absolute_seek_without_error
     select_library_kind(:folder)
     @app.handle_key("enter")
@@ -683,6 +747,14 @@ class AppTest < Minitest::Test
 
 
   private
+
+  def force_config_reload
+    @app.instance_variable_set(
+      :@last_config_check,
+      Process.clock_gettime(Process::CLOCK_MONOTONIC) - 2
+    )
+    @app.send(:reload_config_if_changed)
+  end
 
   def mark_two_tracks_missing
     library = @app.instance_variable_get(:@library)

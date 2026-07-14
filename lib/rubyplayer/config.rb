@@ -83,6 +83,10 @@ module RubyPlayer
   end
 
   class ConfigStore
+    MANAGED_THEME_BEGIN = "# rubyplayer: managed theme begin"
+    MANAGED_THEME_END = "# rubyplayer: managed theme end"
+    MANAGED_THEME_PATTERN = /^#{Regexp.escape(MANAGED_THEME_BEGIN)}\n.*?^#{Regexp.escape(MANAGED_THEME_END)}\n?/m
+
     attr_reader :path, :data, :previous_path, :startup_error
 
     def initialize(path: RubyPlayer.config_path)
@@ -110,6 +114,24 @@ module RubyPlayer
         snapshot(source)
         @data = candidate
       end
+      true
+    end
+
+    def persist_theme(id)
+      source = File.file?(@path) ? File.binread(@path) : ""
+      user_source = source.gsub(MANAGED_THEME_PATTERN, "").rstrip
+      managed = <<~RUBY
+        #{MANAGED_THEME_BEGIN}
+        RubyPlayer.configure { |config| config.ui.theme = #{id.to_s.inspect} }
+        #{MANAGED_THEME_END}
+      RUBY
+      candidate_source = [user_source, managed.rstrip].reject(&:empty?).join("\n\n") + "\n"
+      candidate = ConfigDSL.evaluate(candidate_source, path: @path, defaults: DEFAULTS)
+
+      atomic_write(@path, candidate_source)
+      snapshot(candidate_source)
+      @data = candidate
+      @signature = file_signature
       true
     end
 
@@ -150,10 +172,14 @@ module RubyPlayer
     end
 
     def snapshot(source)
-      FileUtils.mkdir_p(File.dirname(@previous_path))
-      temporary = "#{@previous_path}.tmp-#{Process.pid}"
+      atomic_write(@previous_path, source)
+    end
+
+    def atomic_write(destination, source)
+      FileUtils.mkdir_p(File.dirname(destination))
+      temporary = "#{destination}.tmp-#{Process.pid}"
       File.binwrite(temporary, source)
-      File.rename(temporary, @previous_path)
+      File.rename(temporary, destination)
     ensure
       FileUtils.rm_f(temporary) if temporary && File.exist?(temporary)
     end

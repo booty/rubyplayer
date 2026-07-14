@@ -14,13 +14,14 @@ module RubyPlayer
 
       attr_reader :engine, :library_pane, :tracks_pane, :active_pane, :input_buffer,
                   :pending_delete, :info_track, :show_help, :theme_id, :theme_picker,
-                  :focus_player, :filter_buffer, :pending_missing_purge
+                  :focus_player, :filter_buffer, :pending_missing_purge, :config_error
 
       def initialize(argv: [], config_path: nil, data_path: nil, null_audio: false,
                      io_out: $stdout, focus_player: nil)
         @argv = argv
         @io_out = io_out
         @config = ConfigStore.new(path: config_path || RubyPlayer.config_path)
+        @config_error = @config.startup_error
         @db = Database.new(path: data_path || File.join(RubyPlayer.data_dir, "library.sqlite3"),
                            backup_retention: @config["library", "backup_retention"])
         @library = Library.new(@db)
@@ -128,6 +129,7 @@ module RubyPlayer
       end
 
       def handle_key(key)
+        return handle_config_error_key(key) if @config_error
         return handle_theme_picker_key(key) if @theme_picker
         return handle_help_key(key) if @show_help
         return handle_info_key(key) if @info_track
@@ -149,12 +151,22 @@ module RubyPlayer
         when "up" then move_theme_preview(-1)
         when "down" then move_theme_preview(1)
         when "enter"
-          @config.persist_theme(@theme_id)
-          @theme_picker = false
+          begin
+            @config.persist_theme(@theme_id)
+            @theme_picker = false
+          rescue ConfigError => error
+            set_theme!(@config["ui", "theme"])
+            @theme_picker = false
+            @config_error = error
+          end
         when "escape", "t"
           set_theme!(@theme_id_before_preview)
           @theme_picker = false
         end
+      end
+
+      def handle_config_error_key(key)
+        @config_error = nil if %w[escape enter].include?(key)
       end
 
       def move_theme_preview(delta)
@@ -519,7 +531,13 @@ module RubyPlayer
         @last_config_check ||= now
         return if now - @last_config_check < 1.0
         @last_config_check = now
-        return unless @config.reload_if_changed
+        begin
+          return unless @config.reload_if_changed
+        rescue ConfigError => error
+          @config_error = error
+          return
+        end
+        @config_error = nil
         @keymap = Keymap.new(@config["keymap"])
         @hotkey_line = HotkeyLine.new(keymap: @keymap)
         @tracks_pane.update_config(@config)
@@ -556,6 +574,7 @@ module RubyPlayer
         render_info_modal if @info_track
         render_help_modal if @show_help
         render_theme_picker_modal if @theme_picker
+        render_config_error_modal if @config_error
         @screen.flush
       end
 
@@ -716,6 +735,38 @@ module RubyPlayer
           @screen.put(y + 2 + i, x + 2, name[0, w - 4], fg: fg, bg: bg, bold: selected)
         end
         @screen.put(y + h - 2, x + 2, hint[0, w - 4], fg: @theme[:text_muted])
+      end
+
+      def render_config_error_modal
+        max_w = [@screen.cols - 2, 100].min
+        return if max_w < 8 || @screen.rows < 5
+
+        inner_w = max_w - 4
+        raw_lines = [
+          "Last known good configuration remains active.",
+          *@config_error.message.lines.map(&:chomp),
+        ]
+        lines = raw_lines.flat_map do |line|
+          line.empty? ? [""] : line.scan(/.{1,#{inner_w}}/)
+        end
+        max_lines = [@screen.rows - 5, 1].max
+        lines = lines.first(max_lines)
+        hint = "[esc/enter] Keep last known good config"
+        w = [max_w, hint.size + 4].min
+        h = lines.size + 4
+        x = [(@screen.cols - w) / 2, 0].max
+        y = [(@screen.rows - h) / 2, 0].max
+        (1...(h - 1)).each do |offset|
+          @screen.put(y + offset, x + 1, " " * (w - 2), bg: @theme[:surface])
+        end
+        draw_box(x, y, w, h, active: true, title: "Configuration Error")
+        lines.each_with_index do |line, index|
+          color = index.zero? ? @theme[:warning] : @theme[:error]
+          @screen.put(y + 1 + index, x + 2, line[0, w - 4], fg: color,
+                      bg: @theme[:surface], bold: index.zero?)
+        end
+        @screen.put(y + h - 2, x + 2, hint[0, w - 4],
+                    fg: @theme[:text_muted], bg: @theme[:surface])
       end
 
       def fmt_length(ms)

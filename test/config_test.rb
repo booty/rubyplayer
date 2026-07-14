@@ -186,4 +186,35 @@ class ConfigTest < Minitest::Test
     assert config.reload_if_changed
     assert_equal 4, config["eq", "bands"]
   end
+
+  def test_persist_theme_appends_one_managed_block_and_preserves_user_source
+    original = <<~RUBY
+      # keep this comment
+      RubyPlayer.configure { |config| config.audio.sample_rate = 48_000 }
+    RUBY
+    write_config original
+    config = RubyPlayer::ConfigStore.new(path: @path)
+
+    assert config.persist_theme(:ocean_mist)
+    assert config.persist_theme(:amber_navy)
+
+    source = File.read(@path)
+    assert_includes source, "# keep this comment"
+    assert_includes source, "sample_rate = 48_000"
+    assert_equal 1, source.scan("rubyplayer: managed theme begin").size
+    assert_match(/config\.ui\.theme = "amber_navy"/, source)
+    assert source.end_with?("# rubyplayer: managed theme end\n")
+    assert_equal "amber_navy", config["ui", "theme"]
+    assert_equal source, File.read(config.previous_path)
+    refute config.reload_if_changed
+  end
+
+  def test_persist_theme_creates_config_when_missing
+    config = RubyPlayer::ConfigStore.new(path: @path)
+
+    config.persist_theme(:basic_terminal)
+
+    assert File.file?(@path)
+    assert_equal "basic_terminal", config["ui", "theme"]
+  end
 end
