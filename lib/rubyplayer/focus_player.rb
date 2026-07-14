@@ -44,10 +44,14 @@ module RubyPlayer
       @audio.paused = false
       @thread = Thread.new { drain(reader) }
       true
-    rescue Errno::ENOENT
+    rescue SystemCallError => e
+      # Process setup can fail after both pipe descriptors exist. Close both
+      # parent copies before translating OS-specific errors into this class's
+      # stable API; callers should not need to understand Process internals.
       writer&.close unless writer&.closed?
       reader&.close unless reader&.closed?
-      raise Error, "sox executable not found"
+      message = e.is_a?(Errno::ENOENT) ? "sox executable not found" : "unable to start sox: #{e.message}"
+      raise Error, message, cause: e
     end
 
     def stop
@@ -76,6 +80,10 @@ module RubyPlayer
         end
       end
       true
+    rescue SystemCallError => e
+      # Teardown above has already joined the writer and cleared ownership.
+      # Expose one FocusPlayer error type while retaining errno as the cause.
+      raise Error, "unable to stop sox: #{e.message}", cause: e
     end
 
     def playing? = !@pid.nil?

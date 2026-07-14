@@ -7,6 +7,7 @@ require "rubyplayer/ui/app"
 class AppTest < Minitest::Test
   class FakeFocusPlayer
     attr_reader :played, :stop_calls
+    attr_accessor :stop_error
 
     def initialize
       @played = []
@@ -19,6 +20,8 @@ class AppTest < Minitest::Test
     end
 
     def stop
+      raise @stop_error if @stop_error
+
       @stop_calls += 1
       true
     end
@@ -101,6 +104,36 @@ class AppTest < Minitest::Test
   def test_quit_key
     @app.handle_key("ctrl_c")
     assert @app.quit?
+  end
+
+  def test_shutdown_closes_every_resource_when_focus_stop_fails
+    cleanup_calls = []
+    engine_shutdown = @app.engine.method(:shutdown)
+    audio = @app.instance_variable_get(:@audio)
+    audio_close = audio.method(:close)
+    database = @app.instance_variable_get(:@db)
+    database_close = database.method(:close)
+
+    @focus_player.stop_error = RubyPlayer::FocusPlayer::Error.new("focus cleanup failed")
+    @app.engine.define_singleton_method(:shutdown) do
+      cleanup_calls << :engine
+      engine_shutdown.call
+    end
+    audio.define_singleton_method(:close) do
+      cleanup_calls << :audio
+      audio_close.call
+    end
+    database.define_singleton_method(:close) do
+      cleanup_calls << :database
+      database_close.call
+    end
+
+    error = assert_raises(RubyPlayer::FocusPlayer::Error) { @app.shutdown }
+
+    assert_equal "focus cleanup failed", error.message
+    assert_equal %i[engine audio database], cleanup_calls
+  ensure
+    @focus_player.stop_error = nil
   end
 
   # Bounded poll for state that changes asynchronously via the decoder

@@ -99,12 +99,19 @@ module RubyPlayer
         shutdown
       end
 
-      def shutdown
-        @focus_player.stop
-        @engine.shutdown
-        @audio.close
-        @db.close
+    def shutdown
+      first_error = nil
+      # Shutdown is best-effort across independent resources. Focus process
+      # failure must not leave decoder thread, native audio, or SQLite open;
+      # preserve the first error so callers still learn cleanup was incomplete.
+      [-> { @focus_player.stop }, -> { @engine.shutdown },
+       -> { @audio.close }, -> { @db.close }].each do |cleanup|
+        cleanup.call
+      rescue StandardError => e
+        first_error ||= e
       end
+      raise first_error if first_error
+    end
 
       # ---- input ----
 

@@ -169,7 +169,10 @@ class FocusPlayerTest < Minitest::Test
 
     @audio.release
     assert stopping.join(1)
-    assert_instance_of Errno::EPERM, errors.pop
+    error = errors.pop
+    assert_instance_of RubyPlayer::FocusPlayer::Error, error
+    assert_instance_of Errno::EPERM, error.cause
+    assert_match(/unable to stop sox/, error.message)
     refute_predicate player, :playing?
     assert_equal [false, true], @audio.pause_values
     assert_equal 1, @audio.flushes
@@ -215,5 +218,23 @@ class FocusPlayerTest < Minitest::Test
       player.play(RubyPlayer::FocusSounds::ALL.first)
     end
     assert_equal "sox executable not found", error.message
+  end
+
+  def test_play_closes_pipe_and_wraps_other_spawn_errors
+    reader = FragmentReader.new([])
+    writer = FakeWriter.new
+    player = build_player(
+      spawn: ->(*, **) { raise Errno::EACCES },
+      pipe: -> { [reader, writer] }
+    )
+
+    error = assert_raises(RubyPlayer::FocusPlayer::Error) do
+      player.play(RubyPlayer::FocusSounds::ALL.first)
+    end
+
+    assert_instance_of Errno::EACCES, error.cause
+    assert_match(/unable to start sox/, error.message)
+    assert reader.closed?
+    assert writer.closed?
   end
 end
