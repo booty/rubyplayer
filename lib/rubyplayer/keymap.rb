@@ -22,6 +22,7 @@ module RubyPlayer
         "ctrl_c" => "quit",
         ">" => "next_track", "[" => "seek_back", "]" => "seek_forward",
         "x" => "remove_from_queue",
+        "ctrl_x" => "purge_visible_missing",
         "?" => "show_help",
         "t" => "show_theme_picker",
       },

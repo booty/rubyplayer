@@ -38,6 +38,7 @@ Select **Focus** in the Library pane, then choose a noise recipe in Tracks and p
 - Pane-edge scrollbar appears only when rows overflow viewport.
 - Terminals narrower than 72 columns show one full-width pane; Tab switches panes. Wider terminals retain two-pane layout.
 - Fixed smart views expose **Recently Added**, **Unrated**, **Missing**, **Failed to Scan**, and **Most Played** track lists.
+- In **Missing**, press `Ctrl+X` to permanently purge currently filtered/visible tracks and their playback history after confirmation.
 - Playback footer shows current track timing and queued next track. During Focus playback it identifies active recipe, infinite duration, paused queue, and next queued track.
 
 ## Testing

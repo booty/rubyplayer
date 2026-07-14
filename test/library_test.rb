@@ -113,6 +113,24 @@ class LibraryTest < Minitest::Test
     refute_includes @lib.failed_tracks.map(&:id), healthy_id
   end
 
+  def test_purge_missing_tracks_deletes_only_missing_rows_and_history
+    missing_id = add_track("/m/sega/gone.vgm", title: "Gone")
+    healthy_id = add_track("/m/sega/live.vgm", title: "Live")
+    @lib.record_history(track_id: missing_id, started_at: "2026-07-01T00:00:00Z",
+                        ended_at: "2026-07-01T00:01:00Z")
+    @lib.record_history(track_id: healthy_id, started_at: "2026-07-01T00:00:00Z",
+                        ended_at: "2026-07-01T00:01:00Z")
+    @lib.mark_missing(track_ids: [missing_id], folder_ids: [])
+
+    deleted = @lib.purge_missing_tracks!([missing_id, healthy_id])
+
+    assert_equal [missing_id], deleted
+    assert_nil @lib.find_track(missing_id)
+    refute_nil @lib.find_track(healthy_id)
+    history_ids = @db.read { |db| db.execute("SELECT track_id FROM playback_history").map { |row| row["track_id"] } }
+    assert_equal [healthy_id], history_ids
+  end
+
   def test_most_played_orders_by_count_then_total_duration_and_excludes_missing
     most_id = add_track("/m/sega/most.vgm", title: "Most")
     long_id = add_track("/m/sega/long.vgm", title: "Long")

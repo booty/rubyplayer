@@ -96,6 +96,19 @@ class TracksPaneTest < Minitest::Test
                  @pane.display_rows
   end
 
+  def test_visible_tracks_returns_only_filtered_missing_view_tracks
+    bravo = @lib.tracks_under(@folder).find { |track| track.title == "Bravo" }
+    charlie = @lib.tracks_under(@folder).find { |track| track.title == "Charlie" }
+    @lib.mark_missing(track_ids: [bravo.id, charlie.id], folder_ids: [])
+    @pane.show(RubyPlayer::UI::LibraryPane::Row.new(kind: :missing, depth: 0))
+    @pane.filter = "bravo"
+
+    visible = @pane.visible_tracks
+
+    assert_equal [bravo.id], visible.map(&:id)
+    refute_same visible, @pane.visible_tracks
+  end
+
   def test_filter_and_selection_restore_per_view
     queue_row = RubyPlayer::UI::LibraryPane::Row.new(kind: :queue, depth: 0)
     @queue = @lib.tracks_under(@folder)

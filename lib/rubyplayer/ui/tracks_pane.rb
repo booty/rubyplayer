@@ -161,6 +161,12 @@ module RubyPlayer
         @mode == :queue ? selected_track : nil
       end
 
+      def visible_tracks
+        # Return fresh array so App can capture confirmation target without a
+        # later filter/reload mutating meaning of pending destructive action.
+        filtered_tracks.select { |item| item.is_a?(Track) }.dup
+      end
+
       # Resolve queue position from selected Track identity. Display indexes
       # become unsafe once filtering can hide rows before selected item.
       def selected_track_index

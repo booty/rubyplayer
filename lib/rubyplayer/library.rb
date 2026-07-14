@@ -102,6 +102,30 @@ module RubyPlayer
       query_tracks("errored = 1 ORDER BY physical_path, title COLLATE NOCASE")
     end
 
+    def purge_missing_tracks!(ids)
+      requested = Array(ids).map(&:to_i).uniq
+      return [] if requested.empty?
+
+      placeholders = (["?"] * requested.size).join(",")
+      deleted = @db.write do |db|
+        # Re-check missing inside same transaction as deletion. UI targets can
+        # become stale if scanner restores a file while confirmation is open.
+        actual = db.execute(
+          "SELECT id FROM tracks WHERE missing = 1 AND id IN (#{placeholders})",
+          requested
+        ).map { |row| row["id"] }
+        next [] if actual.empty?
+
+        actual_placeholders = (["?"] * actual.size).join(",")
+        db.execute("DELETE FROM playback_history WHERE track_id IN (#{actual_placeholders})", actual)
+        db.execute("DELETE FROM track_metadata WHERE track_id IN (#{actual_placeholders})", actual)
+        db.execute("DELETE FROM tracks WHERE id IN (#{actual_placeholders})", actual)
+        actual
+      end
+      recompute_counts! unless deleted.empty?
+      deleted
+    end
+
     def most_played
       rows = @db.read do |s|
         s.execute(<<~SQL)

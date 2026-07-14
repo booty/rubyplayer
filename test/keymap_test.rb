@@ -86,6 +86,7 @@ class KeymapTest < Minitest::Test
     assert_equal :seek_forward, k.action_for("]", pane: :library)
     assert_equal :seek_forward, k.action_for("]", pane: :tracks)
     assert_equal :remove_from_queue, k.action_for("x", pane: :tracks)
+    assert_equal :purge_visible_missing, k.action_for("ctrl_x", pane: :tracks)
   end
 
   # "x" is pane-scoped: Library removes a library item, everywhere else

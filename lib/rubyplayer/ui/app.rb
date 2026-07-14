@@ -14,7 +14,7 @@ module RubyPlayer
 
       attr_reader :engine, :library_pane, :tracks_pane, :active_pane, :input_buffer,
                   :pending_delete, :info_track, :show_help, :theme_id, :theme_picker,
-                  :focus_player, :filter_buffer
+                  :focus_player, :filter_buffer, :pending_missing_purge
 
       def initialize(argv: [], config_path: nil, data_path: nil, null_audio: false,
                      io_out: $stdout, focus_player: nil)
@@ -58,6 +58,7 @@ module RubyPlayer
         @filter_buffer = nil
         @filter_before_edit = nil
         @pending_delete = nil
+        @pending_missing_purge = nil
         @info_track = nil
         @show_help = false
         @theme_picker = false
@@ -130,6 +131,7 @@ module RubyPlayer
         return handle_theme_picker_key(key) if @theme_picker
         return handle_help_key(key) if @show_help
         return handle_info_key(key) if @info_track
+        return handle_missing_purge_key(key) if @pending_missing_purge
         return handle_confirm_key(key) if @pending_delete
         return handle_paste(key.text) if key.is_a?(KeyDecoder::Paste)
         return handle_filter_mode_key(key) if @filter_buffer
@@ -179,6 +181,13 @@ module RubyPlayer
         case key
         when "y", "enter" then confirm_delete
         when "n", "escape" then @pending_delete = nil
+        end
+      end
+
+      def handle_missing_purge_key(key)
+        case key
+        when "y", "enter" then confirm_missing_purge
+        when "n", "escape" then @pending_missing_purge = nil
         end
       end
 
@@ -269,6 +278,7 @@ module RubyPlayer
         when :seek_back then seek_by(-1)
         when :remove_from_queue then remove_from_queue
         when :remove_library_item then request_remove_library_item
+        when :purge_visible_missing then request_missing_purge
         when :show_track_info then request_show_track_info
         when :show_help then @show_help = true
         when :show_theme_picker then request_show_theme_picker
@@ -319,6 +329,35 @@ module RubyPlayer
           return
         end
         @pending_delete = row.folder
+      end
+
+      def request_missing_purge
+        unless @library_pane.selected&.kind == :missing
+          @status_line.set_message("Select Missing view to purge tracks")
+          return
+        end
+
+        ids = @tracks_pane.visible_tracks.map(&:id)
+        if ids.empty?
+          @status_line.set_message("No visible missing tracks to purge")
+          return
+        end
+
+        # Capture IDs now: confirmation must describe and delete same filtered
+        # set even if background events reload pane before user answers.
+        @pending_missing_purge = { ids: ids.freeze, count: ids.size }.freeze
+      end
+
+      def confirm_missing_purge
+        pending = @pending_missing_purge
+        @pending_missing_purge = nil
+        deleted = @library.purge_missing_tracks!(pending[:ids])
+        @engine.remove_track_ids(deleted) unless deleted.empty?
+        @library_pane.rebuild!
+        show_selected_tracks
+        @status_line.set_message(
+          "Permanently removed #{deleted.size} missing track#{'s' unless deleted.size == 1}"
+        )
       end
 
       def confirm_delete
@@ -513,6 +552,7 @@ module RubyPlayer
         end
         @hotkey_line.render(@screen, row: rows - 2, w: cols, h: 2, pane: @active_pane, theme: @theme)
         render_confirm_modal if @pending_delete
+        render_missing_purge_modal if @pending_missing_purge
         render_info_modal if @info_track
         render_help_modal if @show_help
         render_theme_picker_modal if @theme_picker
@@ -568,6 +608,21 @@ module RubyPlayer
         @screen.put(y + 2, x + 2, message[0, w - 4], fg: @theme[:accent], bold: true)
         @screen.put(y + 3, x + 2, hint[0, w - 4], fg: @theme[:text_muted])
         @screen.put(y + 4, x + 2, prompt[0, w - 4], fg: @theme[:primary], bold: true)
+      end
+
+      def render_missing_purge_modal
+        count = @pending_missing_purge[:count]
+        pronoun = count == 1 ? "its" : "their"
+        message = "Permanently remove #{count} missing track#{'s' unless count == 1} and #{pronoun} history?"
+        prompt = "[y] Remove    [n/esc] Cancel"
+        w = [message.size, prompt.size].max + 4
+        h = 5
+        x = [(@screen.cols - w) / 2, 0].max
+        y = [(@screen.rows - h) / 2, 0].max
+        (1...(h - 1)).each { |i| @screen.put(y + i, x + 1, " " * (w - 2), bg: @theme[:surface]) }
+        draw_box(x, y, w, h, active: true, title: "Confirm Purge")
+        @screen.put(y + 2, x + 2, message[0, w - 4], fg: @theme[:accent], bold: true)
+        @screen.put(y + 3, x + 2, prompt[0, w - 4], fg: @theme[:primary], bold: true)
       end
 
       # Rows are built as [label, value] pairs and only included when they

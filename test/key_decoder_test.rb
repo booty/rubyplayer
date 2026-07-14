@@ -31,6 +31,7 @@ class KeyDecoderTest < Minitest::Test
 
   def test_ctrl_chords
     assert_equal ["ctrl_r"], decode("\u0012")
+    assert_equal ["ctrl_x"], decode("\u0018")
     assert_equal ["ctrl_c"], decode("\u0003")
   end
 

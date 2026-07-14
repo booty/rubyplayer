@@ -414,6 +414,52 @@ class AppTest < Minitest::Test
     assert_nil @app.pending_delete
   end
 
+  def test_purge_missing_command_explains_wrong_view
+    @app.handle_key("ctrl_x")
+    @app.render
+
+    assert_nil @app.pending_missing_purge
+    assert_includes @app.instance_variable_get(:@io_out).string,
+                    "Select Missing view to purge tracks"
+  end
+
+  def test_purge_missing_captures_only_filtered_visible_ids
+    missing = mark_two_tracks_missing
+    select_tracks_for(:missing)
+    @app.tracks_pane.filter = missing.first.title
+
+    @app.handle_key("ctrl_x")
+
+    assert_equal [missing.first.id], @app.pending_missing_purge[:ids]
+  end
+
+  def test_cancel_missing_purge_keeps_tracks
+    missing = mark_two_tracks_missing
+    select_tracks_for(:missing)
+    @app.handle_key("ctrl_x")
+
+    @app.handle_key("escape")
+
+    assert_nil @app.pending_missing_purge
+    refute_nil @app.instance_variable_get(:@library).find_track(missing.first.id)
+  end
+
+  def test_confirm_missing_purge_deletes_captured_tracks_and_queue_entries
+    missing = mark_two_tracks_missing
+    @app.engine.enqueue_end(missing)
+    select_tracks_for(:missing)
+    @app.tracks_pane.filter = missing.first.title
+    @app.handle_key("ctrl_x")
+
+    @app.handle_key("y")
+
+    library = @app.instance_variable_get(:@library)
+    assert_nil library.find_track(missing.first.id)
+    refute_nil library.find_track(missing.last.id)
+    refute_includes @app.engine.queue_items.map(&:id), missing.first.id
+    assert_nil @app.pending_missing_purge
+  end
+
   def test_confirm_removes_the_folder_from_the_library
     select_library_kind(:folder)
     @app.handle_key("x")
@@ -633,5 +679,17 @@ class AppTest < Minitest::Test
 
     assert_equal 1, @app.tracks_pane.selection
     assert_operator @app.tracks_pane.display_rows.size, :>=, 2
+  end
+
+
+  private
+
+  def mark_two_tracks_missing
+    library = @app.instance_variable_get(:@library)
+    tracks = library.recently_added.first(2)
+    library.mark_missing(track_ids: tracks.map(&:id), folder_ids: [])
+    library.recompute_counts!
+    @app.library_pane.rebuild!
+    tracks
   end
 end
