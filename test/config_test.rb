@@ -2,108 +2,188 @@ require "test_helper"
 require "tmpdir"
 
 class ConfigTest < Minitest::Test
+  def setup
+    @dir = Dir.mktmpdir
+    @path = File.join(@dir, "config.rb")
+  end
+
+  def teardown
+    FileUtils.remove_entry(@dir)
+  end
+
+  def write_config(source, path: @path)
+    FileUtils.mkdir_p(File.dirname(path))
+    File.write(path, source)
+    File.utime(Time.now + 2, Time.now + 2, path)
+  end
+
   def test_defaults_when_no_file
-    c = RubyPlayer::ConfigStore.new(path: "/nonexistent/config.toml")
-    assert_equal "auto", c["audio", "sample_rate"]
-    assert_equal 33, c["ui", "library_pane_percent"]
-    assert_equal 16, c["eq", "bands"]
-    assert_nil c["nope", "nothing"]
+    config = RubyPlayer::ConfigStore.new(path: @path)
+
+    assert_equal "auto", config["audio", "sample_rate"]
+    assert_equal 33, config["ui", "library_pane_percent"]
+    assert_equal 16, config["eq", "bands"]
+    assert_respond_to config["ui", "format_track_grouped"], :call
+    assert_nil config["nope", "nothing"]
   end
 
   def test_archive_defaults
-    c = RubyPlayer::ConfigStore.new(path: "/nonexistent/config.toml")
+    config = RubyPlayer::ConfigStore.new(path: @path)
+
     assert_equal File.join(Dir.home, ".cache", "rubyplayer", "archives"),
-                 c["library", "archive_cache_dir"]
-    assert_equal "bsdtar", c["library", "archive_tool"]
+                 config["library", "archive_cache_dir"]
+    assert_equal "bsdtar", config["library", "archive_tool"]
   end
 
-  def test_file_overrides_defaults_deeply
-    Dir.mktmpdir do |dir|
-      path = File.join(dir, "config.toml")
-      File.write(path, "[audio]\nsample_rate = 48000\n")
-      c = RubyPlayer::ConfigStore.new(path: path)
-      assert_equal 48000, c["audio", "sample_rate"]
-      assert_equal 500, c["audio", "ring_buffer_ms"] # untouched default survives
-    end
+  def test_ruby_file_overrides_defaults_and_supports_ruby
+    write_config <<~RUBY
+      rate = 48_000
+      RubyPlayer.configure do |config|
+        config.audio.sample_rate = rate
+        config.scanner.thread_count = RUBY_VERSION.start_with?("4") ? 4 : 2
+        config.backends[".foo"] = :ffmpeg
+        config.keymap.global["ctrl+p"] = :play_pause
+      end
+    RUBY
+
+    config = RubyPlayer::ConfigStore.new(path: @path)
+
+    assert_equal 48_000, config["audio", "sample_rate"]
+    assert_equal RUBY_VERSION.start_with?("4") ? 4 : 2, config["scanner", "thread_count"]
+    assert_equal :ffmpeg, config["backends", ".foo"]
+    assert_equal :play_pause, config["keymap", "global", "ctrl+p"]
+    assert_equal 500, config["audio", "ring_buffer_ms"]
   end
 
-  def test_invalid_toml_falls_back_to_defaults
-    Dir.mktmpdir do |dir|
-      path = File.join(dir, "config.toml")
-      File.write(path, "= this is [not toml")
-      c = RubyPlayer::ConfigStore.new(path: path)
-      assert_equal "auto", c["audio", "sample_rate"]
-    end
+  def test_multiple_configure_blocks_apply_in_order
+    write_config <<~RUBY
+      RubyPlayer.configure { |config| config.ui.frame_fps = 45 }
+      RubyPlayer.configure { |config| config.ui.frame_fps = 60 }
+    RUBY
+
+    assert_equal 60, RubyPlayer::ConfigStore.new(path: @path)["ui", "frame_fps"]
   end
 
-  def test_persist_theme_creates_file_when_missing
-    Dir.mktmpdir do |dir|
-      path = File.join(dir, "nested", "config.toml")
-      c = RubyPlayer::ConfigStore.new(path: path)
-      c.persist_theme(:neon_cyberpunk)
-      assert_equal "neon_cyberpunk", c["ui", "theme"]
-      assert_equal "neon_cyberpunk", Tomlrb.load_file(path).dig("ui", "theme")
-    end
+  def test_all_setting_sections_are_writable
+    write_config <<~RUBY
+      RubyPlayer.configure do |config|
+        config.ui.library_pane_percent = 40
+        config.audio.decode_chunk_frames = 2048
+        config.scanner.thread_count = 3
+        config.library.history_limit = 50
+        config.eq.bands = 8
+        config.glyphs.star = "*"
+        config.keymap.tracks["z"] = :play_now
+        config.backends["xyz"] = :ffmpeg
+      end
+    RUBY
+
+    config = RubyPlayer::ConfigStore.new(path: @path)
+
+    assert_equal 40, config["ui", "library_pane_percent"]
+    assert_equal 2048, config["audio", "decode_chunk_frames"]
+    assert_equal 3, config["scanner", "thread_count"]
+    assert_equal 50, config["library", "history_limit"]
+    assert_equal 8, config["eq", "bands"]
+    assert_equal "*", config["glyphs", "star"]
+    assert_equal :play_now, config["keymap", "tracks", "z"]
+    assert_equal :ffmpeg, config["backends", "xyz"]
   end
 
-  def test_persist_theme_preserves_other_content_in_the_file
-    Dir.mktmpdir do |dir|
-      path = File.join(dir, "config.toml")
-      File.write(path, <<~TOML)
-        # a comment the user wrote
-        [audio]
-        sample_rate = 48000
+  def test_unknown_setting_reports_path_and_suggestion
+    write_config 'RubyPlayer.configure { |config| config.ui.frame_fpz = 60 }'
 
-        [ui]
-        frame_fps = 60
-      TOML
-      c = RubyPlayer::ConfigStore.new(path: path)
-      c.persist_theme(:solarized_dark_like)
-
-      raw = File.read(path)
-      assert_includes raw, "# a comment the user wrote"
-      assert_includes raw, "sample_rate = 48000"
-      assert_includes raw, "frame_fps = 60"
-      data = Tomlrb.load_file(path)
-      assert_equal "solarized_dark_like", data.dig("ui", "theme")
-      assert_equal 60, data.dig("ui", "frame_fps")
+    error = assert_raises(RubyPlayer::ConfigError) do
+      RubyPlayer::ConfigStore.new(path: @path)
     end
+
+    assert_includes error.message, "ui.frame_fpz"
+    assert_includes error.message, "frame_fps"
+    assert_equal @path, error.path
   end
 
-  def test_persist_theme_overwrites_an_existing_theme_line
-    Dir.mktmpdir do |dir|
-      path = File.join(dir, "config.toml")
-      File.write(path, "[ui]\ntheme = \"basic_terminal\"\nframe_fps = 60\n")
-      c = RubyPlayer::ConfigStore.new(path: path)
-      c.persist_theme(:amber_navy)
+  def test_invalid_value_reports_setting_path
+    write_config 'RubyPlayer.configure { |config| config.audio.ring_buffer_ms = 0 }'
 
-      data = Tomlrb.load_file(path)
-      assert_equal "amber_navy", data.dig("ui", "theme")
-      assert_equal 60, data.dig("ui", "frame_fps")
-      assert_equal 1, File.read(path).scan(/^theme\s*=/).size
+    error = assert_raises(RubyPlayer::ConfigError) do
+      RubyPlayer::ConfigStore.new(path: @path)
     end
+
+    assert_includes error.message, "audio.ring_buffer_ms"
+    assert_includes error.message, "positive Integer"
   end
 
-  def test_persist_theme_does_not_trigger_a_spurious_reload
-    Dir.mktmpdir do |dir|
-      path = File.join(dir, "config.toml")
-      c = RubyPlayer::ConfigStore.new(path: path)
-      c.persist_theme(:ocean_mist)
-      refute c.reload_if_changed
+  def test_runtime_exception_includes_source_location
+    write_config <<~RUBY
+      RubyPlayer.configure do |_config|
+        raise "broken on purpose"
+      end
+    RUBY
+
+    error = assert_raises(RubyPlayer::ConfigError) do
+      RubyPlayer::ConfigStore.new(path: @path)
     end
+
+    assert_includes error.message, "RuntimeError: broken on purpose"
+    assert_match(/#{Regexp.escape(@path)}:\d+/, error.message)
   end
 
-  def test_reload_if_changed
-    Dir.mktmpdir do |dir|
-      path = File.join(dir, "config.toml")
-      File.write(path, "[eq]\nbands = 8\n")
-      c = RubyPlayer::ConfigStore.new(path: path)
-      assert_equal 8, c["eq", "bands"]
-      refute c.reload_if_changed
-      File.write(path, "[eq]\nbands = 32\n")
-      File.utime(Time.now + 2, Time.now + 2, path) # force mtime change
-      assert c.reload_if_changed
-      assert_equal 32, c["eq", "bands"]
+  def test_successful_primary_load_refreshes_previous_source
+    source = "RubyPlayer.configure { |config| config.eq.bands = 8 }\n"
+    write_config source
+
+    config = RubyPlayer::ConfigStore.new(path: @path)
+
+    assert_equal source, File.read(config.previous_path)
+    assert_equal File.join(@dir, "config-previous.rb"), config.previous_path
+  end
+
+  def test_invalid_primary_uses_valid_previous_at_startup
+    previous = File.join(@dir, "config-previous.rb")
+    write_config "RubyPlayer.configure { |config| config.eq.bands = 8 }\n", path: previous
+    write_config "RubyPlayer.configure do |config|\n"
+
+    config = RubyPlayer::ConfigStore.new(path: @path)
+
+    assert_equal 8, config["eq", "bands"]
+    assert_instance_of RubyPlayer::ConfigError, config.startup_error
+    assert_includes config.startup_error.message, "SyntaxError"
+  end
+
+  def test_invalid_primary_and_previous_are_fatal
+    write_config "RubyPlayer.configure do\n", path: File.join(@dir, "config-previous.rb")
+    write_config "RubyPlayer.configure do\n"
+
+    error = assert_raises(RubyPlayer::ConfigError) do
+      RubyPlayer::ConfigStore.new(path: @path)
     end
+
+    assert_includes error.message, "config.rb"
+    assert_includes error.message, "config-previous.rb"
+  end
+
+  def test_failed_reload_keeps_active_data_and_waits_for_another_save
+    write_config "RubyPlayer.configure { |config| config.eq.bands = 8 }\n"
+    config = RubyPlayer::ConfigStore.new(path: @path)
+    write_config "RubyPlayer.configure do |config|\n"
+
+    assert_raises(RubyPlayer::ConfigError) { config.reload_if_changed }
+    assert_equal 8, config["eq", "bands"]
+    refute config.reload_if_changed
+
+    write_config "RubyPlayer.configure { |config| config.eq.bands = 32 }\n"
+    assert config.reload_if_changed
+    assert_equal 32, config["eq", "bands"]
+  end
+
+  def test_reload_detects_same_size_rewrite
+    write_config "RubyPlayer.configure { |config| config.eq.bands = 8 }\n"
+    config = RubyPlayer::ConfigStore.new(path: @path)
+    refute config.reload_if_changed
+
+    write_config "RubyPlayer.configure { |config| config.eq.bands = 4 }\n"
+
+    assert config.reload_if_changed
+    assert_equal 4, config["eq", "bands"]
   end
 end

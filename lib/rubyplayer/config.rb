@@ -1,56 +1,73 @@
-require "tomlrb"
 require "fileutils"
+require_relative "config_dsl"
 
 module RubyPlayer
+  DEFAULT_FORMAT_GROUPED = lambda do |track, fmt|
+    fmt.line(
+      fmt.number(track.track_number),
+      fmt.text(track.title, bold: true),
+      fmt.duration(track.duration_ms, fg: :text_muted),
+      (fmt.text(track.artist, italic: true) unless track.artist == fmt.album_artist),
+      fmt.stars(track.rating)
+    )
+  end
+
+  DEFAULT_FORMAT_UNGROUPED = lambda do |track, fmt|
+    fmt.line(
+      fmt.text(track.album),
+      fmt.number(track.track_number),
+      fmt.text(track.title, bold: true),
+      fmt.duration(track.duration_ms, fg: :text_muted),
+      fmt.text(track.artist, italic: true),
+      fmt.stars(track.rating)
+    )
+  end
+
   DEFAULTS = {
     "ui" => {
       "library_pane_percent" => 33,
       "frame_fps" => 30,
       "status_message_seconds" => 5,
       "seek_seconds" => 10,
-      "format_string_grouped" => "{track_number} {title} {duration} {artist?} {rating}",
-      "format_string_ungrouped" => "{album} {track_number} {title} {duration} {artist?} {rating}",
+      "format_track_grouped" => DEFAULT_FORMAT_GROUPED,
+      "format_track_ungrouped" => DEFAULT_FORMAT_UNGROUPED,
       "theme" => "default",
     },
     "audio" => {
-      "sample_rate" => "auto",   # "auto" = device native, or an integer Hz
+      "sample_rate" => "auto",
       "ring_buffer_ms" => 500,
       "decode_chunk_frames" => 4096,
     },
-    "scanner" => {
-      "thread_count" => 0,       # 0 = number of CPU cores
-    },
+    "scanner" => { "thread_count" => 0 },
     "library" => {
       "backup_retention" => 10,
       "history_limit" => 100,
       "history_min_percent" => 5,
       "history_min_seconds_unknown" => 30,
       "undo_depth" => 10,
-      # extracted-archive cache; entries are content-keyed so this is safe
-      # to delete at any time (next scan/play re-extracts)
       "archive_cache_dir" => File.join(Dir.home, ".cache", "rubyplayer", "archives"),
-      "archive_tool" => "bsdtar", # reads .zip/.7z/.rar; ships with macOS
+      "archive_tool" => "bsdtar",
     },
     "eq" => { "bands" => 16, "fps" => 30 },
-    # PROTIP: Use https://www.nerdfonts.com/cheat-sheet as a reference if you're adding new glyphs
     "glyphs" => {
-      "dir" => "\u{f07b}",        #  folder
-      "archive" => "\u{f1c6}",    #  zip
-      "playlist" => "\u{f0cb}",   #  list
-      "multitrack" => "\u{f0e2a}", # 󰸪 chip
-      "star" => "\u{2605}",       # ★
-      "missing" => "\u{f071}",    #  warning
-      "errored" => "\u{f057}",    #  circle-x
-      "play" => "\u{f04b}",       #
-      "pause" => "\u{f04c}",      #
+      "dir" => "\u{f07b}",
+      "archive" => "\u{f1c6}",
+      "playlist" => "\u{f0cb}",
+      "multitrack" => "\u{f0e2a}",
+      "star" => "\u{2605}",
+      "missing" => "\u{f071}",
+      "errored" => "\u{f057}",
+      "play" => "\u{f04b}",
+      "pause" => "\u{f04c}",
       "eq_chars" => " \u{2581}\u{2582}\u{2583}\u{2584}\u{2585}\u{2586}\u{2587}\u{2588}",
-      "focus" => "\u{e28c}"
+      "focus" => "\u{e28c}",
     },
     "keymap" => { "global" => {}, "library" => {}, "tracks" => {} },
+    "backends" => {},
   }.freeze
 
   def self.config_path
-    File.join(Dir.home, ".config", "rubyplayer", "config.toml")
+    File.join(Dir.home, ".config", "rubyplayer", "config.rb")
   end
 
   def self.data_dir
@@ -60,92 +77,92 @@ module RubyPlayer
   def self.logger
     @logger ||= begin
       require "logger"
-      require "fileutils"
       FileUtils.mkdir_p(data_dir)
-      Logger.new(File.join(data_dir, "rubyplayer.log"), 2, 1_048_576) # 2 rotations, 1MB
+      Logger.new(File.join(data_dir, "rubyplayer.log"), 2, 1_048_576)
     end
   end
 
   class ConfigStore
-    attr_reader :path, :data
+    attr_reader :path, :data, :previous_path, :startup_error
 
     def initialize(path: RubyPlayer.config_path)
       @path = path
-      @mtime = safe_mtime
-      @data = deep_merge(DEFAULTS, load_file)
+      @previous_path = File.join(File.dirname(path), "config-previous.rb")
+      @signature = file_signature
+      @startup_error = nil
+      @data = load_startup
     end
 
     def [](*keys)
-      keys.reduce(@data) { |h, k| h.is_a?(Hash) ? h[k] : nil }
+      keys.reduce(@data) { |value, key| value.is_a?(Hash) ? value[key] : nil }
     end
 
-    # Returns true if the file changed on disk and was re-merged.
     def reload_if_changed
-      m = safe_mtime
-      return false if m == @mtime
-      @mtime = m
-      @data = deep_merge(DEFAULTS, load_file)
-      true
-    end
+      signature = file_signature
+      return false if signature == @signature
 
-    # Called only from the in-app theme picker. Patches just the "theme" line
-    # under [ui] in the on-disk file rather than round-tripping the whole
-    # thing -- there's no TOML writer in this project's dependencies, and
-    # rewriting the full file risks mangling a user's hand-edited comments
-    # for the sake of persisting one scalar.
-    def persist_theme(id)
-      id = id.to_s
-      @data = deep_merge(@data, { "ui" => { "theme" => id } })
-      write_theme_line(id)
-      @mtime = safe_mtime # our own write, not an external change: skip the next reload
+      @signature = signature
+      if signature.nil?
+        @data = ConfigDSL.deep_copy(DEFAULTS)
+      else
+        source = File.binread(@path)
+        candidate = ConfigDSL.evaluate(source, path: @path, defaults: DEFAULTS)
+        snapshot(source)
+        @data = candidate
+      end
+      true
     end
 
     private
 
-    def write_theme_line(id)
-      lines = File.exist?(@path) ? File.readlines(@path) : []
-      in_ui = false
-      ui_header_at = nil
-      replaced = false
-      lines.each_with_index do |line, i|
-        stripped = line.strip
-        if stripped =~ /\A\[(.+)\]\z/
-          in_ui = (Regexp.last_match(1) == "ui")
-          ui_header_at = i if in_ui
-        elsif in_ui && stripped =~ /\Atheme\s*=/
-          lines[i] = "theme = #{id.inspect}\n"
-          replaced = true
-        end
-      end
-      unless replaced
-        if ui_header_at
-          lines.insert(ui_header_at + 1, "theme = #{id.inspect}\n")
-        else
-          lines << "\n" unless lines.empty?
-          lines << "[ui]\n" << "theme = #{id.inspect}\n"
-        end
-      end
-      FileUtils.mkdir_p(File.dirname(@path))
-      File.write(@path, lines.join)
+    def load_startup
+      return ConfigDSL.deep_copy(DEFAULTS) unless File.file?(@path)
+
+      source = File.binread(@path)
+      candidate = ConfigDSL.evaluate(source, path: @path, defaults: DEFAULTS)
+      snapshot(source)
+      candidate
+    rescue ConfigError => primary_error
+      load_previous(primary_error)
     end
 
-    def safe_mtime
-      File.mtime(@path)
+    def load_previous(primary_error)
+      unless File.file?(@previous_path)
+        raise ConfigError.new(
+          path: @path,
+          original: primary_error,
+          message: "#{primary_error.message}\n#{@previous_path}: fallback config is missing"
+        )
+      end
+
+      begin
+        source = File.binread(@previous_path)
+        candidate = ConfigDSL.evaluate(source, path: @previous_path, defaults: DEFAULTS)
+        @startup_error = primary_error
+        candidate
+      rescue ConfigError => previous_error
+        raise ConfigError.new(
+          path: @path,
+          original: primary_error,
+          message: "#{primary_error.message}\nFallback failed: #{previous_error.message}"
+        )
+      end
+    end
+
+    def snapshot(source)
+      FileUtils.mkdir_p(File.dirname(@previous_path))
+      temporary = "#{@previous_path}.tmp-#{Process.pid}"
+      File.binwrite(temporary, source)
+      File.rename(temporary, @previous_path)
+    ensure
+      FileUtils.rm_f(temporary) if temporary && File.exist?(temporary)
+    end
+
+    def file_signature
+      stat = File.stat(@path)
+      [stat.mtime.to_r, stat.size]
     rescue Errno::ENOENT
       nil
-    end
-
-    def load_file
-      return {} unless File.exist?(@path)
-      Tomlrb.load_file(@path)
-    rescue StandardError
-      {} # invalid TOML must never take the app down; defaults win
-    end
-
-    def deep_merge(a, b)
-      a.merge(b) do |_k, old, new|
-        old.is_a?(Hash) && new.is_a?(Hash) ? deep_merge(old, new) : new
-      end
     end
   end
 end
