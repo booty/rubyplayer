@@ -1,4 +1,5 @@
 require "ffi"
+require_relative "audio_format"
 
 module RubyPlayer
   # FFI turns these Ruby method calls into calls to functions exported by the
@@ -26,8 +27,6 @@ module RubyPlayer
   # while CoreAudio consumes it at a fixed real-time pace. Input format is
   # float32 interleaved stereo: left float, right float, repeat.
   class AudioOutput
-    BYTES_PER_FRAME = 2 * 4 # stereo float32
-
     attr_reader :sample_rate
 
     def initialize(sample_rate: "auto", ring_buffer_ms: 500, null_backend: false, native: RpAudio)
@@ -50,7 +49,7 @@ module RubyPlayer
       # Dividing a partial frame would round down the allocation while
       # put_bytes still copied every byte, allowing an out-of-bounds native
       # write. Reject malformed input before crossing the FFI boundary.
-      unless (frames_string.bytesize % BYTES_PER_FRAME).zero?
+      unless (frames_string.bytesize % AudioFormat::BYTES_PER_FRAME).zero?
         raise ArgumentError, "PCM data must contain complete stereo float32 frames"
       end
 
@@ -59,7 +58,7 @@ module RubyPlayer
         # instead of letting them cross FFI into storage already freed by C.
         raise IOError, "audio output is closed" if @closed
 
-        frame_count = frames_string.bytesize / BYTES_PER_FRAME
+        frame_count = frames_string.bytesize / AudioFormat::BYTES_PER_FRAME
         # FFI::MemoryPointer owns C-addressable memory. Reuse the largest one
         # allocated so the hot audio loop does not malloc on every chunk.
         @ptr = FFI::MemoryPointer.new(:float, frame_count * 2) if @ptr.nil? || @ptr.size < frames_string.bytesize

@@ -212,7 +212,7 @@ module RubyPlayer
     def pump
       if @pending
         written = @audio.write(@pending)
-        consumed = written * AudioOutput::BYTES_PER_FRAME
+        consumed = written * AudioFormat::BYTES_PER_FRAME
         @pending = consumed < @pending.bytesize ? @pending.byteslice(consumed..) : nil
         sleep 0.005 if @pending # buffer full: yield briefly, stay responsive
         return

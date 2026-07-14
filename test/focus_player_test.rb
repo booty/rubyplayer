@@ -2,8 +2,6 @@ require "test_helper"
 
 class FocusPlayerTest < Minitest::Test
   class FakeAudio
-    BYTES_PER_FRAME = 8
-
     attr_reader :writes, :pause_values, :flushes
 
     def initialize(sample_rate: 48_000)
@@ -17,7 +15,7 @@ class FocusPlayerTest < Minitest::Test
 
     def write(bytes)
       @writes << bytes
-      bytes.bytesize / BYTES_PER_FRAME
+      bytes.bytesize / RubyPlayer::AudioFormat::BYTES_PER_FRAME
     end
 
     def paused=(value)
@@ -85,7 +83,7 @@ class FocusPlayerTest < Minitest::Test
 
   def test_play_sends_quiet_sox_pcm_to_app_audio
     calls = []
-    sample = "\x00".b * FakeAudio::BYTES_PER_FRAME
+    sample = "\x00".b * RubyPlayer::AudioFormat::BYTES_PER_FRAME
     player = build_player(spawn: lambda do |*args, **opts|
       calls << [args, opts]
       opts[:out].write(sample)
@@ -119,7 +117,7 @@ class FocusPlayerTest < Minitest::Test
   end
 
   def test_pcm_pipe_buffers_partial_frames_before_writing_audio
-    frame = "\x00".b * FakeAudio::BYTES_PER_FRAME
+    frame = "\x00".b * RubyPlayer::AudioFormat::BYTES_PER_FRAME
     reader = FragmentReader.new([frame + "\x00".b, "\x00".b * 7])
     writer = FakeWriter.new
     player = build_player(spawn: ->(*, **) { 42 }, pipe: -> { [reader, writer] })
@@ -134,7 +132,7 @@ class FocusPlayerTest < Minitest::Test
 
   def test_stop_waits_for_prior_pcm_writer_before_replacement
     @audio = BlockingAudio.new
-    sample = "\x00".b * FakeAudio::BYTES_PER_FRAME
+    sample = "\x00".b * RubyPlayer::AudioFormat::BYTES_PER_FRAME
     player = build_player(spawn: ->(*, **opts) { opts[:out].write(sample); 42 })
     player.play(RubyPlayer::FocusSounds::ALL.first)
     @audio.wait_for_write
@@ -151,7 +149,7 @@ class FocusPlayerTest < Minitest::Test
 
   def test_stop_waits_for_pcm_writer_when_termination_raises
     @audio = BlockingAudio.new
-    sample = "\x00".b * FakeAudio::BYTES_PER_FRAME
+    sample = "\x00".b * RubyPlayer::AudioFormat::BYTES_PER_FRAME
     player = build_player(
       spawn: ->(*, **opts) { opts[:out].write(sample); 42 },
       kill: ->(*) { raise Errno::EPERM }

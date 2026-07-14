@@ -1,3 +1,5 @@
+require_relative "audio_format"
+
 module RubyPlayer
   # Runs SoX as an endless PCM generator, then feeds its stdout through the
   # same AudioOutput used by normal tracks. Routing SoX through Ruby instead of
@@ -8,9 +10,6 @@ module RubyPlayer
     # Pipe reads are batched for efficiency. This is a byte count, not a promise
     # that IO will return exactly this many bytes.
     READ_SIZE = 16 * 1024
-    # SoX is configured for stereo float32: two channels * four bytes each.
-    BYTES_PER_FRAME = 8
-
     def initialize(audio:, spawn: Process.method(:spawn), kill: Process.method(:kill),
                    waitpid: Process.method(:waitpid),
                    clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) },
@@ -102,8 +101,8 @@ module RubyPlayer
       # `-t raw` needs every format detail because raw bytes carry no header.
       # These values deliberately match AudioOutput's stereo float32 contract
       # and actual device sample rate, avoiding conversion in Ruby or C.
-      ["sox", "-q", "-n", "-t", "raw", "-e", "floating-point", "-b", "32",
-       "-c", "2", "-r", @audio.sample_rate.to_s, "-", *sound.sox_args.drop(1)]
+      ["sox", "-q", "-n", "-t", "raw", *AudioFormat::SOX_RAW_ARGS,
+       "-r", @audio.sample_rate.to_s, "-", *sound.sox_args.drop(1)]
     end
 
     def drain(reader, pid)
@@ -145,7 +144,7 @@ module RubyPlayer
     end
 
     def write_complete_frames(data)
-      byte_count = data.bytesize - (data.bytesize % BYTES_PER_FRAME)
+      byte_count = data.bytesize - (data.bytesize % AudioFormat::BYTES_PER_FRAME)
       return data if byte_count.zero?
 
       write_fully(data.byteslice(0, byte_count))
@@ -162,7 +161,7 @@ module RubyPlayer
           @sleeper.call(0.005)
           next
         end
-        remaining = remaining.byteslice(frames * BYTES_PER_FRAME..)
+        remaining = remaining.byteslice(frames * AudioFormat::BYTES_PER_FRAME..)
       end
     end
 
