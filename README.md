@@ -5,13 +5,14 @@ A terminal (TUI) music player for retro game-music and tracker formats — chipt
 ## Requirements
 
 - Ruby 4.x (managed via [mise](https://mise.jdx.dev/); see `.ruby-version`)
-- Homebrew: `libgme`, `libopenmpt`, `sox`
+- Homebrew: `libgme`, `libopenmpt`, `sox`, `ffmpeg`
+- `bsdtar` (ships with macOS; fallback: `brew install libarchive`)
 - Xcode command-line tools (`clang`) to build the native audio shim
 
 ## Setup
 
 ```sh
-brew install libgme libopenmpt
+brew install libgme libopenmpt sox ffmpeg
 mise install
 bundle install
 ```
@@ -23,6 +24,8 @@ bin/rubyplayer [path ...]
 ```
 
 `rake compile` builds the native audio shim (`lib/rubyplayer/native/librp_audio.dylib`) automatically as a prerequisite of `rake test`; `bin/rubyplayer` expects it to already exist, so run `rake compile` (or `rake test`) at least once after a fresh checkout.
+
+Startup checks every supported runtime dependency before taking over the terminal. Missing Homebrew packages are reported together with one `brew install ...` command. If only the bundled audio shim is missing, run `bundle exec rake compile`.
 
 Any paths given on the command line are scanned into the library on startup, in addition to any roots already remembered from a previous run.
 
