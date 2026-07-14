@@ -45,6 +45,17 @@ class ScreenTest < Minitest::Test
     assert_includes out, "\e[0;1;92m" # bold + bright_green as one SGR
   end
 
+  def test_underline_and_dim_are_emitted_and_part_of_cell_style
+    s = make_screen
+    s.put(0, 0, "x", underline: true, dim: true)
+    output = s.flush
+
+    assert_includes output, "\e[0;2;4m"
+    cell = s.instance_variable_get(:@front)[0][0]
+    assert cell.underline
+    assert cell.dim
+  end
+
   def test_clipping_out_of_bounds
     s = make_screen(rows: 2, cols: 5)
     s.put(0, 3, "abcdef") # clips at col 5

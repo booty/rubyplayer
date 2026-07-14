@@ -23,9 +23,9 @@ module RubyPlayer
       end
 
       def update_config(config)
-        star = config["glyphs", "star"]
-        @grouped_template = Template.new(config["ui", "format_string_grouped"], star_glyph: star)
-        @flat_template = Template.new(config["ui", "format_string_ungrouped"], star_glyph: star)
+        @star_glyph = config["glyphs", "star"]
+        @grouped_formatter = config["ui", "format_track_grouped"]
+        @flat_formatter = config["ui", "format_track_ungrouped"]
         @history_limit = config["library", "history_limit"]
       end
 
@@ -204,8 +204,6 @@ module RubyPlayer
 
       private
 
-      ITALIC_FIELDS = %w[artist artist?].freeze
-
       def empty_message
         return "No matches — press / to edit filter" unless @filter.empty? || @tracks.empty?
 
@@ -217,11 +215,8 @@ module RubyPlayer
         end
       end
 
-      # Renders row[:segments] (see Template#render_segments) one field at a
-      # time instead of one big string, so title/artist/duration can each
-      # carry their own style -- title always bold, artist always italic,
-      # duration muted when the row isn't the selected one (selection's own
-      # fg takes over then, for readability against the highlight).
+      # Selection owns foreground/background so every highlighted row remains
+      # readable. Formatter text attributes survive selection.
       def render_track_row(screen, row, x, y, w, selected:, bg:, theme:)
         col = x
         remaining = w
@@ -230,10 +225,11 @@ module RubyPlayer
           next if seg[:text].empty?
 
           chunk = seg[:text][0, remaining]
-          fg = selected ? theme[:selection_text] : (seg[:field] == "duration" ? theme[:text_muted] : theme[:text])
-          screen.put(y, col, chunk, fg: fg, bg: bg,
-                     bold: selected || seg[:field] == "title",
-                     italic: ITALIC_FIELDS.include?(seg[:field]))
+          fg = selected ? theme[:selection_text] : resolve_color(seg[:fg] || :text, theme)
+          segment_bg = selected ? theme[:selection_bg] : resolve_color(seg[:bg], theme)
+          screen.put(y, col, chunk, fg: fg, bg: segment_bg || bg,
+                     bold: selected || seg[:bold], italic: seg[:italic],
+                     underline: seg[:underline], dim: seg[:dim])
           col += chunk.size
           remaining -= chunk.size
         end
@@ -252,15 +248,16 @@ module RubyPlayer
 
       def flat_rows
         filtered_tracks.map do |t|
-          { type: :track, text: @flat_template.render(t),
-            segments: @flat_template.render_segments(t), track: t }
+          segments = TrackFormatter.render(@flat_formatter, t, star_glyph: @star_glyph)
+          { type: :track, text: segments.map { |segment| segment[:text] }.join,
+            segments: segments, track: t }
         end
       end
 
       def focus_rows
         filtered_tracks.map do |sound|
           { type: :focus, text: sound.title,
-            segments: [{ text: sound.title, field: "title" }], focus_sound: sound }
+            segments: [{ text: sound.title, bold: true }], focus_sound: sound }
         end
       end
 
@@ -269,11 +266,17 @@ module RubyPlayer
         groups.flat_map do |album, tracks|
           album_artist = tracks.map(&:artist).tally.max_by { |_, n| n }&.first
           [{ type: :header, text: album }] + tracks.map do |t|
-            { type: :track, text: @grouped_template.render(t, album_artist: album_artist),
-              segments: @grouped_template.render_segments(t, album_artist: album_artist),
-              track: t }
+            segments = TrackFormatter.render(
+              @grouped_formatter, t, album_artist: album_artist, star_glyph: @star_glyph
+            )
+            { type: :track, text: segments.map { |segment| segment[:text] }.join,
+              segments: segments, track: t }
           end
         end
+      end
+
+      def resolve_color(color, theme)
+        color.is_a?(Symbol) && theme.key?(color) ? theme[color] : color
       end
 
       def apply_sort

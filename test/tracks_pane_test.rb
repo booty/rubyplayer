@@ -12,7 +12,7 @@ class TracksPaneTest < Minitest::Test
     add("a.vgm", title: "Alpha",   album: "Apple", artist: "X", number: 2)
     add("b.vgm", title: "Bravo",   album: "Apple", artist: "Y", number: 1)
     @lib.recompute_counts!
-    @config = RubyPlayer::ConfigStore.new(path: "/nonexistent.toml")
+    @config = RubyPlayer::ConfigStore.new(path: "/nonexistent.rb")
     @queue = []
     @pane = RubyPlayer::UI::TracksPane.new(library: @lib, config: @config,
                                            queue_source: -> { @queue })
@@ -198,23 +198,51 @@ class TracksPaneTest < Minitest::Test
     # Row 1 (not the default selection at row 0) so field colors reflect
     # each field's own style rather than being overridden by selection.
     row = @pane.display_rows[1]
-    cell_for = lambda do |field|
+    cell_for = lambda do |text|
       offset = 0
       row[:segments].each do |seg|
-        return back[1][offset] if seg[:field] == field
+        return back[1][offset] if seg[:text] == text
         offset += seg[:text].size
       end
     end
 
-    title_cell = cell_for.call("title")
-    artist_cell = cell_for.call("artist?")
-    duration_cell = cell_for.call("duration")
+    title_cell = cell_for.call(row[:track].title)
+    artist_cell = cell_for.call(row[:track].artist)
+    duration_cell = cell_for.call("1:00")
 
     assert title_cell.bold
     refute title_cell.italic
     assert artist_cell.italic
     refute artist_cell.bold
     assert_equal theme[:text_muted], duration_cell.fg
+  end
+
+  def test_selection_colors_override_formatter_colors_but_keep_attributes
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "config.rb")
+      File.write(path, <<~RUBY)
+        RubyPlayer.configure do |config|
+          config.ui.format_track_ungrouped = lambda do |track, fmt|
+            fmt.text(track.title, fg: :yellow, bg: :red, italic: true, underline: true)
+          end
+        end
+      RUBY
+      pane = RubyPlayer::UI::TracksPane.new(
+        library: @lib, config: RubyPlayer::ConfigStore.new(path: path),
+        queue_source: -> { @queue }
+      )
+      pane.show(@folder_row)
+      screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 5, cols: 40)
+      theme = RubyPlayer::Theme::DEFAULT
+
+      pane.render(screen, x: 0, y: 0, w: 40, h: 5, active: true, theme: theme)
+
+      cell = screen.instance_variable_get(:@back)[0][0]
+      assert_equal theme[:selection_text], cell.fg
+      assert_equal theme[:selection_bg], cell.bg
+      assert cell.italic
+      assert cell.underline
+    end
   end
 
   def test_page_navigation_jumps_by_rendered_height_and_skips_headers
@@ -393,10 +421,17 @@ class TracksPaneTest < Minitest::Test
   def test_config_hot_reload_changes_format
     @pane.show(@folder_row)
     Dir.mktmpdir do |dir|
-      path = File.join(dir, "c.toml")
-      File.write(path, "[ui]\nformat_string_ungrouped = \"<<{title}>>\"\n")
+      path = File.join(dir, "config.rb")
+      File.write(path, <<~RUBY)
+        RubyPlayer.configure do |config|
+          config.ui.format_track_ungrouped = lambda do |track, fmt|
+            fmt.text("<<\#{track.title}>>", fg: :accent)
+          end
+        end
+      RUBY
       @pane.update_config(RubyPlayer::ConfigStore.new(path: path))
       assert_includes @pane.display_rows.first[:text], "<<"
+      assert_equal :accent, @pane.display_rows.first[:segments].first[:fg]
     end
   end
 end
