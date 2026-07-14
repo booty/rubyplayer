@@ -104,18 +104,20 @@ class PlaybackEngineTest < Minitest::Test
   end
 
   def wait_for(timeout = 5)
-    deadline = Time.now + timeout
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
     until (r = yield)
-      flunk "timed out waiting" if Time.now > deadline
+      now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      flunk "timed out waiting" if now > deadline
       sleep 0.02
     end
     r
   end
 
   def wait_for_event(type, timeout = 5)
-    deadline = Time.now + timeout
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
     loop do
-      flunk "timed out waiting for #{type}" if Time.now > deadline
+      now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      flunk "timed out waiting for #{type}" if now > deadline
       begin
         ev = @bus.events.pop(true)
         return ev if ev[0] == type

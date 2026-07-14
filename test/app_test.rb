@@ -152,9 +152,10 @@ class AppTest < Minitest::Test
   # the wait_for pattern already used in playback_engine_test.rb rather than
   # a blind sleep-then-assert.
   def wait_until(timeout: 2)
-    deadline = Time.now + timeout
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
     until yield
-      flunk("timed out waiting for condition") if Time.now > deadline
+      now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      flunk("timed out waiting for condition") if now > deadline
       sleep 0.01
     end
   end

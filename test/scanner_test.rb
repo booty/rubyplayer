@@ -43,7 +43,7 @@ class ScannerTest < Minitest::Test
   end
 
   def test_unchanged_files_yield_no_work
-    work = @scanner.reconcile(@music)
+    @scanner.reconcile(@music)
     sega_id = @db.read { |s| s.get_first_value("SELECT id FROM folders WHERE path = ?", [File.join(@music, "sega")]) }
     @lib.upsert_track(track_attrs(@mod, sega_id))
     music_id = @db.read { |s| s.get_first_value("SELECT id FROM folders WHERE path = ?", [@music]) }
