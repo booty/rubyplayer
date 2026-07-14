@@ -12,7 +12,7 @@ class TracksPaneTest < Minitest::Test
     add("a.vgm", title: "Alpha",   album: "Apple", artist: "X", number: 2)
     add("b.vgm", title: "Bravo",   album: "Apple", artist: "Y", number: 1)
     @lib.recompute_counts!
-    @config = RubyPlayer::ConfigStore.new(path: "/nonexistent.rb")
+    @config = RubyPlayer::ConfigStore.new(path: "/nonexistent.rb", create_if_missing: false)
     @queue = []
     @pane = RubyPlayer::UI::TracksPane.new(library: @lib, config: @config,
                                            queue_source: -> { @queue })

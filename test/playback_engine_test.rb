@@ -80,7 +80,7 @@ class PlaybackEngineTest < Minitest::Test
     @engine = RubyPlayer::PlaybackEngine.new(
       queue: RubyPlayer::PlayQueue.new, registry: RubyPlayer::Backends::Registry.new,
       audio: @audio, library: @lib, event_bus: @bus,
-      config: RubyPlayer::ConfigStore.new(path: "/nonexistent.toml"),
+      config: RubyPlayer::ConfigStore.new(path: "/nonexistent.rb", create_if_missing: false),
       archive_cache: RubyPlayer::ArchiveCache.new(root: File.join(@tmp, "cache")),
       focus_player: @focus_source
     )

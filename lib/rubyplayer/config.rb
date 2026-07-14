@@ -70,6 +70,10 @@ module RubyPlayer
     File.join(Dir.home, ".config", "rubyplayer", "config.rb")
   end
 
+  def self.config_sample_path
+    File.expand_path("../../examples/config.rb", __dir__)
+  end
+
   def self.data_dir
     File.join(Dir.home, ".local", "share", "rubyplayer")
   end
@@ -89,9 +93,13 @@ module RubyPlayer
 
     attr_reader :path, :data, :previous_path, :startup_error
 
-    def initialize(path: RubyPlayer.config_path)
+    def initialize(path: RubyPlayer.config_path, sample_path: RubyPlayer.config_sample_path,
+                   create_if_missing: true)
       @path = path
       @previous_path = File.join(File.dirname(path), "config-previous.rb")
+      @sample_path = sample_path
+      @create_if_missing = create_if_missing
+      bootstrap_primary! if @create_if_missing
       @signature = file_signature
       @startup_error = nil
       @data = load_startup
@@ -103,6 +111,10 @@ module RubyPlayer
 
     def reload_if_changed
       signature = file_signature
+      if signature.nil? && @create_if_missing
+        bootstrap_primary!
+        signature = file_signature
+      end
       return false if signature == @signature
 
       @signature = signature
@@ -136,6 +148,25 @@ module RubyPlayer
     end
 
     private
+
+    def bootstrap_primary!
+      return if File.exist?(@path)
+
+      source_path = File.file?(@previous_path) ? @previous_path : @sample_path
+      unless File.file?(source_path)
+        raise ConfigError.new(
+          path: source_path,
+          message: "#{source_path}: config sample is missing"
+        )
+      end
+
+      source = File.binread(source_path)
+      exclusive_atomic_create(@path, source)
+    rescue ConfigError
+      raise
+    rescue SystemCallError => error
+      raise ConfigError.new(path: source_path || @path, original: error), cause: error
+    end
 
     def load_startup
       return ConfigDSL.deep_copy(DEFAULTS) unless File.file?(@path)
@@ -178,8 +209,30 @@ module RubyPlayer
     def atomic_write(destination, source)
       FileUtils.mkdir_p(File.dirname(destination))
       temporary = "#{destination}.tmp-#{Process.pid}"
-      File.binwrite(temporary, source)
+      File.open(temporary, File::WRONLY | File::CREAT | File::TRUNC, 0o600) do |file|
+        file.binmode
+        file.write(source)
+        file.flush
+        file.fsync
+      end
       File.rename(temporary, destination)
+    ensure
+      FileUtils.rm_f(temporary) if temporary && File.exist?(temporary)
+    end
+
+    def exclusive_atomic_create(destination, source)
+      FileUtils.mkdir_p(File.dirname(destination))
+      nonce = Process.clock_gettime(Process::CLOCK_MONOTONIC, :nanosecond)
+      temporary = "#{destination}.tmp-#{Process.pid}-#{nonce}"
+      File.open(temporary, File::WRONLY | File::CREAT | File::EXCL, 0o600) do |file|
+        file.binmode
+        file.write(source)
+        file.flush
+        file.fsync
+      end
+      File.link(temporary, destination)
+    rescue Errno::EEXIST
+      raise unless File.exist?(destination)
     ensure
       FileUtils.rm_f(temporary) if temporary && File.exist?(temporary)
     end

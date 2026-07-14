@@ -86,7 +86,7 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | File | Purpose |
 |---|---|
 | `rubyplayer.rb` | Top-level module: version constant and the `require_relative` list that loads the rest of the library in dependency order. |
-| `config.rb` | Built-in defaults and `ConfigStore`: transactionally loads executable `~/.config/rubyplayer/config.rb`, hot-reloads it, snapshots valid source to `config-previous.rb`, and falls back to that snapshot after startup errors. |
+| `config.rb` | Built-in defaults and `ConfigStore`: installs `examples/config.rb` when needed, transactionally loads executable `~/.config/rubyplayer/config.rb`, hot-reloads it, snapshots valid source to `config-previous.rb`, and restores that snapshot when primary source disappears. |
 | `config_dsl.rb` | Validated configuration DSL and evaluator. Builds settings before activation, rejects unknown names with suggestions, and wraps syntax/runtime/validation failures as `ConfigError`. |
 | `database.rb` | `Database`: owns the SQLite connection (WAL mode, foreign keys on), the schema (`folders`, `tracks`, `track_metadata`, `playback_history`), and a single-writer-mutex `write`/multi-reader `read` API. Backs up the existing DB file on open and rebuilds from scratch if the schema version doesn't match. |
 | `track.rb` | `Track`: a keyword-init `Struct` mirroring a `tracks` row, with `Track.from_row` to build one from a SQLite result hash. This is the value object passed around the whole playback pipeline (queue, engine, UI panes). |
@@ -135,13 +135,16 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 |---|---|
 | `test/` | Minitest suite, one file per class above plus `test_helper.rb` (fixture path constant, requires). Run with `rake test`. |
 | `fixtures/` | Real sample files in every supported format, used by the test suite and for manual verification. |
+| `examples/config.rb` | Packaged executable-config starter. First run copies it to `~/.config/rubyplayer/config.rb`; settings remain commented so future built-in default changes still apply. |
 | `docs/superpowers/` | Design spec and implementation plan produced while building this project. |
 | `ideas.md` | Original freeform brainstorm this project's design was distilled from. |
 
 ## Configuration
 
 User configuration is executable Ruby at `~/.config/rubyplayer/config.rb`.
-Missing file is fine: built-in defaults remain active.
+On first run rubyplayer atomically copies packaged `examples/config.rb` there.
+Starter includes common settings, maps, and formatter examples, but leaves them
+commented so built-in defaults can evolve between releases.
 
 > **Security:** `config.rb` is ordinary Ruby, not a sandbox. It runs with your
 > user account's permissions. Only use configuration you wrote or reviewed.
@@ -172,6 +175,8 @@ Rubyplayer checks `config.rb` once per second:
 
 - Valid saves activate atomically and copy exact validated source to
   `~/.config/rubyplayer/config-previous.rb`.
+- Missing primary config is restored from `config-previous.rb`. If both user
+  files are absent, packaged example is installed again.
 - Invalid hot reloads keep current in-memory config and open an exception modal.
   Fix and save again; successful reload closes it.
 - Invalid startup config falls back to valid `config-previous.rb` and displays
@@ -180,6 +185,11 @@ Rubyplayer checks `config.rb` once per second:
   also fails.
 
 Press Escape or Enter to dismiss error modal without changing active config.
+
+To intentionally reset config, remove both `config.rb` and
+`config-previous.rb`, then restart. Rubyplayer installs fresh packaged example.
+These user files live under `~/.config`, outside repository, so repository
+`.gitignore` entries are unnecessary.
 
 Theme picker writes one clearly marked managed block at end of `config.rb`.
 Rubyplayer replaces only that block; user code and comments remain untouched.

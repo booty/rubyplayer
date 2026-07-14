@@ -5,6 +5,7 @@ class ConfigTest < Minitest::Test
   def setup
     @dir = Dir.mktmpdir
     @path = File.join(@dir, "config.rb")
+    @sample_path = File.join(@dir, "sample.rb")
   end
 
   def teardown
@@ -20,11 +21,98 @@ class ConfigTest < Minitest::Test
   def test_defaults_when_no_file
     config = RubyPlayer::ConfigStore.new(path: @path)
 
+    assert_equal File.read(RubyPlayer.config_sample_path), File.read(@path)
     assert_equal "auto", config["audio", "sample_rate"]
     assert_equal 33, config["ui", "library_pane_percent"]
     assert_equal 16, config["eq", "bands"]
     assert_respond_to config["ui", "format_track_grouped"], :call
     assert_nil config["nope", "nothing"]
+  end
+
+  def test_packaged_sample_is_valid_and_does_not_pin_defaults
+    source = File.read(RubyPlayer.config_sample_path)
+    data = RubyPlayer::ConfigDSL.evaluate(
+      source, path: RubyPlayer.config_sample_path, defaults: RubyPlayer::DEFAULTS
+    )
+
+    assert_equal RubyPlayer::DEFAULTS["ui"]["theme"], data["ui"]["theme"]
+    assert_equal RubyPlayer::DEFAULTS["audio"]["ring_buffer_ms"],
+                 data["audio"]["ring_buffer_ms"]
+    assert_includes source, "config.ui.format_track_ungrouped"
+    assert_includes source, "config.keymap.global"
+  end
+
+  def test_first_run_installs_exact_sample_and_snapshots_it
+    sample = <<~RUBY
+      # example
+      RubyPlayer.configure { |config| config.eq.bands = 8 }
+    RUBY
+    write_config sample, path: @sample_path
+
+    config = RubyPlayer::ConfigStore.new(path: @path, sample_path: @sample_path)
+
+    assert_equal sample, File.read(@path)
+    assert_equal sample, File.read(config.previous_path)
+    assert_equal 8, config["eq", "bands"]
+    assert_equal 0o600, File.stat(@path).mode & 0o777
+  end
+
+  def test_previous_config_is_restored_before_sample
+    sample = "RubyPlayer.configure { |config| config.eq.bands = 8 }\n"
+    previous = "RubyPlayer.configure { |config| config.eq.bands = 32 }\n"
+    write_config sample, path: @sample_path
+    write_config previous, path: File.join(@dir, "config-previous.rb")
+
+    config = RubyPlayer::ConfigStore.new(path: @path, sample_path: @sample_path)
+
+    assert_equal previous, File.read(@path)
+    assert_equal 32, config["eq", "bands"]
+  end
+
+  def test_existing_primary_is_never_replaced_by_sample
+    primary = "RubyPlayer.configure { |config| config.eq.bands = 4 }\n"
+    sample = "RubyPlayer.configure { |config| config.eq.bands = 8 }\n"
+    write_config primary
+    write_config sample, path: @sample_path
+
+    config = RubyPlayer::ConfigStore.new(path: @path, sample_path: @sample_path)
+
+    assert_equal primary, File.read(@path)
+    assert_equal 4, config["eq", "bands"]
+  end
+
+  def test_deleted_primary_is_restored_during_hot_reload
+    sample = "RubyPlayer.configure { |config| config.eq.bands = 8 }\n"
+    write_config sample, path: @sample_path
+    config = RubyPlayer::ConfigStore.new(path: @path, sample_path: @sample_path)
+    updated = "RubyPlayer.configure { |config| config.eq.bands = 32 }\n"
+    write_config updated
+    assert config.reload_if_changed
+    File.delete(@path)
+
+    assert config.reload_if_changed
+    assert_equal updated, File.read(@path)
+    assert_equal 32, config["eq", "bands"]
+  end
+
+  def test_missing_packaged_sample_is_actionable
+    missing_sample = File.join(@dir, "missing-example.rb")
+
+    error = assert_raises(RubyPlayer::ConfigError) do
+      RubyPlayer::ConfigStore.new(path: @path, sample_path: missing_sample)
+    end
+
+    assert_includes error.message, missing_sample
+    assert_includes error.message, "sample"
+  end
+
+  def test_bootstrap_can_be_disabled_for_in_memory_defaults
+    config = RubyPlayer::ConfigStore.new(
+      path: @path, sample_path: @sample_path, create_if_missing: false
+    )
+
+    refute File.exist?(@path)
+    assert_equal 16, config["eq", "bands"]
   end
 
   def test_archive_defaults
@@ -222,6 +310,8 @@ class ConfigTest < Minitest::Test
     assert source.end_with?("# rubyplayer: managed theme end\n")
     assert_equal "amber_navy", config["ui", "theme"]
     assert_equal source, File.read(config.previous_path)
+    assert_equal 0o600, File.stat(@path).mode & 0o777
+    assert_equal 0o600, File.stat(config.previous_path).mode & 0o777
     refute config.reload_if_changed
   end
 
