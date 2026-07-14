@@ -134,10 +134,20 @@ class AppTest < Minitest::Test
     queued_ids = @app.engine.queue_items.map(&:id)
     select_tracks_for(:focus)
 
+    playing_when_focus_started = nil
+    engine = @app.engine
+    focus_player = FakeFocusPlayer.new
+    focus_player.define_singleton_method(:play) do |sound|
+      playing_when_focus_started = engine.state[:playing]
+      super(sound)
+    end
+    @app.instance_variable_set(:@focus_player, focus_player)
+
     @app.handle_key("enter")
 
-    wait_until { !@app.engine.state[:playing] }
-    assert_equal [RubyPlayer::FocusSounds::ALL.first], @focus_player.played
+    refute playing_when_focus_started,
+      "decoder playback must stop before Focus starts writing to shared audio"
+    assert_equal [RubyPlayer::FocusSounds::ALL.first], focus_player.played
     assert_equal queued_ids, @app.engine.queue_items.map(&:id)
   end
 

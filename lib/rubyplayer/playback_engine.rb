@@ -108,10 +108,16 @@ module RubyPlayer
     end
 
     def skip = @commands << :skip
-    # Focus playback needs to silence the decoder without consuming or clearing
-    # its queue. Like other engine controls, this is queued so only the decoder
-    # thread mutates handles and playback state.
-    def stop = @commands << :stop_playback
+    # Focus playback needs a complete handoff, not merely a queued stop request:
+    # both sources share AudioOutput, so Focus must not unpause/write before the
+    # decoder has closed its handle, paused the device, and flushed old samples.
+    # The reply queue is a one-shot barrier from the decoder thread back to the
+    # caller; queue contents remain untouched.
+    def stop
+      completed = Thread::Queue.new
+      @commands << [:stop_playback, completed]
+      completed.pop
+    end
     def seek(ms) = @commands << [:seek, ms]
 
     def toggle_skip_disliked
@@ -159,7 +165,18 @@ module RubyPlayer
           when :skip then finish_and_advance
           when :stop_playback then stop_playback
           when :toggle_pause then toggle_pause
-          when Array then handle_seek(cmd[1]) if cmd[0] == :seek
+          when Array
+            if cmd[0] == :seek
+              handle_seek(cmd[1])
+            elsif cmd[0] == :stop_playback
+              begin
+                stop_playback
+              ensure
+                # Never strand a caller if stop cleanup raises; run's rescue
+                # still handles that error after the barrier is released.
+                cmd[1] << true
+              end
+            end
           end
           pump if @playing && !@paused
         rescue StandardError => e

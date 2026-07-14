@@ -332,9 +332,10 @@ module RubyPlayer
       end
 
       def play_focus(sound)
-        # PlaybackEngine processes stop on its decoder thread, preserving the
-        # queue. Focus uses the same synchronized AudioOutput, then remains the
-        # source until a normal track is selected or another Focus sound starts.
+        # PlaybackEngine#stop waits for its decoder thread to pause and flush
+        # the shared AudioOutput while preserving the queue. Only then may Focus
+        # unpause that output and become its producer; without this ordering, a
+        # late decoder flush could discard newly generated Focus samples.
         @engine.stop
         @focus_player.play(sound)
         @status_line.set_message("Playing focus: #{sound.title}")
