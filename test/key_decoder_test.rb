@@ -34,7 +34,11 @@ class KeyDecoderTest < Minitest::Test
     assert_equal ["ctrl_c"], decode("\u0003")
   end
 
-  def test_bracketed_paste_markers_stripped
-    assert_equal %w[/ t m p], decode("\e[200~/tmp\e[201~")
+  def test_bracketed_paste_is_one_payload_event
+    events = decode("\e[200~/tmp/My\\ Music\e[201~")
+
+    assert_equal 1, events.size
+    assert_instance_of RubyPlayer::UI::KeyDecoder::Paste, events.first
+    assert_equal "/tmp/My\\ Music", events.first.text
   end
 end

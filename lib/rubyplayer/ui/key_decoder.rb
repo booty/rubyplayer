@@ -2,6 +2,9 @@ module RubyPlayer
   module UI
     # Normalizes raw terminal bytes into Keymap key-name strings.
     module KeyDecoder
+      Paste = Struct.new(:text)
+      PASTE_START = "\e[200~"
+      PASTE_END = "\e[201~"
       ESC_SEQS = { "[A" => "up", "[B" => "down", "[C" => "right", "[D" => "left",
                    "[5~" => "pgup", "[6~" => "pgdn",
                    # xterm-style modifier encoding: "1;2" = shift
@@ -12,7 +15,19 @@ module RubyPlayer
         i = 0
         while i < bytes.length
           ch = bytes[i]
-          if ch == "\e"
+          # Bracketed paste must remain one event. Treating dropped path as
+          # ordinary keystrokes lets leading "/" open filter and later letters
+          # trigger unrelated global shortcuts.
+          if bytes.byteslice(i, PASTE_START.length) == PASTE_START
+            content_start = i + PASTE_START.length
+            content_end = bytes.index(PASTE_END, content_start)
+            if content_end
+              keys << Paste.new(bytes[content_start...content_end])
+              i = content_end + PASTE_END.length
+            else
+              i = bytes.length
+            end
+          elsif ch == "\e"
             if bytes[i + 1] == "["
               seq_end = i + 2
               seq_end += 1 while seq_end < bytes.length && !bytes[seq_end].match?(/[a-zA-Z~]/)

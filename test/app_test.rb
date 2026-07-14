@@ -150,6 +150,23 @@ class AppTest < Minitest::Test
     assert_nil @app.input_buffer
   end
 
+  def test_dropped_folder_scans_pasted_path_without_opening_filter
+    scans = []
+    @app.define_singleton_method(:scan_paths) { |paths, **| scans << paths }
+
+    bytes = "\e[200~#{@tmp}/My\\ Music\e[201~"
+    RubyPlayer::UI::KeyDecoder.decode(bytes).each { |event| @app.handle_key(event) }
+
+    assert_equal [[File.join(@tmp, "My Music")]], scans
+    assert_nil @app.filter_buffer
+  end
+
+  def test_plain_slash_still_opens_filter
+    @app.handle_key("/")
+
+    assert_equal "", @app.filter_buffer
+  end
+
   def test_filter_mode_updates_live_and_enter_accepts
     select_tracks_for(:folder)
 

@@ -1,4 +1,5 @@
 require "io/console"
+require "shellwords"
 require "tty-screen"
 require_relative "../../rubyplayer"
 require_relative "../audio_output"
@@ -130,6 +131,7 @@ module RubyPlayer
         return handle_help_key(key) if @show_help
         return handle_info_key(key) if @info_track
         return handle_confirm_key(key) if @pending_delete
+        return handle_paste(key.text) if key.is_a?(KeyDecoder::Paste)
         return handle_filter_mode_key(key) if @filter_buffer
         return handle_input_mode_key(key) if @input_buffer
         action = @keymap.action_for(key, pane: @active_pane)
@@ -194,6 +196,22 @@ module RubyPlayer
         when "space" then @input_buffer += " "
         else @input_buffer += key if key.length == 1
         end
+      end
+
+      def handle_paste(text)
+        if @filter_buffer
+          @filter_buffer += text
+          @tracks_pane.filter = @filter_buffer
+          return
+        end
+
+        paths = Shellwords.shellsplit(text).map { |path| File.expand_path(path) }
+        return if paths.empty?
+
+        @status_line.set_message("Scanning #{paths.join(', ')}...")
+        scan_paths(paths)
+      rescue ArgumentError
+        @status_line.set_message("Could not read dropped path")
       end
 
       def handle_filter_mode_key(key)
