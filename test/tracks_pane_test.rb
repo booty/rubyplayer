@@ -61,6 +61,16 @@ class TracksPaneTest < Minitest::Test
     assert_equal "Unrated · 3", @pane.title
   end
 
+  def test_all_songs_view_loads_present_tracks_and_uses_dynamic_title
+    bravo = @lib.tracks_under(@folder).find { |track| track.title == "Bravo" }
+    @lib.mark_missing(track_ids: [bravo.id], folder_ids: [])
+
+    @pane.show(RubyPlayer::UI::LibraryPane::Row.new(kind: :all, depth: 0))
+
+    assert_equal %w[Alpha Charlie], titles.sort
+    assert_equal "All Songs · 2", @pane.title
+  end
+
   def test_title_left_truncates_to_preserve_leaf_and_count
     @pane.show(@folder_row, breadcrumb: "A Very Long Root / Sega")
 

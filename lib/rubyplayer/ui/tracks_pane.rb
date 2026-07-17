@@ -56,6 +56,7 @@ module RubyPlayer
                 when :missing then "Missing"
                 when :failed then "Failed to Scan"
                 when :most_played then "Most Played"
+                when :all then "All Songs"
                 when Array then ["Tracks", @breadcrumb].compact.join(" · ")
                 else "Tracks"
                 end
@@ -99,6 +100,7 @@ module RubyPlayer
           when :missing then @library.missing_tracks
           when :failed then @library.failed_tracks
           when :most_played then @library.most_played
+          when :all then @library.all_tracks
           when Array then @library.tracks_under(@mode[1])
           else []
           end

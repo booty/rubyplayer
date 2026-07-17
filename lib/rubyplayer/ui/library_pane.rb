@@ -24,7 +24,7 @@ module RubyPlayer
       def initialize(library:, glyphs:)
         @library = library
         @glyphs = glyphs
-        @expanded = {}
+        @expanded = { all: true }
         @selection = 0
         @scroll = 0
         @rows = []
@@ -37,7 +37,8 @@ module RubyPlayer
       def rebuild!
         @breadcrumbs = {}
         @rows = SPECIALS.map { |kind, _| Row.new(kind: kind, depth: 0) }
-        @library.roots.each { |f| append_folder(f, 0, []) }
+        @rows << Row.new(kind: :all, depth: 0)
+        @library.roots.each { |f| append_folder(f, 1, []) } if @expanded[:all]
         @selection = @selection.clamp(0, [@rows.size - 1, 0].max)
       end
 
@@ -46,6 +47,7 @@ module RubyPlayer
 
       def breadcrumb_for(row)
         return "" unless row
+        return "All Songs" if row.kind == :all
         return SPECIALS.to_h.fetch(row.kind) unless row.kind == :folder
 
         @breadcrumbs.fetch(row.folder["id"], row.folder["name"].to_s)
@@ -110,8 +112,14 @@ module RubyPlayer
 
       def toggle_expand(open)
         row = selected
-        return unless row&.kind == :folder
-        @expanded[row.folder["id"]] = open
+        case row&.kind
+        when :all
+          @expanded[:all] = open
+        when :folder
+          @expanded[row.folder["id"]] = open
+        else
+          return
+        end
         rebuild!
       end
 
@@ -132,6 +140,7 @@ module RubyPlayer
         when :missing then ["#{@glyphs['missing']} Missing", ""]
         when :failed then ["#{@glyphs['errored']} Failed to Scan", ""]
         when :most_played then ["#{@glyphs['play']} Most Played", ""]
+        when :all then ["#{@glyphs['dir']} All Songs", ""]
         when :folder
           f = row.folder
           icon = @glyphs[f["kind"]] || @glyphs["dir"]

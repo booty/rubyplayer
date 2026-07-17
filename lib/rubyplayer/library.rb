@@ -74,6 +74,10 @@ module RubyPlayer
       rows.map { |r| Track.from_row(r) }
     end
 
+    def all_tracks
+      query_tracks("missing = 0 ORDER BY physical_path, subtune_index")
+    end
+
     def favorites
       rows = @db.read do |s|
         s.execute("SELECT * FROM tracks WHERE rating >= 4 AND missing = 0 " \

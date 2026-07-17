@@ -55,6 +55,18 @@ class LibraryTest < Minitest::Test
     assert_equal ["/m/sega/a.vgm"], tracks.map(&:physical_path)
   end
 
+  def test_all_tracks_excludes_missing_and_orders_by_path_and_subtune
+    add_track("/m/sega/b.vgm", title: "B")
+    add_track("/m/sega/a.nsf", subtune: 1, title: "A2")
+    add_track("/m/sega/a.nsf", subtune: 0, title: "A1")
+    missing_id = add_track("/m/sega/gone.vgm", title: "Gone")
+    @lib.mark_missing(track_ids: [missing_id], folder_ids: [])
+
+    tracks = @lib.all_tracks
+
+    assert_equal %w[A1 A2 B], tracks.map(&:title)
+  end
+
   def test_recompute_counts_and_root_visibility
     assert_empty @lib.roots # zero tracks -> hidden
     add_track("/m/sega/a.vgm")

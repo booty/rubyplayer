@@ -79,6 +79,24 @@ class AppTest < Minitest::Test
     assert_operator @app.engine.queue_items.size, :>=, 2
   end
 
+  def test_selecting_all_songs_displays_every_present_track
+    expected_ids = @app.instance_variable_get(:@library).all_tracks.map(&:id)
+
+    select_tracks_for(:all)
+
+    assert_equal expected_ids, @app.tracks_pane.visible_tracks.map(&:id)
+    assert_equal "All Songs · #{expected_ids.size}", @app.tracks_pane.title
+  end
+
+  def test_enqueue_all_songs_adds_every_present_track
+    expected_ids = @app.instance_variable_get(:@library).all_tracks.map(&:id)
+    select_library_kind(:all)
+
+    @app.handle_key("n")
+
+    assert_equal expected_ids, @app.engine.queue_items.map(&:id)
+  end
+
   def test_enqueue_from_tracks_pane_puts_a_track_in_the_queue
     # Regression: Array(struct) used to splat the Track into its field values,
     # enqueuing the Integer id instead of the Track (crashed the decoder thread
@@ -411,6 +429,14 @@ class AppTest < Minitest::Test
 
   def test_remove_library_item_is_a_noop_on_special_rows
     @app.handle_key("x") # selection starts on the Playback Queue row
+    assert_nil @app.pending_delete
+  end
+
+  def test_remove_library_item_is_a_noop_on_all_songs
+    select_library_kind(:all)
+
+    @app.handle_key("x")
+
     assert_nil @app.pending_delete
   end
 

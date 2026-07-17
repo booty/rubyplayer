@@ -25,9 +25,11 @@ class LibraryPaneTest < Minitest::Test
 
   def kinds = @pane.rows.map(&:kind)
 
-  def test_specials_then_visible_roots_only
-    assert_equal %i[queue history favorites focus recent unrated missing failed most_played folder], kinds
-    assert_equal "Music", @pane.rows[9].folder["name"] # Empty (0 tracks) hidden
+  def test_specials_then_all_songs_and_visible_roots
+    assert_equal %i[queue history favorites focus recent unrated missing failed most_played all folder], kinds
+    assert_equal :all, @pane.rows[9].kind
+    assert_equal "Music", @pane.rows[10].folder["name"] # Empty (0 tracks) hidden
+    assert_equal 1, @pane.rows[10].depth
   end
 
   def test_smart_views_follow_focus_in_declared_order
@@ -44,17 +46,53 @@ class LibraryPaneTest < Minitest::Test
   end
 
   def test_expand_and_collapse
-    9.times { @pane.handle_action(:nav_down) } # select Music after fixed views
+    10.times { @pane.handle_action(:nav_down) } # select Music after fixed views and All Songs
     assert_equal :folder, @pane.selected.kind
     @pane.handle_action(:expand)
     assert_equal %w[Music Sega], @pane.rows.select { |r| r.kind == :folder }.map { |r| r.folder["name"] }
-    assert_equal 1, @pane.rows.last.depth
+    assert_equal 2, @pane.rows.last.depth
     @pane.handle_action(:collapse)
-    assert_equal 10, @pane.rows.size
+    assert_equal 11, @pane.rows.size
+  end
+
+  def test_all_songs_starts_expanded_and_can_collapse_and_reexpand
+    9.times { @pane.handle_action(:nav_down) }
+
+    assert_equal :all, @pane.selected.kind
+    assert_equal ["Music"], @pane.rows.select { |row| row.kind == :folder }.map { |row| row.folder["name"] }
+
+    @pane.handle_action(:collapse)
+    assert_empty @pane.rows.select { |row| row.kind == :folder }
+
+    @pane.handle_action(:expand)
+    assert_equal ["Music"], @pane.rows.select { |row| row.kind == :folder }.map { |row| row.folder["name"] }
+  end
+
+  def test_all_songs_collapse_preserves_nested_folder_expansion
+    10.times { @pane.handle_action(:nav_down) }
+    @pane.handle_action(:expand)
+    @pane.handle_action(:nav_up)
+
+    @pane.handle_action(:collapse)
+    @pane.handle_action(:expand)
+
+    folders = @pane.rows.select { |row| row.kind == :folder }
+    assert_equal %w[Music Sega], folders.map { |row| row.folder["name"] }
+    assert_equal [1, 2], folders.map(&:depth)
+  end
+
+  def test_all_songs_breadcrumb_and_rendered_label
+    row = @pane.rows.find { |candidate| candidate.kind == :all }
+
+    assert_equal "All Songs", @pane.breadcrumb_for(row)
+    screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 11, cols: 40)
+    @pane.render(screen, x: 0, y: 0, w: 40, h: 11, active: true,
+                 theme: RubyPlayer::Theme::DEFAULT)
+    assert_includes screen.flush, "All Songs"
   end
 
   def test_breadcrumb_uses_folder_ancestry
-    9.times { @pane.handle_action(:nav_down) }
+    10.times { @pane.handle_action(:nav_down) }
     @pane.handle_action(:expand)
     @pane.handle_action(:nav_down)
 
@@ -101,8 +139,8 @@ class LibraryPaneTest < Minitest::Test
   end
 
   def test_render_shows_specials_folder_and_count
-    screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 10, cols: 40)
-    @pane.render(screen, x: 0, y: 0, w: 40, h: 10, active: true, theme: RubyPlayer::Theme::DEFAULT)
+    screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 11, cols: 40)
+    @pane.render(screen, x: 0, y: 0, w: 40, h: 11, active: true, theme: RubyPlayer::Theme::DEFAULT)
     out = screen.flush
     assert_includes out, "Playback Queue"
     assert_includes out, "Music"
@@ -110,8 +148,8 @@ class LibraryPaneTest < Minitest::Test
   end
 
   def test_render_draws_scrollbar_only_when_rows_overflow
-    short = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 10, cols: 20)
-    @pane.render(short, x: 0, y: 0, w: 20, h: 10, active: true,
+    short = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 11, cols: 20)
+    @pane.render(short, x: 0, y: 0, w: 20, h: 11, active: true,
                  theme: RubyPlayer::Theme::DEFAULT)
     refute_includes short.instance_variable_get(:@back).map { |row| row[19].ch }, "█"
 

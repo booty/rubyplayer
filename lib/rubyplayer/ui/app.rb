@@ -469,6 +469,7 @@ module RubyPlayer
         else
           row = @library_pane.selected
           case row&.kind
+          when :all then @library.all_tracks
           when :folder then @library.tracks_under(row.folder["id"])
           when :favorites then @library.favorites
           when :recent then @library.recently_added
