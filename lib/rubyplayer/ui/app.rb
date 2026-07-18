@@ -609,22 +609,34 @@ module RubyPlayer
         @tracks_pane.show(row, breadcrumb: @library_pane.breadcrumb_for(row))
       end
 
-      # Screen has no z-order/layers (see Screen#put) -- drawing this last in
-      # #render is what makes it paint over the panes underneath.
+      # Screen has no z-order/layers (see Screen#put) -- modals paint over the
+      # panes only because App#render draws them last. This helper owns the
+      # chrome every modal must repeat correctly: centering (clamped so tiny
+      # terminals don't get negative coordinates) and the full surface fill.
+      # Skipping the fill is the historical bug class here -- pane text would
+      # bleed through any gap between the modal's own put calls. Yields the
+      # top-left corner; the optional hint is the standard muted close/confirm
+      # line every modal places on its bottom inner row.
+      def render_modal(title:, w:, h:, hint: nil, hint_bg: nil)
+        x = [(@screen.cols - w) / 2, 0].max
+        y = [(@screen.rows - h) / 2, 0].max
+        (1...(h - 1)).each { |i| @screen.put(y + i, x + 1, " " * (w - 2), bg: @theme[:surface]) }
+        draw_box(x, y, w, h, active: true, title: title)
+        yield x, y if block_given?
+        @screen.put(y + h - 2, x + 2, hint[0, w - 4], fg: @theme[:text_muted], bg: hint_bg) if hint
+      end
+
       def render_confirm_modal
         folder = @pending_delete
         message = "Remove \"#{folder['name']}\" from library?"
         hint = "Also removes its tracks from Favorites and the Playback Queue."
         prompt = "[y] Yes    [n/esc] Cancel"
         w = [message.size, hint.size, prompt.size].max + 4
-        h = 6
-        x = [(@screen.cols - w) / 2, 0].max
-        y = [(@screen.rows - h) / 2, 0].max
-        (1...(h - 1)).each { |i| @screen.put(y + i, x + 1, " " * (w - 2), bg: @theme[:surface]) }
-        draw_box(x, y, w, h, active: true, title: "Confirm Remove")
-        @screen.put(y + 2, x + 2, message[0, w - 4], fg: @theme[:accent], bold: true)
-        @screen.put(y + 3, x + 2, hint[0, w - 4], fg: @theme[:text_muted])
-        @screen.put(y + 4, x + 2, prompt[0, w - 4], fg: @theme[:primary], bold: true)
+        render_modal(title: "Confirm Remove", w: w, h: 6) do |x, y|
+          @screen.put(y + 2, x + 2, message[0, w - 4], fg: @theme[:accent], bold: true)
+          @screen.put(y + 3, x + 2, hint[0, w - 4], fg: @theme[:text_muted])
+          @screen.put(y + 4, x + 2, prompt[0, w - 4], fg: @theme[:primary], bold: true)
+        end
       end
 
       def render_missing_purge_modal
@@ -633,13 +645,10 @@ module RubyPlayer
         message = "Permanently remove #{count} missing track#{'s' unless count == 1} and #{pronoun} history?"
         prompt = "[y] Remove    [n/esc] Cancel"
         w = [message.size, prompt.size].max + 4
-        h = 5
-        x = [(@screen.cols - w) / 2, 0].max
-        y = [(@screen.rows - h) / 2, 0].max
-        (1...(h - 1)).each { |i| @screen.put(y + i, x + 1, " " * (w - 2), bg: @theme[:surface]) }
-        draw_box(x, y, w, h, active: true, title: "Confirm Purge")
-        @screen.put(y + 2, x + 2, message[0, w - 4], fg: @theme[:accent], bold: true)
-        @screen.put(y + 3, x + 2, prompt[0, w - 4], fg: @theme[:primary], bold: true)
+        render_modal(title: "Confirm Purge", w: w, h: 5) do |x, y|
+          @screen.put(y + 2, x + 2, message[0, w - 4], fg: @theme[:accent], bold: true)
+          @screen.put(y + 3, x + 2, prompt[0, w - 4], fg: @theme[:primary], bold: true)
+        end
       end
 
       # Rows are built as [label, value] pairs and only included when they
@@ -667,13 +676,9 @@ module RubyPlayer
         lines = rows.map { |label, value| "#{label}: #{value.nil? || value.to_s.empty? ? '—' : value}" }
         hint = "[i/esc/enter] Close"
         w = [lines.map(&:size).max, hint.size].max + 4
-        h = lines.size + 5
-        x = [(@screen.cols - w) / 2, 0].max
-        y = [(@screen.rows - h) / 2, 0].max
-        (1...(h - 1)).each { |i| @screen.put(y + i, x + 1, " " * (w - 2), bg: @theme[:surface]) }
-        draw_box(x, y, w, h, active: true, title: "Track Info")
-        lines.each_with_index { |line, i| @screen.put(y + 2 + i, x + 2, line[0, w - 4], fg: @theme[:primary]) }
-        @screen.put(y + h - 2, x + 2, hint[0, w - 4], fg: @theme[:text_muted])
+        render_modal(title: "Track Info", w: w, h: lines.size + 5, hint: hint) do |x, y|
+          lines.each_with_index { |line, i| @screen.put(y + 2 + i, x + 2, line[0, w - 4], fg: @theme[:primary]) }
+        end
       end
 
       # Lists every hotkey reachable from the currently active pane (pane-local
@@ -700,16 +705,12 @@ module RubyPlayer
         col_w = lines.map(&:size).max
         gap = 4
         w = [col_w * 2 + gap, hint.size, title.size].max + 4
-        h = rows + 5
-        x = [(@screen.cols - w) / 2, 0].max
-        y = [(@screen.rows - h) / 2, 0].max
-        (1...(h - 1)).each { |i| @screen.put(y + i, x + 1, " " * (w - 2), bg: @theme[:surface]) }
-        draw_box(x, y, w, h, active: true, title: title)
-        rows.times do |i|
-          @screen.put(y + 2 + i, x + 2, col1[i][0, col_w], fg: @theme[:primary]) if col1[i]
-          @screen.put(y + 2 + i, x + 2 + col_w + gap, col2[i][0, col_w], fg: @theme[:primary]) if col2[i]
+        render_modal(title: title, w: w, h: rows + 5, hint: hint) do |x, y|
+          rows.times do |i|
+            @screen.put(y + 2 + i, x + 2, col1[i][0, col_w], fg: @theme[:primary]) if col1[i]
+            @screen.put(y + 2 + i, x + 2 + col_w + gap, col2[i][0, col_w], fg: @theme[:primary]) if col2[i]
+          end
         end
-        @screen.put(y + h - 2, x + 2, hint[0, w - 4], fg: @theme[:text_muted])
       end
 
       # Live preview: @theme already reflects Theme::ALL_IDS[@theme_picker_index]
@@ -720,19 +721,15 @@ module RubyPlayer
         hint = "[up/down] Preview  [enter] Select  [esc] Cancel"
         title = "Select Theme"
         w = [names.map(&:size).max, hint.size, title.size].max + 6
-        h = names.size + 5
-        x = [(@screen.cols - w) / 2, 0].max
-        y = [(@screen.rows - h) / 2, 0].max
-        (1...(h - 1)).each { |i| @screen.put(y + i, x + 1, " " * (w - 2), bg: @theme[:surface]) }
-        draw_box(x, y, w, h, active: true, title: title)
-        names.each_with_index do |name, i|
-          selected = i == @theme_picker_index
-          bg = selected ? @theme[:selection_bg] : nil
-          fg = selected ? @theme[:selection_text] : @theme[:text]
-          @screen.put(y + 2 + i, x + 1, " " * (w - 2), bg: bg) if selected
-          @screen.put(y + 2 + i, x + 2, name[0, w - 4], fg: fg, bg: bg, bold: selected)
+        render_modal(title: title, w: w, h: names.size + 5, hint: hint) do |x, y|
+          names.each_with_index do |name, i|
+            selected = i == @theme_picker_index
+            bg = selected ? @theme[:selection_bg] : nil
+            fg = selected ? @theme[:selection_text] : @theme[:text]
+            @screen.put(y + 2 + i, x + 1, " " * (w - 2), bg: bg) if selected
+            @screen.put(y + 2 + i, x + 2, name[0, w - 4], fg: fg, bg: bg, bold: selected)
+          end
         end
-        @screen.put(y + h - 2, x + 2, hint[0, w - 4], fg: @theme[:text_muted])
       end
 
       def render_config_error_modal
@@ -751,20 +748,14 @@ module RubyPlayer
         lines = lines.first(max_lines)
         hint = "[esc/enter] Keep last known good config"
         w = max_w
-        h = lines.size + 4
-        x = [(@screen.cols - w) / 2, 0].max
-        y = [(@screen.rows - h) / 2, 0].max
-        (1...(h - 1)).each do |offset|
-          @screen.put(y + offset, x + 1, " " * (w - 2), bg: @theme[:surface])
+        render_modal(title: "Configuration Error", w: w, h: lines.size + 4,
+                     hint: hint, hint_bg: @theme[:surface]) do |x, y|
+          lines.each_with_index do |line, index|
+            color = index.zero? ? @theme[:warning] : @theme[:error]
+            @screen.put(y + 1 + index, x + 2, line[0, w - 4], fg: color,
+                        bg: @theme[:surface], bold: index.zero?)
+          end
         end
-        draw_box(x, y, w, h, active: true, title: "Configuration Error")
-        lines.each_with_index do |line, index|
-          color = index.zero? ? @theme[:warning] : @theme[:error]
-          @screen.put(y + 1 + index, x + 2, line[0, w - 4], fg: color,
-                      bg: @theme[:surface], bold: index.zero?)
-        end
-        @screen.put(y + h - 2, x + 2, hint[0, w - 4],
-                    fg: @theme[:text_muted], bg: @theme[:surface])
       end
 
       def fmt_length(ms)
