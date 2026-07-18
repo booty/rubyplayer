@@ -53,6 +53,9 @@ module RubyPlayer
       # Folder-art basenames tried in order (case-insensitive) before
       # falling back to any image in the track's folder.
       "art_filenames" => Artwork::DEFAULT_NAMES,
+      # Tint the theme's accent color toward the current cover's average
+      # color while a track with art is playing.
+      "art_accent" => true,
       # Beat pulse: off | low (borders) | medium (+surfaces/selection) |
       # high (+text). Needs a truecolor theme; B cycles and persists.
       "pulse_mode" => "off",

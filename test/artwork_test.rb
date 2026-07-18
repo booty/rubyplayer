@@ -109,6 +109,28 @@ class ArtworkTest < Minitest::Test
     assert_nil artwork.for_track(track_for(vgm, backend: "gme"))
   end
 
+  def test_average_color_of_a_solid_image
+    red_png = File.join(Dir.tmpdir, "rubyplayer-test-red.png")
+    unless File.file?(red_png)
+      _, stderr, status = Open3.capture3(
+        "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+        "-f", "lavfi", "-i", "color=c=red:s=16x16", "-frames:v", "1", red_png
+      )
+      flunk "could not build red fixture: #{stderr}" unless status.success?
+    end
+
+    color = @artwork.average_color(File.binread(red_png))
+    assert_match(/\A#[0-9a-f]{6}\z/, color)
+    r, g, b = [color[1, 2], color[3, 2], color[5, 2]].map { |h| h.to_i(16) }
+    assert_operator r, :>, 200
+    assert_operator g, :<, 60
+    assert_operator b, :<, 60
+  end
+
+  def test_average_color_of_garbage_is_nil
+    assert_nil @artwork.average_color("not an image".b)
+  end
+
   def test_folder_lookup_is_cached_per_directory
     dir = File.join(@tmp, "album")
     FileUtils.mkdir_p(dir)

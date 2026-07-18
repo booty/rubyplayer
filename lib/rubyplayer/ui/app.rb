@@ -475,15 +475,32 @@ module RubyPlayer
       # exactly zero. No repaint forcing needed either way: when the step
       # (or a pause) changes the colors, the cell diff picks it up.
       def update_pulse
-        if @pulse_mode != :off && animating? && Theme.truecolor?(@base_theme)
+        base = tinted_base_theme
+        if @pulse_mode != :off && animating? && Theme.truecolor?(base)
           @beat.sample(@engine.levels)
-          @theme = Theme.pulsed(@base_theme, mode: @pulse_mode, step: @beat.step,
+          @theme = Theme.pulsed(base, mode: @pulse_mode, step: @beat.step,
                                 steps: @config["ui", "pulse_steps"],
                                 shift: @config["ui", "pulse_shift_percent"] / 100.0)
         else
           @beat.reset
-          @theme = @base_theme
+          @theme = base
         end
+      end
+
+      # Base theme with the accent replaced by the current cover's average
+      # color. Memoized so the same Hash object is returned frame after
+      # frame — Theme.pulsed caches by object identity, and stable objects
+      # keep the cell diff from seeing phantom changes.
+      def tinted_base_theme
+        accent = @art_accent
+        return @base_theme unless accent
+
+        key = [@base_theme.object_id, accent]
+        if @tinted_key != key
+          @tinted_key = key
+          @tinted_theme = @base_theme.merge(accent: accent).freeze
+        end
+        @tinted_theme
       end
 
       # ---- album art ----
@@ -527,11 +544,19 @@ module RubyPlayer
           rescue StandardError
             nil
           end
-          @bus.publish(:art_ready, track_id: track.id, bytes: bytes)
+          # The accent spawn rides in the same background thread as the art
+          # fetch — the UI thread never waits on ffmpeg.
+          accent = bytes && begin
+            @artwork.average_color(bytes)
+          rescue StandardError
+            nil
+          end
+          @bus.publish(:art_ready, track_id: track.id, bytes: bytes, accent: accent)
         end
       end
 
-      def set_art(bytes)
+      def set_art(bytes, accent: nil)
+        @art_accent = @config["ui", "art_accent"] ? accent : nil
         return if bytes == @art_bytes
 
         @art_bytes = bytes
@@ -681,7 +706,9 @@ module RubyPlayer
             # Compare against the *current* track: the decoder may have
             # advanced past the track this fetch was for; stale art is
             # dropped and the newer track's own fetch will land later.
-            set_art(payload[:bytes]) if payload[:track_id] == @engine.state[:track]&.id
+            if payload[:track_id] == @engine.state[:track]&.id
+              set_art(payload[:bytes], accent: payload[:accent])
+            end
           when :playback_state
             set_art(nil) unless payload[:playing]
           when :scan_complete

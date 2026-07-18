@@ -26,6 +26,30 @@ module RubyPlayer
       embedded(track) || folder_art(File.dirname(track.physical_path))
     end
 
+    # Average color of an image, as "#rrggbb": ffmpeg scales the whole frame
+    # to a single pixel, which *is* the mean — no image library needed. Used
+    # to tint the theme accent toward the current cover. Cached by content
+    # hash since the same cover is re-fetched on every track advance through
+    # an album.
+    def average_color(bytes)
+      @accent_cache ||= {}
+      key = bytes.hash
+      @accent_cache.fetch(key) do
+        stdout, _stderr, status = Open3.capture3(
+          "ffmpeg", "-hide_banner", "-loglevel", "error",
+          "-i", "pipe:0", "-vf", "scale=1:1", "-frames:v", "1",
+          "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1",
+          stdin_data: bytes, binmode: true
+        )
+        @accent_cache[key] =
+          if status.success? && stdout.bytesize >= 3
+            format("#%02x%02x%02x", *stdout.bytes.first(3))
+          end
+      end
+    rescue Errno::ENOENT
+      nil
+    end
+
     private
 
     def embedded(track)

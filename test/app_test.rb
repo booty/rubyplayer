@@ -938,6 +938,26 @@ class AppTest < Minitest::Test
            "expected braille meter cells in the art region")
   end
 
+  def test_album_art_tints_the_accent_color
+    play_with_cover_art # warrior.jpg -> real average color via ffmpeg
+    use_screen
+    @app.render
+
+    accent = current_theme[:accent]
+    assert_match(/\A#[0-9a-f]{6}\z/, accent)
+    refute_equal base_theme[:accent], accent
+  end
+
+  def test_accent_reverts_when_playback_stops
+    play_with_cover_art
+    @app.instance_variable_get(:@bus).publish(:playback_state, playing: false, paused: false)
+    @app.handle_events
+    use_screen
+    @app.render
+
+    assert_same base_theme, current_theme
+  end
+
   def test_off_mode_reserves_nothing
     play_with_cover_art
     use_screen
