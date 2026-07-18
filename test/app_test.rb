@@ -839,6 +839,37 @@ class AppTest < Minitest::Test
     refute_includes out.string, "1337;File"
   end
 
+  def test_now_playing_needs_a_current_track
+    @app.handle_key("o")
+    refute @app.show_now_playing
+  end
+
+  def test_now_playing_modal_shows_art_and_metadata
+    play_with_cover_art
+    @app.handle_key("o")
+    assert @app.show_now_playing
+
+    out = use_screen
+    @app.render_if_needed
+    assert_includes back_buffer_text, "Now Playing"
+    assert_includes back_buffer_text, @app.engine.state[:track].title[0, 20]
+    refute_nil art_region
+    assert_equal 1, out.string.scan("1337;File=inline=1").size
+
+    @app.handle_key("escape")
+    refute @app.show_now_playing
+  end
+
+  def test_now_playing_modal_captures_keys
+    play_with_cover_art
+    @app.handle_key("o")
+    before = @app.active_pane
+    @app.handle_key("tab") # swallowed, not pane switch
+    assert_equal before, @app.active_pane
+    @app.handle_key("o") # o toggles closed
+    refute @app.show_now_playing
+  end
+
   def test_off_mode_reserves_nothing
     play_with_cover_art
     use_screen

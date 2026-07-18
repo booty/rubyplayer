@@ -16,7 +16,7 @@ module RubyPlayer
       attr_reader :engine, :library_pane, :tracks_pane, :active_pane, :input_buffer,
                   :pending_delete, :info_track, :show_help, :theme_id, :theme_picker,
                   :focus_player, :filter_buffer, :pending_missing_purge, :config_error,
-                  :art_mode
+                  :art_mode, :show_now_playing
 
       def initialize(argv: [], config_path: nil, data_path: nil, null_audio: false,
                      io_out: $stdout, focus_player: nil, env: ENV)
@@ -150,6 +150,7 @@ module RubyPlayer
         return handle_theme_picker_key(key) if @theme_picker
         return handle_help_key(key) if @show_help
         return handle_info_key(key) if @info_track
+        return handle_now_playing_key(key) if @show_now_playing
         return handle_missing_purge_key(key) if @pending_missing_purge
         return handle_confirm_key(key) if @pending_delete
         return handle_paste(key.text) if key.is_a?(KeyDecoder::Paste)
@@ -211,6 +212,10 @@ module RubyPlayer
         when "y", "enter" then confirm_delete
         when "n", "escape" then @pending_delete = nil
         end
+      end
+
+      def handle_now_playing_key(key)
+        @show_now_playing = false if %w[o escape enter].include?(key)
       end
 
       def handle_missing_purge_key(key)
@@ -320,6 +325,7 @@ module RubyPlayer
         when :show_help then @show_help = true
         when :show_theme_picker then request_show_theme_picker
         when :cycle_art_mode then cycle_art_mode
+        when :show_now_playing then request_show_now_playing
         when *RATE_ACTIONS.keys then rate_current(RATE_ACTIONS[action])
         else route_to_pane(action)
         end
@@ -439,6 +445,14 @@ module RubyPlayer
       def normalize_art_mode(value)
         mode = value.to_s.to_sym
         ART_MODES.include?(mode) ? mode : :off
+      end
+
+      def request_show_now_playing
+        unless @engine.state[:track]
+          @status_line.set_message("Nothing playing")
+          return
+        end
+        @show_now_playing = true
       end
 
       def cycle_art_mode
@@ -733,6 +747,7 @@ module RubyPlayer
                               theme: @theme)
         end
         @hotkey_line.render(@screen, row: rows - 2, w: cols, h: 2, pane: @active_pane, theme: @theme)
+        render_now_playing_modal if @show_now_playing
         render_confirm_modal if @pending_delete
         render_missing_purge_modal if @pending_missing_purge
         render_info_modal if @info_track
@@ -832,6 +847,31 @@ module RubyPlayer
         # track list scrolls elsewhere.
         h.times { |i| @screen.put(y + i, x, " " * w, bg: @theme[:surface]) }
         @art_region = { x: x, y: y, w: w, h: h }
+      end
+
+      # Drawn before the other modals so a delete-confirm or config-error
+      # modal can still cover it. While open it owns @art_region — the image
+      # belongs inside the modal, not wherever the persistent mode had it —
+      # which is also why modal_active? (the emit gate) deliberately
+      # excludes @show_now_playing.
+      def render_now_playing_modal
+        track = @engine.state[:track]
+        # Track ended while the modal was open: nothing to show anymore.
+        return @show_now_playing = false unless track
+
+        img_h = [[(@screen.cols - 8) / 2, @screen.rows - 12].min,
+                 @config["ui", "art_min_rows"]].max
+        w = [(img_h * 2) + 4, @screen.cols - 2].min
+        lines = [track.title, track.album, track.artist].reject { |t| t.to_s.empty? }
+        render_modal(title: "Now Playing", w: w, h: img_h + lines.size + 5,
+                     hint: "[o/esc/enter] Close") do |x, y|
+          @art_region = { x: x + 2, y: y + 1, w: w - 4, h: img_h }
+          lines.each_with_index do |text, i|
+            @screen.put(y + 1 + img_h + i, x + 2, text[0, w - 4],
+                        fg: i.zero? ? @theme[:primary] : @theme[:text_muted], bold: i.zero?)
+          end
+          render_art_placeholder
+        end
       end
 
       # Text in place of the image when there's nothing to show — the region
