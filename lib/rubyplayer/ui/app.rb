@@ -544,14 +544,20 @@ module RubyPlayer
           rescue StandardError
             nil
           end
-          # The accent spawn rides in the same background thread as the art
-          # fetch — the UI thread never waits on ffmpeg.
+          # Accent and downscaling ride in the same background thread as the
+          # fetch — the UI thread never waits on ffmpeg. Only the capped
+          # display copy crosses to the UI; the original never gets emitted.
           accent = bytes && begin
             @artwork.average_color(bytes)
           rescue StandardError
             nil
           end
-          @bus.publish(:art_ready, track_id: track.id, bytes: bytes, accent: accent)
+          display = bytes && begin
+            @artwork.display_bytes(bytes, max_px: @config["ui", "art_display_max_px"])
+          rescue StandardError
+            bytes
+          end
+          @bus.publish(:art_ready, track_id: track.id, bytes: display, accent: accent)
         end
       end
 

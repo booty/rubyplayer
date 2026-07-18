@@ -47,6 +47,9 @@ module RubyPlayer
       # cycles modes and persists the choice here.
       "art_mode" => "off",
       "art_pane_width" => 30,
+      # Longest side of the emitted image copy, in pixels. Caps the escape
+      # payload so re-emission is always cheap regardless of source size.
+      "art_display_max_px" => 480,
       "art_corner_rows" => 8,
       # Below this height the image is an unreadable smear; the region is
       # dropped instead.

@@ -131,6 +131,41 @@ class ArtworkTest < Minitest::Test
     assert_nil @artwork.average_color("not an image".b)
   end
 
+  def test_display_bytes_downscales_large_images
+    big_png = File.join(Dir.tmpdir, "rubyplayer-test-big.png")
+    unless File.file?(big_png)
+      _, stderr, status = Open3.capture3(
+        "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+        "-f", "lavfi", "-i", "color=c=blue:s=1600x1200", "-frames:v", "1", big_png
+      )
+      flunk "could not build big fixture: #{stderr}" unless status.success?
+    end
+
+    original = File.binread(big_png)
+    scaled = @artwork.display_bytes(original, max_px: 480)
+    refute_equal original, scaled
+
+    probe = File.join(@tmp, "scaled.png")
+    File.binwrite(probe, scaled)
+    dims, = Open3.capture2(
+      "ffprobe", "-v", "error", "-select_streams", "v:0",
+      "-show_entries", "stream=width,height", "-of", "csv=p=0", probe
+    )
+    width, height = dims.strip.split(",").map(&:to_i)
+    assert_operator width, :<=, 480
+    assert_operator height, :<=, 480
+  end
+
+  def test_display_bytes_returns_small_images_unchanged
+    small = File.binread(File.join(FIXTURES, "warrior.jpg")) # 300px-ish
+    assert_equal small, @artwork.display_bytes(small, max_px: 480)
+  end
+
+  def test_display_bytes_passes_garbage_through
+    junk = "not an image".b
+    assert_equal junk, @artwork.display_bytes(junk, max_px: 480)
+  end
+
   def test_folder_lookup_is_cached_per_directory
     dir = File.join(@tmp, "album")
     FileUtils.mkdir_p(dir)
