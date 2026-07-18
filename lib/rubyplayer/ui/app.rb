@@ -593,6 +593,15 @@ module RubyPlayer
         cols = region[:x]..(region[:x] + region[:w] - 1)
         return unless @art_dirty || @screen.region_damaged?(rows: rows, cols: cols)
 
+        # A window drag is a SIGWINCH storm: every full repaint would
+        # re-send the whole image, flooding the terminal's input pipeline
+        # (the "UI lags by seconds while audio keeps playing" failure).
+        # Remember the debt and pay it once after the storm settles.
+        if resize_settling?
+          @art_dirty = true
+          return
+        end
+
         @art_dirty = false
         @io_out.write(ItermImage.place(@art_bytes, row: region[:y], col: region[:x],
                                        width: region[:w], height: region[:h]))
@@ -773,11 +782,21 @@ module RubyPlayer
       # turns 30 full frame builds per second into zero.
       def render_if_needed
         message_active = @status_line.active?
-        return unless @needs_render || animating? || message_active != @message_was_active
+        return unless @needs_render || animating? || message_active != @message_was_active ||
+                      pending_art_emit?
 
         render
         @needs_render = false
         @message_was_active = message_active
+      end
+
+      # Art emission deferred by a resize storm still owes the terminal one
+      # image after the storm settles — without this the debt would only be
+      # paid on the next unrelated repaint (never, if the app is idle). The
+      # idle poll (0.25s) is the wake-up source, matching the settle window.
+      def pending_art_emit?
+        !!(@art_dirty && @art_bytes && @art_region && @art_supported &&
+           !modal_active? && !resize_settling?)
       end
 
       def animating?
@@ -1157,8 +1176,16 @@ module RubyPlayer
       def handle_resize
         @resized = false
         @needs_render = true
+        @last_resize_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         rows, cols = TTY::Screen.size
         @screen.resize(rows, cols)
+      end
+
+      def resize_settling?
+        return false unless @last_resize_at
+
+        now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        now - @last_resize_at < @config["ui", "resize_settle_seconds"]
       end
     end
   end

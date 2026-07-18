@@ -958,6 +958,31 @@ class AppTest < Minitest::Test
     assert_same base_theme, current_theme
   end
 
+  # Regression: dragging the window delivers a continuous SIGWINCH stream;
+  # each one forced a full repaint whose damage re-emitted the album art —
+  # megabytes of base64 per second into iTerm2, whose input pipeline then
+  # lagged the whole UI by seconds. Emission must pause during the storm
+  # and happen once after it settles.
+  def test_art_emission_is_suppressed_during_resize_storm
+    play_with_cover_art
+    @app.handle_key("v") # -> inset
+    out = use_screen
+    @app.render_if_needed
+    assert_equal 1, out.string.scan("1337;File=inline=1").size
+
+    5.times do
+      @app.instance_variable_set(:@resized, true)
+      @app.handle_resize
+      @app.render_if_needed
+    end
+    assert_equal 1, out.string.scan("1337;File=inline=1").size, "no emits mid-storm"
+
+    # Storm over: pretend the settle window has elapsed.
+    @app.instance_variable_set(:@last_resize_at, 0.0)
+    @app.render_if_needed
+    assert_equal 2, out.string.scan("1337;File=inline=1").size, "one emit after settle"
+  end
+
   def test_off_mode_reserves_nothing
     play_with_cover_art
     use_screen
