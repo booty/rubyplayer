@@ -36,7 +36,7 @@ module RubyPlayer
       # Album-art re-emission waits this long after the last SIGWINCH: a
       # window drag is a continuous resize storm, and re-sending the image
       # per repaint floods the terminal's input pipeline.
-      "resize_settle_seconds" => 0.25,
+      "resize_settle_seconds" => 1.25,
       "seek_seconds" => 10,
       "format_track_grouped" => DEFAULT_FORMAT_GROUPED,
       "format_track_ungrouped" => DEFAULT_FORMAT_UNGROUPED,
@@ -72,7 +72,7 @@ module RubyPlayer
       # Envelope release per frame (attack is instant); lower falls faster.
       "pulse_decay" => 0.85,
       # How far scoped colors move toward white at full beat, in percent.
-      "pulse_shift_percent" => 30,
+      "pulse_shift_percent" => 99,
     },
     "audio" => {
       "sample_rate" => "auto",
