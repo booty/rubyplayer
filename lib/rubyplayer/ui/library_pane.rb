@@ -5,6 +5,8 @@ module RubyPlayer
     # is an app-level audio source, not a folder or database query, while shared
     # nav/selection logic still benefits from one row model.
     class LibraryPane
+      include ScrollableList
+
       Row = Struct.new(:kind, :folder, :depth, keyword_init: true)
 
       attr_reader :selection
@@ -16,10 +18,7 @@ module RubyPlayer
         @selection = 0
         @scroll = 0
         @rows = []
-        # Page-jump distance = the pane's height, captured at render time
-        # (panes don't know their size otherwise; it changes on resize).
-        # 10 is only the never-rendered fallback (tests, first keypress).
-        @page_size = 10
+        @page_size = ScrollableList::PAGE_SIZE_FALLBACK
       end
 
       def rebuild!
@@ -57,7 +56,7 @@ module RubyPlayer
 
       def render(screen, x:, y:, w:, h:, active:, theme:)
         @page_size = h
-        follow_selection(h)
+        follow_selection(h, @rows.size)
         scrollbar = @rows.size > h
         content_w = scrollbar ? w - 1 : w
         h.times do |i|
@@ -89,15 +88,6 @@ module RubyPlayer
         @library.children_of(folder["id"]).each { |c| append_folder(c, depth + 1, path) }
       end
 
-      def draw_scrollbar(screen, x:, y:, h:, total:, theme:)
-        thumb_size = [h * h / total, 1].max
-        thumb_start = @scroll * (h - thumb_size) / [total - h, 1].max
-        h.times do |offset|
-          glyph = offset.between?(thumb_start, thumb_start + thumb_size - 1) ? "█" : "│"
-          screen.put(y + offset, x, glyph, fg: theme[:text_muted])
-        end
-      end
-
       def toggle_expand(open)
         row = selected
         case row&.kind
@@ -109,12 +99,6 @@ module RubyPlayer
           return
         end
         rebuild!
-      end
-
-      def follow_selection(height)
-        @scroll = @selection if @selection < @scroll
-        @scroll = @selection - height + 1 if @selection >= @scroll + height
-        @scroll = @scroll.clamp(0, [@rows.size - height, 0].max)
       end
 
       def label_for(row)

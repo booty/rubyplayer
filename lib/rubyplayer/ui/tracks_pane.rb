@@ -1,6 +1,8 @@
 module RubyPlayer
   module UI
     class TracksPane
+      include ScrollableList
+
       attr_reader :selection, :filter
 
       def initialize(library:, config:, queue_source:, focus_source: -> { FocusSounds::ALL })
@@ -15,10 +17,7 @@ module RubyPlayer
         @sort = nil
         @filter = ""
         @view_states = {}
-        # Page-jump distance = the pane's height, captured at render time
-        # (panes don't know their size otherwise; it changes on resize).
-        # 10 is only the never-rendered fallback (tests, first keypress).
-        @page_size = 10
+        @page_size = ScrollableList::PAGE_SIZE_FALLBACK
         update_config(config)
       end
 
@@ -358,17 +357,6 @@ module RubyPlayer
         clamp_selection
       end
 
-      def draw_scrollbar(screen, x:, y:, h:, total:, theme:)
-        # Thumb area is viewport/total; travel maps current scroll across
-        # remaining track so first and last pages reach opposite pane edges.
-        thumb_size = [h * h / total, 1].max
-        thumb_start = @scroll * (h - thumb_size) / [total - h, 1].max
-        h.times do |offset|
-          glyph = offset.between?(thumb_start, thumb_start + thumb_size - 1) ? "█" : "│"
-          screen.put(y + offset, x, glyph, fg: theme[:text_muted])
-        end
-      end
-
       def move_selection(delta)
         rows = display_rows
         i = @selection
@@ -389,11 +377,6 @@ module RubyPlayer
         end
       end
 
-      def follow_selection(height, total)
-        @scroll = @selection if @selection < @scroll
-        @scroll = @selection - height + 1 if @selection >= @scroll + height
-        @scroll = @scroll.clamp(0, [total - height, 0].max)
-      end
     end
   end
 end
