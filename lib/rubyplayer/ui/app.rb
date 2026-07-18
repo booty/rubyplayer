@@ -12,11 +12,12 @@ module RubyPlayer
       RATE_ACTIONS = { rate_0: nil, rate_1: 1, rate_2: 2, rate_3: 3,
                        rate_4: 4, rate_5: 5, rate_6: 6 }.freeze
       ART_MODES = %i[off inset pane corner].freeze
+      PULSE_MODES = %i[off low medium high].freeze
 
       attr_reader :engine, :library_pane, :tracks_pane, :active_pane, :input_buffer,
                   :pending_delete, :info_track, :show_help, :theme_id, :theme_picker,
                   :focus_player, :filter_buffer, :pending_missing_purge, :config_error,
-                  :art_mode, :show_now_playing
+                  :art_mode, :show_now_playing, :pulse_mode
 
       def initialize(argv: [], config_path: nil, data_path: nil, null_audio: false,
                      io_out: $stdout, focus_player: nil, env: ENV)
@@ -74,6 +75,9 @@ module RubyPlayer
         @art_bytes = nil
         @art_region = nil
         @art_dirty = false
+        @pulse_mode = normalize_pulse_mode(@config["ui", "pulse_mode"])
+        @beat = BeatTracker.new(steps: @config["ui", "pulse_steps"],
+                                decay: @config["ui", "pulse_decay"])
         @quit = false
         @resized = false
         # Dirty-flag rendering: the loop paints only when something visual
@@ -325,6 +329,7 @@ module RubyPlayer
         when :show_help then @show_help = true
         when :show_theme_picker then request_show_theme_picker
         when :cycle_art_mode then cycle_art_mode
+        when :cycle_pulse_mode then cycle_pulse_mode
         when :show_now_playing then request_show_now_playing
         when *RATE_ACTIONS.keys then rate_current(RATE_ACTIONS[action])
         else route_to_pane(action)
@@ -437,7 +442,48 @@ module RubyPlayer
         id = id.to_s.to_sym
         id = :default unless Theme::ALL_IDS.include?(id)
         @theme_id = id
-        @theme = Theme[id]
+        # @base_theme is the user's actual selection; @theme is what widgets
+        # see this frame and may be a beat-brightened derivative (see
+        # update_pulse). Everything that persists or compares themes must
+        # use @base_theme.
+        @base_theme = Theme[id]
+        @theme = @base_theme
+      end
+
+      # ---- beat pulse ----
+
+      def normalize_pulse_mode(value)
+        mode = value.to_s.to_sym
+        PULSE_MODES.include?(mode) ? mode : :off
+      end
+
+      def cycle_pulse_mode
+        @pulse_mode = PULSE_MODES[(PULSE_MODES.index(@pulse_mode) + 1) % PULSE_MODES.size]
+        begin
+          @config.persist_pulse_mode(@pulse_mode)
+        rescue ConfigError => error
+          @config_error = error
+        end
+        message = "Beat pulse: #{@pulse_mode}"
+        message += " (needs a truecolor theme)" if @pulse_mode != :off && !Theme.truecolor?(@base_theme)
+        @status_line.set_message(message)
+      end
+
+      # Swaps the frame's theme for a beat-brightened derivative. Runs only
+      # while animating — stopped/paused, the dirty-flag loop isn't
+      # rendering at all, which is what keeps the pulse's idle cost at
+      # exactly zero. No repaint forcing needed either way: when the step
+      # (or a pause) changes the colors, the cell diff picks it up.
+      def update_pulse
+        if @pulse_mode != :off && animating? && Theme.truecolor?(@base_theme)
+          @beat.sample(@engine.levels)
+          @theme = Theme.pulsed(@base_theme, mode: @pulse_mode, step: @beat.step,
+                                steps: @config["ui", "pulse_steps"],
+                                shift: @config["ui", "pulse_shift_percent"] / 100.0)
+        else
+          @beat.reset
+          @theme = @base_theme
+        end
       end
 
       # ---- album art ----
@@ -725,6 +771,7 @@ module RubyPlayer
       end
 
       def render
+        update_pulse
         @screen.clear_back
         rows = @screen.rows
         cols = @screen.cols

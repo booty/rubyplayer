@@ -870,6 +870,62 @@ class AppTest < Minitest::Test
     refute @app.show_now_playing
   end
 
+  # ---- beat pulse ----
+
+  # Deterministic stand-in for BeatTracker: real levels depend on decode
+  # timing, but the pulse contract only cares what App does with a step.
+  def pin_beat_step(step)
+    fake = Object.new
+    fake.define_singleton_method(:sample) { |_levels| }
+    fake.define_singleton_method(:step) { step }
+    fake.define_singleton_method(:reset) {}
+    @app.instance_variable_set(:@beat, fake)
+  end
+
+  def current_theme = @app.instance_variable_get(:@theme)
+  def base_theme = @app.instance_variable_get(:@base_theme)
+
+  def test_pulse_mode_cycles_and_persists
+    assert_equal :off, @app.pulse_mode
+    @app.handle_key("b")
+    assert_equal :low, @app.pulse_mode
+    assert_includes File.read(File.join(@tmp, "config.rb")), 'config.ui.pulse_mode = "low"'
+    3.times { @app.handle_key("b") }
+    assert_equal :off, @app.pulse_mode # low -> medium -> high -> off
+  end
+
+  def test_pulse_swaps_in_a_brightened_theme_while_playing
+    @app.set_theme!(:neon_cyberpunk)
+    start_normal_playback
+    @app.handle_key("b") # -> low
+    pin_beat_step(7)
+    use_screen
+    @app.render
+
+    refute_same base_theme, current_theme
+    refute_equal base_theme[:border], current_theme[:border]
+  end
+
+  def test_pulse_is_identity_when_not_playing
+    @app.set_theme!(:neon_cyberpunk)
+    @app.handle_key("b")
+    pin_beat_step(7)
+    use_screen
+    @app.render
+
+    assert_same base_theme, current_theme
+  end
+
+  def test_pulse_skips_non_truecolor_default_theme
+    start_normal_playback
+    @app.handle_key("b")
+    pin_beat_step(7)
+    use_screen
+    @app.render
+
+    assert_same base_theme, current_theme
+  end
+
   def test_off_mode_reserves_nothing
     play_with_cover_art
     use_screen

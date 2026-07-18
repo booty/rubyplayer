@@ -28,6 +28,8 @@ module RubyPlayer
         # "v" for "view": cycles album-art placement (off/inset/pane/corner).
         "v" => "cycle_art_mode",
         "o" => "show_now_playing",
+        # "b" for "beat": cycles pulse intensity (off/low/medium/high).
+        "b" => "cycle_pulse_mode",
       },
       # Page navigation gets three spellings per direction: pgup/pgdn for
       # full-size keyboards, shift+arrows for keyboards without those keys,

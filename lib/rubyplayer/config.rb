@@ -53,6 +53,16 @@ module RubyPlayer
       # Folder-art basenames tried in order (case-insensitive) before
       # falling back to any image in the track's folder.
       "art_filenames" => Artwork::DEFAULT_NAMES,
+      # Beat pulse: off | low (borders) | medium (+surfaces/selection) |
+      # high (+text). Needs a truecolor theme; B cycles and persists.
+      "pulse_mode" => "off",
+      # Quantization steps for the beat envelope. More steps = smoother
+      # pulse but more cell repaints per beat.
+      "pulse_steps" => 8,
+      # Envelope release per frame (attack is instant); lower falls faster.
+      "pulse_decay" => 0.85,
+      # How far scoped colors move toward white at full beat, in percent.
+      "pulse_shift_percent" => 30,
     },
     "audio" => {
       "sample_rate" => "auto",
@@ -152,6 +162,10 @@ module RubyPlayer
 
     def persist_art_mode(mode)
       persist_managed("art_mode", "config.ui.art_mode = #{mode.to_s.inspect}")
+    end
+
+    def persist_pulse_mode(mode)
+      persist_managed("pulse_mode", "config.ui.pulse_mode = #{mode.to_s.inspect}")
     end
 
     private
