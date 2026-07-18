@@ -943,8 +943,11 @@ module RubyPlayer
         y = content_h - 1 - h
         # Paint a stable backing rectangle: these cells must be identical
         # every frame so the diff never repaints beneath the image while the
-        # track list scrolls elsewhere.
-        h.times { |i| @screen.put(y + i, x, " " * w, bg: @theme[:surface]) }
+        # track list scrolls elsewhere. Deliberately the *base* surface
+        # color, not the frame theme's — a pulsed surface would change per
+        # beat step, damage this region, and re-emit the image several
+        # times a beat (same flood class as the resize storm).
+        h.times { |i| @screen.put(y + i, x, " " * w, bg: @base_theme[:surface]) }
         @art_region = { x: x, y: y, w: w, h: h }
       end
 

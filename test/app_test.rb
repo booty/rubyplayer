@@ -983,6 +983,26 @@ class AppTest < Minitest::Test
     assert_equal 2, out.string.scan("1337;File=inline=1").size, "one emit after settle"
   end
 
+  # Same flood class as the resize storm: if the corner backing rectangle
+  # is painted with the *pulsed* surface color, every beat step damages the
+  # art region and re-emits the image several times per beat.
+  def test_corner_backing_ignores_pulse_so_beats_do_not_reemit_art
+    play_with_cover_art
+    @app.set_theme!(:neon_cyberpunk)
+    3.times { @app.handle_key("v") } # -> corner
+    2.times { @app.handle_key("b") } # -> medium (pulses surfaces)
+    out = use_screen
+
+    pin_beat_step(0)
+    @app.render_if_needed
+    emits = out.string.scan("1337;File=inline=1").size
+
+    pin_beat_step(7) # beat hits: pulsed surface brightens elsewhere
+    @app.render_if_needed
+    assert_equal emits, out.string.scan("1337;File=inline=1").size,
+                 "a beat step must not re-emit the corner image"
+  end
+
   def test_off_mode_reserves_nothing
     play_with_cover_art
     use_screen
