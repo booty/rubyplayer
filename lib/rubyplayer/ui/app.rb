@@ -823,6 +823,9 @@ module RubyPlayer
       end
 
       def render
+        # Bit of a blunt kludge
+        return if resize_settling?
+
         update_pulse
         @screen.clear_back
         rows = @screen.rows

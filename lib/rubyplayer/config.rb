@@ -36,7 +36,7 @@ module RubyPlayer
       # Album-art re-emission waits this long after the last SIGWINCH: a
       # window drag is a continuous resize storm, and re-sending the image
       # per repaint floods the terminal's input pipeline.
-      "resize_settle_seconds" => 1.25,
+      "resize_settle_seconds" => 0.5,
       "seek_seconds" => 10,
       "format_track_grouped" => DEFAULT_FORMAT_GROUPED,
       "format_track_ungrouped" => DEFAULT_FORMAT_UNGROUPED,
