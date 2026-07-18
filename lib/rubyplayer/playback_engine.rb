@@ -190,12 +190,11 @@ module RubyPlayer
           case cmd
           when :play_head then play_head
           when :skip then finish_and_advance
-          when :stop_playback then stop_playback
           when :toggle_pause then toggle_pause
           when Array
-            if cmd[0] == :seek
-              handle_seek(cmd[1])
-            elsif cmd[0] == :stop_playback
+            case cmd[0]
+            when :seek then handle_seek(cmd[1])
+            when :stop_playback
               begin
                 stop_playback
               ensure
@@ -203,10 +202,8 @@ module RubyPlayer
                 # still handles that error after the barrier is released.
                 cmd[1] << true
               end
-            elsif cmd[0] == :play_focus
-              complete_focus_command(cmd[2]) { start_focus(cmd[1]) }
-            elsif cmd[0] == :stop_focus
-              complete_focus_command(cmd[1]) { stop_focus_playback }
+            when :play_focus then complete_focus_command(cmd[2]) { start_focus(cmd[1]) }
+            when :stop_focus then complete_focus_command(cmd[1]) { stop_focus_playback }
             end
           end
           pump if @focus_sound || (@playing && !@paused)
