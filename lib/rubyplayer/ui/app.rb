@@ -365,6 +365,7 @@ module RubyPlayer
         @pending_missing_purge = nil
         deleted = @library.purge_missing_tracks!(pending[:ids])
         @engine.remove_track_ids(deleted) unless deleted.empty?
+        @folder_stats = nil
         @library_pane.rebuild!
         show_selected_tracks
         @status_line.set_message(
@@ -377,6 +378,7 @@ module RubyPlayer
         @pending_delete = nil
         track_ids = @library.remove_folder!(folder["id"])
         @engine.remove_track_ids(track_ids) unless track_ids.empty?
+        @folder_stats = nil
         @library_pane.rebuild!
         show_selected_tracks
         @status_line.set_message("Removed \"#{folder['name']}\" from library")
@@ -516,6 +518,7 @@ module RubyPlayer
       end
 
       def refresh_panes
+        @folder_stats = nil
         @library_pane.rebuild!
         # Playback/scan events change pane *contents*, not which view is shown,
         # so reload! (preserves @mode/@selection/@scroll, just re-clamps) is
@@ -561,9 +564,13 @@ module RubyPlayer
         elsif @input_buffer
           @screen.put(rows - 3, 0, "Add path: #{@input_buffer}_"[0, cols], fg: @theme[:accent])
         else
-          stats = @library.folder_stats
+          # Cached because render runs at 30fps and the counts only change
+          # when the library does — without this, the idle status line costs
+          # two SQLite COUNT(*) queries per frame. Invalidated wherever panes
+          # rebuild after a library change (refresh_panes, delete/purge).
+          @folder_stats ||= @library.folder_stats
           @status_line.render(@screen, row: rows - 3, w: cols,
-                              default: "#{stats[:tracks]} tracks in #{stats[:folders]} folders",
+                              default: "#{@folder_stats[:tracks]} tracks in #{@folder_stats[:folders]} folders",
                               theme: @theme)
         end
         @hotkey_line.render(@screen, row: rows - 2, w: cols, h: 2, pane: @active_pane, theme: @theme)

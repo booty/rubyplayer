@@ -609,6 +609,36 @@ class AppTest < Minitest::Test
     assert_includes row_with_first_key, second_col_key
   end
 
+  # The status line's default "N tracks in M folders" used to run two
+  # COUNT(*) queries on every 30fps frame. These tests pin the fix: at most
+  # one query per library change, and the displayed counts still update
+  # after the library actually changes.
+  def test_folder_stats_query_runs_once_across_frames
+    library = @app.instance_variable_get(:@library)
+    calls = 0
+    library.define_singleton_method(:folder_stats) { calls += 1; super() }
+    @app.render
+    @app.render
+    assert_equal 1, calls
+    @app.refresh_panes
+    @app.render
+    assert_equal 2, calls
+  end
+
+  def test_status_track_count_refreshes_after_library_change
+    library = @app.instance_variable_get(:@library)
+    before = library.folder_stats
+    @app.render
+    assert_includes back_buffer_text, "#{before[:tracks]} tracks in"
+
+    mark_two_tracks_missing
+    @app.refresh_panes
+    @app.render
+    after = library.folder_stats
+    refute_equal before[:tracks], after[:tracks]
+    assert_includes back_buffer_text, "#{after[:tracks]} tracks in"
+  end
+
   def test_starts_on_the_default_theme
     assert_equal :default, @app.theme_id
   end
@@ -805,5 +835,10 @@ class AppTest < Minitest::Test
     library.recompute_counts!
     @app.library_pane.rebuild!
     tracks
+  end
+
+  def back_buffer_text
+    back = @app.instance_variable_get(:@screen).instance_variable_get(:@back)
+    back.map { |row| row.map(&:ch).join }.join("\n")
   end
 end
