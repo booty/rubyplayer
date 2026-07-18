@@ -1,5 +1,6 @@
 require "fileutils"
 require_relative "config_dsl"
+require_relative "artwork" # DEFAULTS references Artwork::DEFAULT_NAMES
 
 module RubyPlayer
   DEFAULT_FORMAT_GROUPED = lambda do |track, fmt|
@@ -36,6 +37,19 @@ module RubyPlayer
       "format_track_grouped" => DEFAULT_FORMAT_GROUPED,
       "format_track_ungrouped" => DEFAULT_FORMAT_UNGROUPED,
       "theme" => "default",
+      # Album art placement: off | inset (bottom of library pane) |
+      # pane (dedicated right-hand column) | corner (overlay). "off" is the
+      # shipped default because rendering requires iTerm2; the V hotkey
+      # cycles modes and persists the choice here.
+      "art_mode" => "off",
+      "art_pane_width" => 30,
+      "art_corner_rows" => 8,
+      # Caps the inset height so a tall terminal doesn't let the art squeeze
+      # the library list into a sliver.
+      "art_inset_max_rows" => 12,
+      # Folder-art basenames tried in order (case-insensitive) before
+      # falling back to any image in the track's folder.
+      "art_filenames" => Artwork::DEFAULT_NAMES,
     },
     "audio" => {
       "sample_rate" => "auto",
@@ -91,10 +105,6 @@ module RubyPlayer
   end
 
   class ConfigStore
-    MANAGED_THEME_BEGIN = "# rubyplayer: managed theme begin"
-    MANAGED_THEME_END = "# rubyplayer: managed theme end"
-    MANAGED_THEME_PATTERN = /^#{Regexp.escape(MANAGED_THEME_BEGIN)}\n.*?^#{Regexp.escape(MANAGED_THEME_END)}\n?/m
-
     attr_reader :path, :data, :previous_path, :startup_error
 
     def initialize(path: RubyPlayer.config_path, sample_path: RubyPlayer.config_sample_path,
@@ -134,12 +144,33 @@ module RubyPlayer
     end
 
     def persist_theme(id)
+      persist_managed("theme", "config.ui.theme = #{id.to_s.inspect}")
+    end
+
+    def persist_art_mode(mode)
+      persist_managed("art_mode", "config.ui.art_mode = #{mode.to_s.inspect}")
+    end
+
+    private
+
+    # Persisted UI settings live in per-setting managed marker blocks so the
+    # rest of the file — the user's hand-written config, comments included —
+    # is never rewritten (no TOML/Ruby serializer dependency). Each setting
+    # replaces only its own block, so persisting the theme can't clobber a
+    # previously persisted art mode and vice versa. The marker text for
+    # "theme" predates this generalization; keeping the same format means
+    # existing config files continue to match.
+    def persist_managed(name, assignment)
+      begin_marker = "# rubyplayer: managed #{name} begin"
+      end_marker = "# rubyplayer: managed #{name} end"
+      pattern = /^#{Regexp.escape(begin_marker)}\n.*?^#{Regexp.escape(end_marker)}\n?/m
+
       source = File.file?(@path) ? File.binread(@path) : ""
-      user_source = source.gsub(MANAGED_THEME_PATTERN, "").rstrip
+      user_source = source.gsub(pattern, "").rstrip
       managed = <<~RUBY
-        #{MANAGED_THEME_BEGIN}
-        RubyPlayer.configure { |config| config.ui.theme = #{id.to_s.inspect} }
-        #{MANAGED_THEME_END}
+        #{begin_marker}
+        RubyPlayer.configure { |config| #{assignment} }
+        #{end_marker}
       RUBY
       candidate_source = [user_source, managed.rstrip].reject(&:empty?).join("\n\n") + "\n"
       candidate = ConfigDSL.evaluate(candidate_source, path: @path, defaults: DEFAULTS)
@@ -150,8 +181,6 @@ module RubyPlayer
       @signature = file_signature
       true
     end
-
-    private
 
     def bootstrap_primary!
       return if File.exist?(@path)

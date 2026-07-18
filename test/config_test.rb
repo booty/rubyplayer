@@ -323,4 +323,30 @@ class ConfigTest < Minitest::Test
     assert File.file?(@path)
     assert_equal "basic_terminal", config["ui", "theme"]
   end
+
+  def test_persist_art_mode_writes_its_own_managed_block
+    config = RubyPlayer::ConfigStore.new(path: @path)
+
+    assert config.persist_art_mode(:inset)
+    assert config.persist_art_mode(:pane)
+
+    source = File.read(@path)
+    assert_equal 1, source.scan("rubyplayer: managed art_mode begin").size
+    assert_match(/config\.ui\.art_mode = "pane"/, source)
+    assert_equal "pane", config["ui", "art_mode"]
+  end
+
+  def test_theme_and_art_mode_blocks_coexist
+    config = RubyPlayer::ConfigStore.new(path: @path)
+
+    config.persist_theme(:basic_terminal)
+    config.persist_art_mode(:corner)
+    config.persist_theme(:ocean_mist) # must not clobber the art block
+
+    assert_equal "ocean_mist", config["ui", "theme"]
+    assert_equal "corner", config["ui", "art_mode"]
+    source = File.read(@path)
+    assert_equal 1, source.scan("managed theme begin").size
+    assert_equal 1, source.scan("managed art_mode begin").size
+  end
 end
