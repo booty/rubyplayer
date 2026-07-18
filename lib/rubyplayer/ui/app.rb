@@ -921,18 +921,26 @@ module RubyPlayer
         end
       end
 
-      # Text in place of the image when there's nothing to show — the region
-      # is still reserved so the layout doesn't jump between tracks with and
-      # without art.
+      # Fills the art region when there's no image to show. While audio is
+      # animating, that's a braille spectrum (pure cells — works in any
+      # terminal, so it's also the whole art experience outside iTerm2);
+      # otherwise a static placeholder line. Either way the region stays
+      # reserved so the layout doesn't jump between tracks with and without
+      # art.
       def render_art_placeholder
         region = @art_region
         return unless region
         return if @art_bytes && @art_supported
 
-        text = @art_supported ? "no artwork" : "art requires iTerm2"
-        row = region[:y] + region[:h] / 2
-        col = region[:x] + [(region[:w] - text.size) / 2, 0].max
-        @screen.put(row, col, text[0, region[:w]], fg: @theme[:text_muted])
+        if animating?
+          BrailleMeter.render(@screen, @engine.levels, x: region[:x], y: region[:y],
+                              w: region[:w], h: region[:h], fg: @theme[:success])
+        else
+          text = @art_supported ? "no artwork" : "art requires iTerm2"
+          row = region[:y] + region[:h] / 2
+          col = region[:x] + [(region[:w] - text.size) / 2, 0].max
+          @screen.put(row, col, text[0, region[:w]], fg: @theme[:text_muted])
+        end
       end
 
       def show_selected_tracks

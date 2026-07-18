@@ -926,6 +926,18 @@ class AppTest < Minitest::Test
     assert_same base_theme, current_theme
   end
 
+  def test_art_region_shows_spectrum_while_playing_without_art
+    start_normal_playback # @music has no cover image
+    @app.handle_key("v") # -> inset
+    use_screen
+    @app.render
+
+    refute_nil art_region
+    refute_includes back_buffer_text, "no artwork"
+    assert(back_buffer_text.each_char.any? { |c| (0x2800..0x28FF).cover?(c.ord) },
+           "expected braille meter cells in the art region")
+  end
+
   def test_off_mode_reserves_nothing
     play_with_cover_art
     use_screen
