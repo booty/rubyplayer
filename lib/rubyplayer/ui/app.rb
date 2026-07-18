@@ -12,12 +12,11 @@ module RubyPlayer
       RATE_ACTIONS = { rate_0: nil, rate_1: 1, rate_2: 2, rate_3: 3,
                        rate_4: 4, rate_5: 5, rate_6: 6 }.freeze
       ART_MODES = %i[off inset pane corner].freeze
-      PULSE_MODES = %i[off low medium high].freeze
 
       attr_reader :engine, :library_pane, :tracks_pane, :active_pane, :input_buffer,
                   :pending_delete, :info_track, :show_help, :theme_id, :theme_picker,
                   :focus_player, :filter_buffer, :pending_missing_purge, :config_error,
-                  :art_mode, :show_now_playing, :pulse_mode
+                  :art_mode, :show_now_playing
 
       def initialize(argv: [], config_path: nil, data_path: nil, null_audio: false,
                      io_out: $stdout, focus_player: nil, env: ENV)
@@ -75,9 +74,6 @@ module RubyPlayer
         @art_bytes = nil
         @art_region = nil
         @art_dirty = false
-        @pulse_mode = normalize_pulse_mode(@config["ui", "pulse_mode"])
-        @beat = BeatTracker.new(steps: @config["ui", "pulse_steps"],
-                                decay: @config["ui", "pulse_decay"])
         @quit = false
         @resized = false
         # Dirty-flag rendering: the loop paints only when something visual
@@ -329,7 +325,6 @@ module RubyPlayer
         when :show_help then @show_help = true
         when :show_theme_picker then request_show_theme_picker
         when :cycle_art_mode then cycle_art_mode
-        when :cycle_pulse_mode then cycle_pulse_mode
         when :show_now_playing then request_show_now_playing
         when *RATE_ACTIONS.keys then rate_current(RATE_ACTIONS[action])
         else route_to_pane(action)
@@ -443,133 +438,17 @@ module RubyPlayer
         id = :default unless Theme::ALL_IDS.include?(id)
         @theme_id = id
         # @base_theme is the user's actual selection; @theme is what widgets
-        # see this frame and may be a beat-brightened derivative (see
-        # update_pulse). Everything that persists or compares themes must
-        # use @base_theme.
+        # see this frame and may be an accent-tinted derivative (see
+        # tinted_base_theme). Persisting or comparing themes must use
+        # @base_theme.
         @base_theme = Theme[id]
         @theme = @base_theme
       end
 
-      # ---- beat pulse ----
-
-      def normalize_pulse_mode(value)
-        mode = value.to_s.to_sym
-        PULSE_MODES.include?(mode) ? mode : :off
-      end
-
-      def cycle_pulse_mode
-        @pulse_mode = PULSE_MODES[(PULSE_MODES.index(@pulse_mode) + 1) % PULSE_MODES.size]
-        begin
-          @config.persist_pulse_mode(@pulse_mode)
-        rescue ConfigError => error
-          @config_error = error
-        end
-        message = "Beat pulse: #{@pulse_mode}"
-        if @pulse_mode != :off && !(Theme.truecolor?(@base_theme) && @art_supported)
-          message += " (needs iTerm2 and a truecolor theme)"
-        end
-        @status_line.set_message(message)
-      end
-
-      # Palette-cycling pulse: while active, pulse-scoped roles render as
-      # ANSI indices (see Theme::PULSE_SLOTS) and each beat step reprograms
-      # those palette slots via OSC 4 — a few hundred bytes, zero cell
-      # changes, zero repaint. This replaced a cell-based approach that
-      # swapped brightened hex into the theme per step; at high mode that
-      # was a near-full-screen repaint several times a beat, and the SGR
-      # flood made input visibly laggy. Theme.pulsed is retained purely as
-      # the per-step color source for the slot values.
-      def update_pulse
-        base = tinted_base_theme
-        if @pulse_mode != :off && animating? && Theme.truecolor?(base) && @art_supported
-          @theme = indexed_theme(base)
-          @beat.sample(@engine.levels)
-          pulsed = Theme.pulsed(base, mode: @pulse_mode, step: @beat.step,
-                                steps: @config["ui", "pulse_steps"],
-                                shift: @config["ui", "pulse_shift_percent"] / 100.0)
-          queue_palette_updates(pulsed)
-        else
-          @beat.reset
-          @theme = base
-          deactivate_palette
-        end
-      end
-
-      # Base theme with the mode's pulse roles swapped for their ANSI index
-      # symbols. Memoized per (base, mode): a stable object keeps the cell
-      # diff quiet — the whole point is that cells never change while the
-      # palette does.
-      def indexed_theme(base)
-        key = [base.object_id, @pulse_mode]
-        if @indexed_key != key
-          overlay = Theme::PULSE_ROLES[@pulse_mode].to_h do |role|
-            [role, Theme::PULSE_SLOTS[role][0]]
-          end
-          @indexed_key = key
-          @indexed_theme = base.merge(overlay).freeze
-        end
-        @indexed_theme
-      end
-
-      # Records the *desired* slot colors; emission happens (throttled) in
-      # emit_palette. Desired state and written state are tracked
-      # separately so a throttled-away intermediate step can never mark a
-      # color as sent that the terminal never received.
-      def queue_palette_updates(pulsed)
-        @palette_target = Theme::PULSE_ROLES[@pulse_mode].to_h { |role| [role, pulsed[role]] }
-        @palette_active = true
-      end
-
-      # The palette is session-global terminal state, not ours: hand the
-      # slots back the moment the pulse stops using them.
-      def deactivate_palette
-        return unless @palette_active
-
-        @palette_active = false
-        @palette_target = nil
-        @palette_reset_pending = true
-      end
-
-      # Throttled to ui.pulse_max_hz: every OSC 4 makes iTerm2 invalidate
-      # and re-render its entire screen internally, so bursts at the 30fps
-      # step rate back its input queue up by seconds and kill interactivity
-      # (observed: UI kept pulsing ~5s after the app was SIGKILLed).
-      # Skipped bursts aren't lost — the target sticks around and the next
-      # eligible frame emits the newest colors, dropping stale
-      # intermediates. The reset bypasses the throttle: giving the slots
-      # back must never wait.
-      def emit_palette
-        if @palette_reset_pending
-          @palette_reset_pending = false
-          @palette_written = {}
-          @last_palette_at = nil
-          @io_out.write(Palette.reset)
-          return
-        end
-        return unless @palette_target
-
-        now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-        min_interval = 1.0 / @config["ui", "pulse_max_hz"]
-        return if @last_palette_at && now - @last_palette_at < min_interval
-
-        @palette_written ||= {}
-        out = +""
-        @palette_target.each do |role, hex|
-          next unless hex.is_a?(String) && @palette_written[role] != hex
-
-          @palette_written[role] = hex
-          out << Palette.set(Theme::PULSE_SLOTS[role][1], hex)
-        end
-        return if out.empty?
-
-        @last_palette_at = now
-        @io_out.write(out)
-      end
-
       # Base theme with the accent replaced by the current cover's average
       # color. Memoized so the same Hash object is returned frame after
-      # frame — Theme.pulsed caches by object identity, and stable objects
-      # keep the cell diff from seeing phantom changes.
+      # frame — stable objects keep the cell diff from seeing phantom
+      # changes.
       def tinted_base_theme
         accent = @art_accent
         return @base_theme unless accent
@@ -905,7 +784,7 @@ module RubyPlayer
         # Bit of a blunt kludge
         return if resize_settling?
 
-        update_pulse
+        @theme = tinted_base_theme
         @screen.clear_back
         rows = @screen.rows
         cols = @screen.cols
@@ -936,7 +815,6 @@ module RubyPlayer
         render_theme_picker_modal if @theme_picker
         render_config_error_modal if @config_error
         @screen.flush
-        emit_palette
         emit_art
       end
 
@@ -1027,9 +905,9 @@ module RubyPlayer
         # Paint a stable backing rectangle: these cells must be identical
         # every frame so the diff never repaints beneath the image while the
         # track list scrolls elsewhere. Deliberately the *base* surface
-        # color, not the frame theme's — a pulsed surface would change per
-        # beat step, damage this region, and re-emit the image several
-        # times a beat (same flood class as the resize storm).
+        # color — any per-frame theme variation here would damage this
+        # region and re-emit the image (same flood class as the resize
+        # storm).
         h.times { |i| @screen.put(y + i, x, " " * w, bg: @base_theme[:surface]) }
         @art_region = { x: x, y: y, w: w, h: h }
       end
@@ -1261,10 +1139,7 @@ module RubyPlayer
       end
 
       def restore_terminal
-        # Palette reset first: leaving the alternate screen does not undo
-        # OSC 4 slot programming, and the shell prompt would otherwise
-        # inherit pulsed colors.
-        @io_out.write("#{Palette.reset}\e[?2004l\e[?25h\e[?1049l")
+        @io_out.write("\e[?2004l\e[?25h\e[?1049l")
         $stdin.cooked! if $stdin.tty?
       end
 

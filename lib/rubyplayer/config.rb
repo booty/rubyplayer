@@ -63,21 +63,6 @@ module RubyPlayer
       # Tint the theme's accent color toward the current cover's average
       # color while a track with art is playing.
       "art_accent" => true,
-      # Beat pulse: off | low (borders) | medium (+surfaces/selection) |
-      # high (+text). Needs a truecolor theme; B cycles and persists.
-      "pulse_mode" => "off",
-      # Quantization steps for the beat envelope. More steps = smoother
-      # pulse but more cell repaints per beat.
-      "pulse_steps" => 8,
-      # Envelope release per frame (attack is instant); lower falls faster.
-      "pulse_decay" => 0.85,
-      # How far scoped colors move toward white at full beat, in percent.
-      "pulse_shift_percent" => 99,
-      # Palette bursts per second, max. Every OSC 4 forces iTerm2 to
-      # invalidate and re-render its whole screen internally; unthrottled
-      # (one per 30fps step change) its input queue backs up seconds deep
-      # and input goes dead. 10Hz still reads as a smooth pulse.
-      "pulse_max_hz" => 10,
     },
     "audio" => {
       "sample_rate" => "auto",
@@ -177,10 +162,6 @@ module RubyPlayer
 
     def persist_art_mode(mode)
       persist_managed("art_mode", "config.ui.art_mode = #{mode.to_s.inspect}")
-    end
-
-    def persist_pulse_mode(mode)
-      persist_managed("pulse_mode", "config.ui.pulse_mode = #{mode.to_s.inspect}")
     end
 
     private

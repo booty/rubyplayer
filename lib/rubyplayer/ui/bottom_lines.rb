@@ -92,7 +92,7 @@ module RubyPlayer
         purge_visible_missing: "purge missing",
         show_track_info: "info", show_help: "help", show_theme_picker: "theme",
         filter_tracks: "filter", cycle_art_mode: "art",
-        show_now_playing: "now playing", cycle_pulse_mode: "pulse",
+        show_now_playing: "now playing",
       }.freeze
 
       def initialize(keymap:)
