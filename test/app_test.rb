@@ -639,6 +639,56 @@ class AppTest < Minitest::Test
     assert_includes back_buffer_text, "#{after[:tracks]} tracks in"
   end
 
+  # The main loop used to repaint 30x/s even when nothing on screen could
+  # have changed — an idle TUI burning CPU building identical frames. These
+  # tests pin the dirty-flag contract that replaced it: no flush while
+  # idle, a flush after every visual change, and exactly one flush when a
+  # status message expires (the line flips back to the default text).
+  def test_idle_frames_skip_rendering
+    flushes = instrument_flushes
+    3.times { @app.render_if_needed }
+    assert_equal 1, flushes[:n] # only the initial paint
+  end
+
+  def test_keypress_marks_frame_dirty
+    flushes = instrument_flushes
+    @app.render_if_needed
+    @app.handle_key("tab")
+    2.times { @app.render_if_needed }
+    assert_equal 2, flushes[:n]
+  end
+
+  def test_bus_events_mark_frame_dirty
+    flushes = instrument_flushes
+    @app.render_if_needed
+    @app.instance_variable_get(:@bus).publish(:queue_changed, items: [])
+    @app.handle_events
+    2.times { @app.render_if_needed }
+    assert_equal 2, flushes[:n]
+  end
+
+  def test_status_message_expiry_renders_exactly_once
+    clock = { now: 0.0 }
+    status = RubyPlayer::UI::StatusLine.new(seconds: 5, clock: -> { clock[:now] })
+    @app.instance_variable_set(:@status_line, status)
+    flushes = instrument_flushes
+    @app.render_if_needed
+    status.set_message("hello")
+    2.times { @app.render_if_needed }
+    assert_equal 2, flushes[:n] # message appeared
+
+    clock[:now] = 10.0
+    2.times { @app.render_if_needed }
+    assert_equal 3, flushes[:n] # message expired: repaint default once
+  end
+
+  def test_playback_animates_every_frame
+    start_normal_playback
+    flushes = instrument_flushes
+    3.times { @app.render_if_needed }
+    assert_equal 3, flushes[:n]
+  end
+
   def test_starts_on_the_default_theme
     assert_equal :default, @app.theme_id
   end
@@ -840,5 +890,12 @@ class AppTest < Minitest::Test
   def back_buffer_text
     back = @app.instance_variable_get(:@screen).instance_variable_get(:@back)
     back.map { |row| row.map(&:ch).join }.join("\n")
+  end
+
+  def instrument_flushes
+    count = { n: 0 }
+    screen = @app.instance_variable_get(:@screen)
+    screen.define_singleton_method(:flush) { count[:n] += 1; super() }
+    count
   end
 end

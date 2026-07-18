@@ -57,9 +57,16 @@ module RubyPlayer
         @expires_at = @clock.call + @seconds
       end
 
+      # Exposed so App's dirty-flag renderer can detect the visual
+      # transitions this line makes on its own (message appearing or timing
+      # out) — the render loop no longer repaints unconditionally, so those
+      # transitions would otherwise never hit the screen.
+      def active?
+        !!(@message && @clock.call < @expires_at)
+      end
+
       def render(screen, row:, w:, default:, theme:)
-        active = @message && @clock.call < @expires_at
-        text = active ? @message : default
+        text = active? ? @message : default
         screen.put(row, 0, text.to_s[0, w], fg: theme[:warning])
       end
     end

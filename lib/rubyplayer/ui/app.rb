@@ -68,6 +68,10 @@ module RubyPlayer
         set_theme!(@config["ui", "theme"])
         @quit = false
         @resized = false
+        # Dirty-flag rendering: the loop paints only when something visual
+        # changed. Start dirty so the first pass paints the initial frame.
+        @needs_render = true
+        @message_was_active = false
         @engine.start
         @library_pane.rebuild!
         show_selected_tracks
@@ -99,7 +103,7 @@ module RubyPlayer
           handle_events
           handle_resize if @resized
           reload_config_if_changed
-          render
+          render_if_needed
         end
       ensure
         restore_terminal
@@ -129,6 +133,10 @@ module RubyPlayer
       end
 
       def handle_key(key)
+        # Over-approximation: an unbound key dirties the frame too. One
+        # wasted repaint per stray keypress is cheaper than auditing every
+        # dispatch path for whether it changed something visible.
+        @needs_render = true
         return handle_config_error_key(key) if @config_error
         return handle_theme_picker_key(key) if @theme_picker
         return handle_help_key(key) if @show_help
@@ -510,7 +518,11 @@ module RubyPlayer
 
       def handle_events
         refresh = false
-        @bus.drain.each do |type, payload|
+        events = @bus.drain
+        # Any event may carry a visible change (position tick, scan progress,
+        # queue mutation) — cheaper to repaint once than to classify.
+        @needs_render = true unless events.empty?
+        events.each do |type, payload|
           case type
           when :queue_changed, :track_started, :track_ended then refresh = true
           when :scan_complete
@@ -527,6 +539,9 @@ module RubyPlayer
 
       def refresh_panes
         @folder_stats = nil
+        # Callers outside the key/event paths (scan_paths wait: true) reach
+        # here too — pane contents changed, so the next frame must paint.
+        @needs_render = true
         @library_pane.rebuild!
         # Playback/scan events change pane *contents*, not which view is shown,
         # so reload! (preserves @mode/@selection/@scroll, just re-clamps) is
@@ -544,9 +559,11 @@ module RubyPlayer
           return unless @config.reload_if_changed
         rescue ConfigError => error
           @config_error = error
+          @needs_render = true # the error modal must appear without a keypress
           return
         end
         @config_error = nil
+        @needs_render = true
         @keymap = Keymap.new(@config["keymap"])
         @hotkey_line = HotkeyLine.new(keymap: @keymap)
         @tracks_pane.update_config(@config)
@@ -558,6 +575,27 @@ module RubyPlayer
       end
 
       # ---- rendering ----
+
+      # Painting is skipped unless something visual could have changed: a
+      # dirty flag set by input/events/resize/config paths, an active
+      # playback or focus source (position counter and level meters move
+      # every frame), or the status message flipping between shown and
+      # expired — that last transition happens purely by clock, so it's
+      # detected here rather than at a set_message call site. Idle, this
+      # turns 30 full frame builds per second into zero.
+      def render_if_needed
+        message_active = @status_line.active?
+        return unless @needs_render || animating? || message_active != @message_was_active
+
+        render
+        @needs_render = false
+        @message_was_active = message_active
+      end
+
+      def animating?
+        state = @engine.state
+        !!(state[:focus_sound] || (state[:playing] && !state[:paused]))
+      end
 
       def render
         @screen.clear_back
@@ -805,6 +843,7 @@ module RubyPlayer
 
       def handle_resize
         @resized = false
+        @needs_render = true
         rows, cols = TTY::Screen.size
         @screen.resize(rows, cols)
       end
