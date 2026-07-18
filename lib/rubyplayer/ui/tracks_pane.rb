@@ -27,6 +27,7 @@ module RubyPlayer
         @grouped_formatter = config["ui", "format_track_grouped"]
         @flat_formatter = config["ui", "format_track_ungrouped"]
         @history_limit = config["library", "history_limit"]
+        invalidate_rows!
       end
 
       def show(library_row, breadcrumb: nil)
@@ -70,6 +71,7 @@ module RubyPlayer
       def filter=(value)
         identity = selected_identity
         @filter = value.to_s
+        invalidate_rows!
         restore_selection(identity, 0)
       end
 
@@ -121,17 +123,15 @@ module RubyPlayer
         true
       end
 
+      # Memoized: this is called several times per keypress and once per
+      # 30fps frame (render, selected_track, clamp_selection, ...), and
+      # rebuilding runs TrackFormatter over every filtered track — on a
+      # 10k-track All Songs view that's hundreds of thousands of formatter
+      # calls per second for rows that haven't changed. Every mutation path
+      # (load_tracks/apply_sort, filter=, update_config) must call
+      # invalidate_rows! or the pane renders stale rows.
       def display_rows
-        return [{ type: :empty, text: empty_message }] if filtered_tracks.empty?
-
-        # The queue is an ordered play list (see #show); album headers would
-        # break the row-index-to-queue-index mapping that selected_track_index
-        # relies on, so ignore @group_by_album here regardless of its value
-        # for other views.
-        return flat_rows if @mode == :queue
-        return focus_rows if @mode == :focus
-        return flat_rows unless @group_by_album
-        grouped_rows
+        @rows_cache ||= build_rows
       end
 
       def selected_track
@@ -192,6 +192,24 @@ module RubyPlayer
       end
 
       private
+
+      def invalidate_rows!
+        @rows_cache = nil
+        @filtered_cache = nil
+      end
+
+      def build_rows
+        return [{ type: :empty, text: empty_message }] if filtered_tracks.empty?
+
+        # The queue is an ordered play list (see #show); album headers would
+        # break the row-index-to-queue-index mapping that selected_track_index
+        # relies on, so ignore @group_by_album here regardless of its value
+        # for other views.
+        return flat_rows if @mode == :queue
+        return focus_rows if @mode == :focus
+        return flat_rows unless @group_by_album
+        grouped_rows
+      end
 
       def empty_message
         return "No matches — press / to edit filter" unless @filter.empty? || @tracks.empty?
@@ -269,6 +287,11 @@ module RubyPlayer
       end
 
       def apply_sort
+        # Every mutation route (show/reload!/load_tracks, sort and group keys)
+        # funnels through here, so this is the one choke point that must drop
+        # the row cache — including the queue/focus early return below, since
+        # load_tracks just replaced @tracks for those modes too.
+        invalidate_rows!
         # The queue's displayed order must equal engine.queue_items (playback
         # order), since App#dispatch(:remove_from_queue) removes by displayed
         # index -- a lingering @sort from another view must not reorder it.
@@ -281,7 +304,14 @@ module RubyPlayer
         end
       end
 
+      # Memoized alongside display_rows: #title re-counts matches every frame,
+      # and the substring scan below is O(tracks × fields) — noticeable on
+      # large views while a filter is active.
       def filtered_tracks
+        @filtered_cache ||= compute_filtered_tracks
+      end
+
+      def compute_filtered_tracks
         query = @filter.strip.downcase
         return @tracks if query.empty?
 

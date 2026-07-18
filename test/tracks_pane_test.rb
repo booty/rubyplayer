@@ -444,4 +444,57 @@ class TracksPaneTest < Minitest::Test
       assert_equal :accent, @pane.display_rows.first[:segments].first[:fg]
     end
   end
+
+  # display_rows is called several times per frame at 30fps (render,
+  # selected_track, clamp_selection, ...). These tests pin the memoization:
+  # repeated calls must not rebuild rows, and every mutation path must
+  # invalidate — a stale cache would silently show outdated rows in the TTY,
+  # which the rest of the suite (fresh pane per assertion) cannot catch.
+  def test_display_rows_are_memoized_between_mutations
+    @pane.show(@folder_row)
+    assert_same @pane.display_rows, @pane.display_rows
+  end
+
+  def test_filter_change_rebuilds_rows
+    @pane.show(@folder_row)
+    @pane.display_rows
+    @pane.filter = "bravo"
+    assert_equal %w[Bravo], titles
+    @pane.clear_filter
+    assert_equal 3, titles.size
+  end
+
+  def test_reload_rebuilds_rows
+    @pane.show(@folder_row)
+    @pane.display_rows
+    add("d.vgm", title: "Delta", album: "Apple", artist: "Y", number: 3)
+    @pane.reload!
+    assert_includes titles, "Delta"
+  end
+
+  def test_group_toggle_and_sort_rebuild_rows
+    @pane.show(@folder_row)
+    @pane.display_rows
+    @pane.handle_action(:toggle_group)
+    assert(@pane.display_rows.any? { |row| row[:type] == :header })
+    @pane.handle_action(:sort_title)
+    assert_equal %w[Alpha Bravo Charlie], titles
+  end
+
+  def test_update_config_rebuilds_rows
+    @pane.show(@folder_row)
+    @pane.display_rows
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "config.rb")
+      File.write(path, <<~RUBY)
+        RubyPlayer.configure do |config|
+          config.ui.format_track_ungrouped = lambda do |track, fmt|
+            fmt.text("!!\#{track.title}", fg: :accent)
+          end
+        end
+      RUBY
+      @pane.update_config(RubyPlayer::ConfigStore.new(path: path))
+      assert_includes @pane.display_rows.first[:text], "!!"
+    end
+  end
 end
