@@ -41,6 +41,7 @@ module RubyPlayer
       @frames_base = 0
       @seek_offset_ms = 0
       @started_at = nil
+      @published_second = nil
       @queue.on_change { safe_publish(:queue_changed, items: @queue.items) }
     end
 
@@ -277,8 +278,23 @@ module RubyPlayer
       else
         @level_tap.push(data)
         @pending = data
-        safe_publish(:position, position_ms: position_ms, track_id: @current&.id)
+        publish_position
       end
+    end
+
+    # The UI renders position as m:ss, so anything finer than the displayed
+    # second is wake-up noise: every publish writes the EventBus self-pipe
+    # and rouses the main loop's IO.select. Unthrottled, pump emitted one
+    # event per decoded chunk (~10/s), defeating the idle loop's longer
+    # sleeps. Publish only when the displayed second changes; the marker is
+    # reset on track start and seek so those repaint immediately.
+    def publish_position
+      pos = position_ms
+      second = pos / 1000
+      return if second == @published_second
+
+      @published_second = second
+      safe_publish(:position, position_ms: pos, track_id: @current&.id)
     end
 
     def playable_path(track)
@@ -322,6 +338,7 @@ module RubyPlayer
         @started_at = Time.now.utc
       end
       @level_tap.reset
+      @published_second = nil
       safe_publish(:track_started, track: track)
       safe_publish(:playback_state, playing: true, paused: false)
     rescue StandardError => e
@@ -423,6 +440,7 @@ module RubyPlayer
           @seek_offset_ms = ms
           @frames_base = @audio.frames_played
         end
+        @published_second = nil
       end
       @audio.paused = @paused
     end

@@ -330,4 +330,22 @@ class PlaybackEngineTest < Minitest::Test
     ev = wait_for_event(:track_started)
     assert_equal good.id, ev[1][:track].id
   end
+
+  # The UI shows position as m:ss, so :position events finer than one
+  # displayed second are pure wake-up noise — each one writes the EventBus
+  # self-pipe and rouses the main loop's IO.select. Before the throttle,
+  # pump published once per decoded chunk (~10/s at 4096 frames), which
+  # defeated the idle loop's attempt to sleep between meaningful changes.
+  def test_position_publishes_at_most_once_per_displayed_second
+    t = make_track("shantae.gbs", duration_ms: 60_000)
+    @engine.enqueue_now([t])
+    wait_for_event(:track_started)
+    wait_for { @engine.state[:position_ms] > 500 }
+    @engine.shutdown
+
+    seconds = @bus.all.filter_map { |type, payload| payload[:position_ms] / 1000 if type == :position }
+    refute_empty seconds
+    assert_equal seconds.uniq, seconds,
+                 "expected one :position event per displayed second, got #{seconds.inspect}"
+  end
 end
