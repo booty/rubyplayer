@@ -44,12 +44,19 @@ class AppTest < Minitest::Test
     FileUtils.cp(File.join(FIXTURES, "space-debris.mod"), @music)
     FileUtils.cp(File.join(FIXTURES, "shantae.gbs"), @music)
     @focus_player = FakeFocusPlayer.new
-    @app = RubyPlayer::UI::App.new(
-      config_path: File.join(@tmp, "config.rb"),
-      data_path: File.join(@tmp, "library.sqlite3"),
-      null_audio: true, io_out: StringIO.new, focus_player: @focus_player
-    )
+    @app = make_app
     @app.scan_paths([@music], wait: true)
+  end
+
+  # env defaults to iTerm2 so art tests exercise the emission path;
+  # everything else ignores it.
+  def make_app(env: { "TERM_PROGRAM" => "iTerm.app" }, config_path: File.join(@tmp, "config.rb"))
+    RubyPlayer::UI::App.new(
+      config_path: config_path,
+      data_path: File.join(@tmp, "library.sqlite3"),
+      null_audio: true, io_out: StringIO.new, focus_player: @focus_player,
+      env: env
+    )
   end
 
   def teardown
@@ -709,6 +716,134 @@ class AppTest < Minitest::Test
     status.set_message("hi")
     clock[:now] = 4.9
     assert_in_delta 0.1, @app.select_timeout, 0.02
+  end
+
+  # ---- album art ----
+
+  def art_region = @app.instance_variable_get(:@art_region)
+
+  def use_screen(rows: 24, cols: 110)
+    out = StringIO.new
+    @app.instance_variable_set(:@io_out, out)
+    @app.instance_variable_set(:@screen, RubyPlayer::UI::Screen.new(out: out, rows: rows, cols: cols))
+    out
+  end
+
+  def play_with_cover_art
+    File.binwrite(File.join(@music, "cover.jpg"), File.binread(File.join(FIXTURES, "warrior.jpg")))
+    start_normal_playback
+    # Art resolves on a background thread and lands as an :art_ready event.
+    wait_until do
+      @app.handle_events
+      @app.instance_variable_get(:@art_bytes)
+    end
+  end
+
+  def test_art_mode_cycles_and_persists
+    assert_equal :off, @app.art_mode
+    @app.handle_key("v")
+    assert_equal :inset, @app.art_mode
+    assert_includes File.read(File.join(@tmp, "config.rb")), 'config.ui.art_mode = "inset"'
+
+    @app.handle_key("v")
+    @app.handle_key("v")
+    @app.handle_key("v")
+    assert_equal :off, @app.art_mode # inset -> pane -> corner -> off
+  end
+
+  def test_persisted_art_mode_is_the_next_launch_default
+    # The native audio shim allows one instance per process; retire the
+    # setup app before booting a second one.
+    @app.shutdown
+    path = File.join(@tmp, "art-config.rb")
+    File.write(path, 'RubyPlayer.configure { |config| config.ui.art_mode = "pane" }' + "\n")
+    @app = make_app(config_path: path)
+    assert_equal :pane, @app.art_mode
+  end
+
+  def test_inset_mode_reserves_bottom_of_library_pane
+    play_with_cover_art
+    @app.handle_key("v") # -> inset
+    use_screen
+    @app.render
+
+    region = art_region
+    refute_nil region
+    content_h = 24 - 4
+    assert_equal 1, region[:x] # inside the library box border
+    assert_equal content_h - 1 - region[:h], region[:y] # docked at pane bottom
+  end
+
+  def test_pane_mode_reserves_right_hand_column
+    play_with_cover_art
+    2.times { @app.handle_key("v") } # -> pane
+    use_screen
+    @app.render
+
+    region = art_region
+    refute_nil region
+    art_w = 30 # ui.art_pane_width default
+    assert_equal 110 - art_w + 1, region[:x]
+    assert_equal 1, region[:y]
+  end
+
+  def test_corner_mode_overlays_bottom_right
+    play_with_cover_art
+    3.times { @app.handle_key("v") } # -> corner
+    use_screen
+    @app.render
+
+    region = art_region
+    refute_nil region
+    assert_equal 8, region[:h] # ui.art_corner_rows default
+  end
+
+  def test_art_escape_is_emitted_after_flush_and_not_repeated_when_idle
+    play_with_cover_art
+    @app.handle_key("v") # -> inset
+    out = use_screen
+
+    @app.render_if_needed
+    assert_equal 1, out.string.scan("1337;File=inline=1").size
+
+    @app.render_if_needed # idle frame: no repaint, no re-emit
+    assert_equal 1, out.string.scan("1337;File=inline=1").size
+  end
+
+  def test_no_reemit_while_modal_covers_art_then_reemit_on_close
+    play_with_cover_art
+    @app.handle_key("v")
+    out = use_screen
+    @app.render_if_needed
+    assert_equal 1, out.string.scan("1337;File=inline=1").size
+
+    @app.handle_key("?") # help modal paints over the panes
+    @app.render_if_needed
+    # While the modal is up the image must not be re-drawn on top of it.
+    assert_equal 1, out.string.scan("1337;File=inline=1").size
+
+    @app.handle_key("escape") # closing repaints cells under the art
+    @app.render_if_needed
+    assert_equal 2, out.string.scan("1337;File=inline=1").size
+  end
+
+  def test_no_escape_without_iterm
+    @app.shutdown # native audio shim allows one instance per process
+    @app = make_app(env: {}, config_path: File.join(@tmp, "plain-config.rb"))
+    @app.scan_paths([@music], wait: true)
+    @app.handle_key("v")
+    @app.instance_variable_set(:@art_bytes, "IMG".b)
+    @app.render
+
+    out = @app.instance_variable_get(:@io_out)
+    refute_includes out.string, "1337;File"
+  end
+
+  def test_off_mode_reserves_nothing
+    play_with_cover_art
+    use_screen
+    @app.render
+    assert_nil art_region
   end
 
   def test_starts_on_the_default_theme

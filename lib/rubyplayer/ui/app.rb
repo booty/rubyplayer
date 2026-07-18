@@ -11,13 +11,15 @@ module RubyPlayer
       SINGLE_PANE_MAX_WIDTH = 71
       RATE_ACTIONS = { rate_0: nil, rate_1: 1, rate_2: 2, rate_3: 3,
                        rate_4: 4, rate_5: 5, rate_6: 6 }.freeze
+      ART_MODES = %i[off inset pane corner].freeze
 
       attr_reader :engine, :library_pane, :tracks_pane, :active_pane, :input_buffer,
                   :pending_delete, :info_track, :show_help, :theme_id, :theme_picker,
-                  :focus_player, :filter_buffer, :pending_missing_purge, :config_error
+                  :focus_player, :filter_buffer, :pending_missing_purge, :config_error,
+                  :art_mode
 
       def initialize(argv: [], config_path: nil, data_path: nil, null_audio: false,
-                     io_out: $stdout, focus_player: nil)
+                     io_out: $stdout, focus_player: nil, env: ENV)
         @argv = argv
         @io_out = io_out
         @config = ConfigStore.new(path: config_path || RubyPlayer.config_path)
@@ -66,6 +68,12 @@ module RubyPlayer
         @theme_picker_index = 0
         @theme_id_before_preview = nil
         set_theme!(@config["ui", "theme"])
+        @artwork = Artwork.new(names: @config["ui", "art_filenames"])
+        @art_supported = ItermImage.supported?(env)
+        @art_mode = normalize_art_mode(@config["ui", "art_mode"])
+        @art_bytes = nil
+        @art_region = nil
+        @art_dirty = false
         @quit = false
         @resized = false
         # Dirty-flag rendering: the loop paints only when something visual
@@ -311,6 +319,7 @@ module RubyPlayer
         when :show_track_info then request_show_track_info
         when :show_help then @show_help = true
         when :show_theme_picker then request_show_theme_picker
+        when :cycle_art_mode then cycle_art_mode
         when *RATE_ACTIONS.keys then rate_current(RATE_ACTIONS[action])
         else route_to_pane(action)
         end
@@ -425,6 +434,85 @@ module RubyPlayer
         @theme = Theme[id]
       end
 
+      # ---- album art ----
+
+      def normalize_art_mode(value)
+        mode = value.to_s.to_sym
+        ART_MODES.include?(mode) ? mode : :off
+      end
+
+      def cycle_art_mode
+        @art_mode = ART_MODES[(ART_MODES.index(@art_mode) + 1) % ART_MODES.size]
+        begin
+          @config.persist_art_mode(@art_mode)
+        rescue ConfigError => error
+          @config_error = error
+        end
+        message = "Album art: #{@art_mode}"
+        message += " (requires iTerm2)" if @art_mode != :off && !@art_supported
+        @status_line.set_message(message)
+        invalidate_screen!
+      end
+
+      # Resolution can spawn ffmpeg (embedded art), so it runs off-thread and
+      # comes back as an :art_ready event through the bus — the decoder and
+      # UI never block on it. Fetched even while the mode is :off so toggling
+      # the mode on mid-track shows art immediately.
+      def fetch_art(track)
+        return unless track&.id
+
+        Thread.new do
+          bytes = begin
+            @artwork.for_track(track)
+          rescue StandardError
+            nil
+          end
+          @bus.publish(:art_ready, track_id: track.id, bytes: bytes)
+        end
+      end
+
+      def set_art(bytes)
+        return if bytes == @art_bytes
+
+        @art_bytes = bytes
+        # Full repaint rather than targeted damage: the previous image can
+        # only be erased by rewriting the cells beneath it, and art changes
+        # are rare (track boundaries), so the cost is irrelevant.
+        invalidate_screen!
+      end
+
+      # Screen#resize with unchanged dimensions is the existing "repaint
+      # everything" path (drops the front buffer) — reused here to erase a
+      # stale image and to re-lay-out after a mode change.
+      def invalidate_screen!
+        @screen.resize(@screen.rows, @screen.cols)
+        @needs_render = true
+        @art_dirty = true
+      end
+
+      def modal_active?
+        !!(@pending_delete || @pending_missing_purge || @info_track ||
+           @show_help || @theme_picker || @config_error)
+      end
+
+      # Called after Screen#flush: the image must be re-emitted when its
+      # backing cells were repainted (that repaint erased part of it), and
+      # only then — every-frame re-emits flicker visibly in iTerm2. Skipped
+      # while a modal is up, since the image would paint on top of it; the
+      # modal's closing repaint re-triggers emission naturally.
+      def emit_art
+        region = @art_region
+        return unless region && @art_bytes && @art_supported && !modal_active?
+
+        rows = region[:y]..(region[:y] + region[:h] - 1)
+        cols = region[:x]..(region[:x] + region[:w] - 1)
+        return unless @art_dirty || @screen.region_damaged?(rows: rows, cols: cols)
+
+        @art_dirty = false
+        @io_out.write(ItermImage.place(@art_bytes, row: region[:y], col: region[:x],
+                                       width: region[:w], height: region[:h]))
+      end
+
       def route_to_pane(action)
         if @active_pane == :library
           before = @library_pane.selected
@@ -525,7 +613,17 @@ module RubyPlayer
         @needs_render = true unless events.empty?
         events.each do |type, payload|
           case type
-          when :queue_changed, :track_started, :track_ended then refresh = true
+          when :track_started
+            refresh = true
+            fetch_art(payload[:track])
+          when :queue_changed, :track_ended then refresh = true
+          when :art_ready
+            # Compare against the *current* track: the decoder may have
+            # advanced past the track this fetch was for; stale art is
+            # dropped and the newer track's own fetch will land later.
+            set_art(payload[:bytes]) if payload[:track_id] == @engine.state[:track]&.id
+          when :playback_state
+            set_art(nil) unless payload[:playing]
           when :scan_complete
             @status_line.set_message(
               "Scan complete: #{payload[:processed]} files, #{payload[:errored]} errors"
@@ -642,11 +740,15 @@ module RubyPlayer
         render_theme_picker_modal if @theme_picker
         render_config_error_modal if @config_error
         @screen.flush
+        emit_art
       end
 
       def render_panes(cols, content_h)
+        @art_region = nil
         # Below 72 columns, two bordered panes leave too little usable text.
         # Keep full-width active pane and let existing Tab binding switch it.
+        # Art is skipped entirely here — there's no room it could take
+        # without starving the single pane.
         if cols <= SINGLE_PANE_MAX_WIDTH
           if @active_pane == :library
             draw_box(0, 0, cols, content_h, active: true, title: "Library")
@@ -661,15 +763,89 @@ module RubyPlayer
           return
         end
 
-        lib_w = cols * @config["ui", "library_pane_percent"] / 100
-        tracks_w = cols - lib_w
+        art_cols = @art_mode == :pane ? art_pane_cols(cols) : 0
+        usable = cols - art_cols
+        lib_w = usable * @config["ui", "library_pane_percent"] / 100
+        tracks_w = usable - lib_w
+        inset_h = @art_mode == :inset ? art_inset_rows(lib_w, content_h) : 0
         draw_box(0, 0, lib_w, content_h, active: @active_pane == :library, title: "Library")
         draw_box(lib_w, 0, tracks_w, content_h, active: @active_pane == :tracks,
                  title: @tracks_pane.title(max_width: tracks_w - 6))
-        @library_pane.render(@screen, x: 1, y: 1, w: lib_w - 2, h: content_h - 2,
+        @library_pane.render(@screen, x: 1, y: 1, w: lib_w - 2, h: content_h - 2 - inset_h,
                              active: @active_pane == :library, theme: @theme)
         @tracks_pane.render(@screen, x: lib_w + 1, y: 1, w: tracks_w - 2,
                             h: content_h - 2, active: @active_pane == :tracks, theme: @theme)
+        if inset_h.positive?
+          @art_region = { x: 1, y: content_h - 1 - inset_h, w: lib_w - 2, h: inset_h }
+        elsif art_cols.positive?
+          render_art_pane(usable, art_cols, content_h)
+        elsif @art_mode == :corner
+          place_art_corner(cols, content_h)
+        end
+        render_art_placeholder
+      end
+
+      # Cells are roughly twice as tall as wide, so a visually square image
+      # spans about half as many rows as columns — that ratio drives every
+      # region height below.
+      def art_inset_rows(lib_w, content_h)
+        rows = [(lib_w - 2) / 2, @config["ui", "art_inset_max_rows"],
+                (content_h - 2) / 2].min # leave at least half the pane for the list
+        rows >= @config["ui", "art_min_rows"] ? rows : 0
+      end
+
+      # 0 when the remaining width couldn't hold two usable panes — the mode
+      # stays selected but degrades to no art rather than crushing the lists.
+      def art_pane_cols(cols)
+        width = @config["ui", "art_pane_width"]
+        cols - width > SINGLE_PANE_MAX_WIDTH ? width : 0
+      end
+
+      def render_art_pane(x, w, content_h)
+        draw_box(x, 0, w, content_h, active: false, title: "Now Playing")
+        img_h = [(w - 2) / 2, content_h - 6].min # keep room for metadata lines
+        @art_region = { x: x + 1, y: 1, w: w - 2, h: img_h } if img_h >= @config["ui", "art_min_rows"]
+
+        track = @engine.state[:track]
+        return unless track
+
+        meta_y = (@art_region ? @art_region[:h] + 2 : 1)
+        [[track.title, true], [track.album, false], [track.artist, false]].each do |text, bold|
+          next if text.to_s.empty?
+          break if meta_y >= content_h - 1
+
+          @screen.put(meta_y, x + 2, text[0, w - 4],
+                      fg: bold ? @theme[:primary] : @theme[:text_muted], bold: bold)
+          meta_y += 1
+        end
+      end
+
+      def place_art_corner(cols, content_h)
+        h = @config["ui", "art_corner_rows"]
+        w = h * 2
+        return if h + 2 >= content_h || w + 4 >= cols
+
+        x = cols - w - 2
+        y = content_h - 1 - h
+        # Paint a stable backing rectangle: these cells must be identical
+        # every frame so the diff never repaints beneath the image while the
+        # track list scrolls elsewhere.
+        h.times { |i| @screen.put(y + i, x, " " * w, bg: @theme[:surface]) }
+        @art_region = { x: x, y: y, w: w, h: h }
+      end
+
+      # Text in place of the image when there's nothing to show — the region
+      # is still reserved so the layout doesn't jump between tracks with and
+      # without art.
+      def render_art_placeholder
+        region = @art_region
+        return unless region
+        return if @art_bytes && @art_supported
+
+        text = @art_supported ? "no artwork" : "art requires iTerm2"
+        row = region[:y] + region[:h] / 2
+        col = region[:x] + [(region[:w] - text.size) / 2, 0].max
+        @screen.put(row, col, text[0, region[:w]], fg: @theme[:text_muted])
       end
 
       def show_selected_tracks

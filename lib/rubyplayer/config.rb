@@ -44,6 +44,9 @@ module RubyPlayer
       "art_mode" => "off",
       "art_pane_width" => 30,
       "art_corner_rows" => 8,
+      # Below this height the image is an unreadable smear; the region is
+      # dropped instead.
+      "art_min_rows" => 3,
       # Caps the inset height so a tall terminal doesn't let the art squeeze
       # the library list into a sliver.
       "art_inset_max_rows" => 12,

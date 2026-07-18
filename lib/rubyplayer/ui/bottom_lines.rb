@@ -91,7 +91,7 @@ module RubyPlayer
         remove_from_queue: "remove", remove_library_item: "remove",
         purge_visible_missing: "purge missing",
         show_track_info: "info", show_help: "help", show_theme_picker: "theme",
-        filter_tracks: "filter",
+        filter_tracks: "filter", cycle_art_mode: "art",
       }.freeze
 
       def initialize(keymap:)
