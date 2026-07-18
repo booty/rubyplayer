@@ -118,6 +118,17 @@ module RubyPlayer
   end
 
   class ConfigStore
+    # Settings this app version persists via managed blocks. Blocks naming
+    # anything else were written by a version that had a since-removed
+    # feature (this happened: a persisted ui.pulse_mode outlived the pulse
+    # feature and bricked startup in both the primary config AND the
+    # fallback snapshot, which had faithfully copied the same block). Such
+    # blocks are app-authored, so the app deletes them; hand-written
+    # unknown settings still fail loudly.
+    MANAGED_SETTINGS = %w[theme art_mode].freeze
+    MANAGED_BLOCK_PATTERN =
+      /^# rubyplayer: managed (\w+) begin\n.*?^# rubyplayer: managed \1 end\n?/m
+
     attr_reader :path, :data, :previous_path, :startup_error
 
     def initialize(path: RubyPlayer.config_path, sample_path: RubyPlayer.config_sample_path,
@@ -127,6 +138,8 @@ module RubyPlayer
       @sample_path = sample_path
       @create_if_missing = create_if_missing
       bootstrap_primary! if @create_if_missing
+      scrub_stale_managed!(@path)
+      scrub_stale_managed!(@previous_path)
       @signature = file_signature
       @startup_error = nil
       @data = load_startup
@@ -165,6 +178,20 @@ module RubyPlayer
     end
 
     private
+
+    def scrub_stale_managed!(target)
+      return unless File.file?(target)
+
+      source = File.binread(target)
+      cleaned = source.gsub(MANAGED_BLOCK_PATTERN) do |block|
+        MANAGED_SETTINGS.include?(Regexp.last_match(1)) ? block : ""
+      end
+      atomic_write(target, cleaned) unless cleaned == source
+    rescue SystemCallError
+      # Unreadable/unwritable config surfaces through the normal load path
+      # with its own diagnostics; scrubbing is best-effort.
+      nil
+    end
 
     # Persisted UI settings live in per-setting managed marker blocks so the
     # rest of the file — the user's hand-written config, comments included —

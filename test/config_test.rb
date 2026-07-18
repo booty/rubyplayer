@@ -336,6 +336,44 @@ class ConfigTest < Minitest::Test
     assert_equal "pane", config["ui", "art_mode"]
   end
 
+  # Regression: the app persisted ui.pulse_mode via a managed block, the
+  # feature was later removed, and the stale app-written block failed
+  # ConfigDSL validation in BOTH config.rb and config-previous.rb —
+  # bricking startup with no fallback. Blocks the app wrote for settings
+  # it no longer knows must be scrubbed, never fatal.
+  def test_stale_managed_blocks_for_removed_settings_are_scrubbed
+    stale = <<~RUBY
+      RubyPlayer.configure { |config| config.audio.sample_rate = 48_000 }
+
+      # rubyplayer: managed pulse_mode begin
+      RubyPlayer.configure { |config| config.ui.pulse_mode = "high" }
+      # rubyplayer: managed pulse_mode end
+
+      # rubyplayer: managed theme begin
+      RubyPlayer.configure { |config| config.ui.theme = "basic_terminal" }
+      # rubyplayer: managed theme end
+    RUBY
+    write_config stale
+    write_config stale, path: File.join(File.dirname(@path), "config-previous.rb")
+
+    config = RubyPlayer::ConfigStore.new(path: @path)
+
+    assert_nil config.startup_error
+    assert_equal "basic_terminal", config["ui", "theme"] # known block survives
+    assert_equal 48_000, config["audio", "sample_rate"] # user source survives
+    source = File.read(@path)
+    refute_includes source, "pulse_mode"
+    refute_includes File.read(config.previous_path), "pulse_mode"
+  end
+
+  def test_hand_written_unknown_settings_still_error
+    # The scrub is scoped to app-written managed blocks: a typo the user
+    # made by hand must still fail loudly, not be silently deleted.
+    write_config 'RubyPlayer.configure { |config| config.ui.tpyo_setting = 1 }'
+    error = assert_raises(RubyPlayer::ConfigError) { RubyPlayer::ConfigStore.new(path: @path) }
+    assert_includes error.message, "tpyo_setting"
+  end
+
   def test_theme_and_art_mode_blocks_coexist
     config = RubyPlayer::ConfigStore.new(path: @path)
 
