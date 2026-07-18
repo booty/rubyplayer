@@ -203,6 +203,19 @@ module RubyPlayer
         end
       end
 
+      # Shared line-editing for the two text-capture states (add-path prompt
+      # and filter). Returns the edited string, or nil for keys that aren't
+      # edits — enter/escape semantics differ per state and stay in each
+      # handler. KeyDecoder names special keys with multi-char strings
+      # ("up", "f5"), so the length check is what keeps them out of the text.
+      def edit_line(buffer, key)
+        case key
+        when "backspace" then buffer[0..-2]
+        when "space" then buffer + " "
+        else key.length == 1 ? buffer + key : nil
+        end
+      end
+
       def handle_input_mode_key(key)
         case key
         when "enter"
@@ -213,9 +226,9 @@ module RubyPlayer
             scan_paths([File.expand_path(path)])
           end
         when "escape" then @input_buffer = nil
-        when "backspace" then @input_buffer = @input_buffer[0..-2]
-        when "space" then @input_buffer += " "
-        else @input_buffer += key if key.length == 1
+        else
+          edited = edit_line(@input_buffer, key)
+          @input_buffer = edited if edited
         end
       end
 
@@ -244,16 +257,11 @@ module RubyPlayer
           @tracks_pane.filter = @filter_before_edit
           @filter_buffer = nil
           @filter_before_edit = nil
-        when "backspace"
-          @filter_buffer = @filter_buffer[0..-2]
-          @tracks_pane.filter = @filter_buffer
-        when "space"
-          @filter_buffer += " "
-          @tracks_pane.filter = @filter_buffer
         else
-          if key.length == 1
-            @filter_buffer += key
-            @tracks_pane.filter = @filter_buffer
+          edited = edit_line(@filter_buffer, key)
+          if edited
+            @filter_buffer = edited
+            @tracks_pane.filter = edited
           end
         end
       end
