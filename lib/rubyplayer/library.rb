@@ -79,11 +79,7 @@ module RubyPlayer
     end
 
     def favorites
-      rows = @db.read do |s|
-        s.execute("SELECT * FROM tracks WHERE rating >= 4 AND missing = 0 " \
-                  "ORDER BY rating DESC, title")
-      end
-      rows.map { |r| Track.from_row(r) }
+      query_tracks("rating >= 4 AND missing = 0 ORDER BY rating DESC, title")
     end
 
     # Smart views stay as direct queries rather than cached collections so
