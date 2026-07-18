@@ -72,6 +72,8 @@ module RubyPlayer
         # changed. Start dirty so the first pass paints the initial frame.
         @needs_render = true
         @message_was_active = false
+        @frame_interval = 1.0 / @config["ui", "frame_fps"]
+        @idle_poll = @config["ui", "idle_poll_seconds"]
         @engine.start
         @library_pane.rebuild!
         show_selected_tracks
@@ -96,9 +98,8 @@ module RubyPlayer
         setup_terminal
         trap("SIGWINCH") { @resized = true }
         scan_paths(@library.root_paths + @argv)
-        frame_interval = 1.0 / @config["ui", "frame_fps"]
         until @quit
-          ready = IO.select([$stdin, @bus.reader], nil, nil, frame_interval)
+          ready = IO.select([$stdin, @bus.reader], nil, nil, select_timeout)
           read_input if ready&.first&.include?($stdin)
           handle_events
           handle_resize if @resized
@@ -566,6 +567,8 @@ module RubyPlayer
         @needs_render = true
         @keymap = Keymap.new(@config["keymap"])
         @hotkey_line = HotkeyLine.new(keymap: @keymap)
+        @frame_interval = 1.0 / @config["ui", "frame_fps"]
+        @idle_poll = @config["ui", "idle_poll_seconds"]
         @tracks_pane.update_config(@config)
         # Don't clobber an in-progress interactive preview with whatever's
         # still on disk -- the picker itself is the source of truth for
@@ -595,6 +598,18 @@ module RubyPlayer
       def animating?
         state = @engine.state
         !!(state[:focus_sound] || (state[:playing] && !state[:paused]))
+      end
+
+      # How long IO.select may block. While animating, the frame interval
+      # caps the position/EQ refresh rate. Idle, stdin and the EventBus
+      # self-pipe wake select on their own, so the timeout only bounds two
+      # things select can't see: the SIGWINCH resize flag (idle_poll) and
+      # the status message's clock-driven expiry (time_remaining). This cuts
+      # idle wake-ups from 30/s to 4/s.
+      def select_timeout
+        return @frame_interval if animating?
+
+        [@idle_poll, @status_line.time_remaining].compact.min
       end
 
       def render

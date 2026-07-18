@@ -689,6 +689,28 @@ class AppTest < Minitest::Test
     assert_equal 3, flushes[:n]
   end
 
+  # Companion to dirty-flag rendering: idle, the loop needs no 30fps
+  # heartbeat — only a coarse poll for the SIGWINCH resize flag plus a
+  # precise wake-up for status-message expiry. Events and stdin already
+  # wake IO.select through their own descriptors.
+  def test_select_timeout_uses_frame_interval_while_playing
+    start_normal_playback
+    assert_in_delta 1.0 / 30, @app.select_timeout, 0.001
+  end
+
+  def test_select_timeout_relaxes_to_idle_poll_when_stopped
+    assert_in_delta 0.25, @app.select_timeout, 0.001
+  end
+
+  def test_select_timeout_shrinks_to_status_message_expiry
+    clock = { now: 0.0 }
+    status = RubyPlayer::UI::StatusLine.new(seconds: 5, clock: -> { clock[:now] })
+    @app.instance_variable_set(:@status_line, status)
+    status.set_message("hi")
+    clock[:now] = 4.9
+    assert_in_delta 0.1, @app.select_timeout, 0.02
+  end
+
   def test_starts_on_the_default_theme
     assert_equal :default, @app.theme_id
   end

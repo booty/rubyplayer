@@ -65,6 +65,13 @@ module RubyPlayer
         !!(@message && @clock.call < @expires_at)
       end
 
+      # Seconds until the current message times out (nil when none is
+      # showing) — lets the idle loop sleep exactly long enough instead of
+      # polling for the expiry moment.
+      def time_remaining
+        active? ? @expires_at - @clock.call : nil
+      end
+
       def render(screen, row:, w:, default:, theme:)
         text = active? ? @message : default
         screen.put(row, 0, text.to_s[0, w], fg: theme[:warning])

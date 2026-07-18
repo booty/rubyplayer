@@ -27,6 +27,10 @@ module RubyPlayer
     "ui" => {
       "library_pane_percent" => 33,
       "frame_fps" => 30,
+      # Idle wake-up cadence when nothing is animating. Bounded above by how
+      # long a terminal resize may go unnoticed: SIGWINCH only sets a flag
+      # the loop polls, so this is the worst-case resize latency.
+      "idle_poll_seconds" => 0.25,
       "status_message_seconds" => 5,
       "seek_seconds" => 10,
       "format_track_grouped" => DEFAULT_FORMAT_GROUPED,
