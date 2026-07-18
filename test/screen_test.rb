@@ -74,4 +74,41 @@ class ScreenTest < Minitest::Test
     s.put(0, 0, "hi")
     assert_includes s.flush, "hi"
   end
+
+  # Damage reporting exists for overlays drawn outside the cell model
+  # (iTerm2 inline images): the overlay owner must know whether the last
+  # flush repainted cells under its rectangle, because any such repaint
+  # erases part of the image and forces a re-emit.
+  def test_region_damaged_reflects_last_flush
+    s = make_screen
+    s.flush # initial full paint
+    s.clear_back
+    s.put(2, 4, "hello")
+    s.flush
+
+    assert s.region_damaged?(rows: 2..2, cols: 4..8)
+    assert s.region_damaged?(rows: 0..4, cols: 8..8) # overlaps last char
+    refute s.region_damaged?(rows: 3..4, cols: 0..19) # other rows untouched
+    refute s.region_damaged?(rows: 2..2, cols: 9..19) # same row, past the text
+  end
+
+  def test_region_damaged_clears_on_quiet_flush
+    s = make_screen
+    s.put(1, 1, "x")
+    s.flush
+    s.clear_back
+    s.put(1, 1, "x")
+    s.flush # no changes emitted
+
+    refute s.region_damaged?(rows: 0..4, cols: 0..19)
+  end
+
+  def test_full_repaint_damages_everything
+    s = make_screen
+    s.flush
+    s.resize(5, 20)
+    s.flush
+
+    assert s.region_damaged?(rows: 4..4, cols: 19..19)
+  end
 end

@@ -56,6 +56,7 @@ module RubyPlayer
       def flush
         out = +""
         last_style = :none
+        @damage = {}
         @rows.times do |r|
           c = 0
           while c < @cols
@@ -64,6 +65,7 @@ module RubyPlayer
               next
             end
             out << "\e[#{r + 1};#{c + 1}H"
+            run_start = c
             while c < @cols && (@front.nil? || @front[r][c] != @back[r][c])
               cell = @back[r][c]
               style = [cell.fg, cell.bg, cell.bold, cell.italic, cell.underline, cell.dim]
@@ -74,6 +76,7 @@ module RubyPlayer
               out << cell.ch
               c += 1
             end
+            record_damage(r, run_start, c - 1)
           end
         end
         unless out.empty?
@@ -85,7 +88,29 @@ module RubyPlayer
         out
       end
 
+      # Whether the most recent flush repainted any cell inside the given
+      # rectangle. Exists for overlays that live outside the cell model
+      # (iTerm2 inline images): repainting cells under an image erases that
+      # part of it, so its owner must re-emit — but only then, since
+      # re-emitting every frame would make the image flicker. Damage is
+      # per-row col ranges rather than one bounding box: two distant small
+      # changes would otherwise "damage" everything between them and force
+      # spurious re-emits.
+      def region_damaged?(rows:, cols:)
+        return false unless @damage
+
+        rows.any? do |row|
+          @damage[row]&.any? { |lo, hi| lo <= cols.last && hi >= cols.first }
+        end
+      end
+
       private
+
+      def record_damage(row, col_start, col_end)
+        return if col_end < col_start
+
+        (@damage[row] ||= []) << [col_start, col_end]
+      end
 
       def blank_buffer
         Array.new(@rows) { Array.new(@cols) { BLANK.dup } }
