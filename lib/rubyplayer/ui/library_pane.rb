@@ -7,18 +7,6 @@ module RubyPlayer
     class LibraryPane
       Row = Struct.new(:kind, :folder, :depth, keyword_init: true)
 
-      SPECIALS = [
-        [:queue, "Playback Queue"],
-        [:history, "History"],
-        [:favorites, "Favorite Tracks"],
-        [:focus, "Focus"],
-        [:recent, "Recently Added"],
-        [:unrated, "Unrated"],
-        [:missing, "Missing"],
-        [:failed, "Failed to Scan"],
-        [:most_played, "Most Played"],
-      ].freeze
-
       attr_reader :selection
 
       def initialize(library:, glyphs:)
@@ -36,8 +24,9 @@ module RubyPlayer
 
       def rebuild!
         @breadcrumbs = {}
-        @rows = SPECIALS.map { |kind, _| Row.new(kind: kind, depth: 0) }
-        @rows << Row.new(kind: :all, depth: 0)
+        # Views::ALL's insertion order is the sidebar order; :all is last so
+        # the folder tree (its expanded children) renders directly beneath it.
+        @rows = Views::ALL.keys.map { |kind| Row.new(kind: kind, depth: 0) }
         @library.roots.each { |f| append_folder(f, 1, []) } if @expanded[:all]
         @selection = @selection.clamp(0, [@rows.size - 1, 0].max)
       end
@@ -47,8 +36,7 @@ module RubyPlayer
 
       def breadcrumb_for(row)
         return "" unless row
-        return "All Songs" if row.kind == :all
-        return SPECIALS.to_h.fetch(row.kind) unless row.kind == :folder
+        return Views.label(row.kind) unless row.kind == :folder
 
         @breadcrumbs.fetch(row.folder["id"], row.folder["name"].to_s)
       end
@@ -130,21 +118,13 @@ module RubyPlayer
       end
 
       def label_for(row)
-        case row.kind
-        when :queue then ["#{@glyphs['play']} Playback Queue", ""]
-        when :history then ["#{@glyphs['playlist']} History", ""]
-        when :favorites then ["#{@glyphs['star']} Favorite Tracks", ""]
-        when :focus then ["#{@glyphs['focus']} Focus", ""]
-        when :recent then ["#{@glyphs['playlist']} Recently Added", ""]
-        when :unrated then ["#{@glyphs['playlist']} Unrated", ""]
-        when :missing then ["#{@glyphs['missing']} Missing", ""]
-        when :failed then ["#{@glyphs['errored']} Failed to Scan", ""]
-        when :most_played then ["#{@glyphs['play']} Most Played", ""]
-        when :all then ["#{@glyphs['dir']} All Songs", ""]
-        when :folder
+        if row.kind == :folder
           f = row.folder
           icon = @glyphs[f["kind"]] || @glyphs["dir"]
           ["#{icon} #{f['name']}", "(#{f['track_count']})"]
+        else
+          view = Views::ALL.fetch(row.kind)
+          ["#{@glyphs[view.glyph]} #{view.label}", ""]
         end
       end
     end

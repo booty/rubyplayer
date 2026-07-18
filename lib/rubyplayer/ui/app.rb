@@ -468,16 +468,13 @@ module RubyPlayer
           [@tracks_pane.selected_track].compact
         else
           row = @library_pane.selected
-          case row&.kind
-          when :all then @library.all_tracks
-          when :folder then @library.tracks_under(row.folder["id"])
-          when :favorites then @library.favorites
-          when :recent then @library.recently_added
-          when :unrated then @library.unrated
-          when :missing then @library.missing_tracks
-          when :failed then @library.failed_tracks
-          when :most_played then @library.most_played
-          else []
+          if row&.kind == :folder
+            @library.tracks_under(row.folder["id"])
+          else
+            # Views.query returns [] for queue/history/focus (nil query in the
+            # table), preserving the rule that enqueueing those sidebar rows
+            # wholesale is a no-op.
+            Views.query(row&.kind, @library)
           end
         end
       end

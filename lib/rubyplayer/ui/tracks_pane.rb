@@ -46,19 +46,10 @@ module RubyPlayer
       end
 
       def title(max_width: nil)
-        label = case @mode
-                when :queue then "Playback Queue"
-                when :history then "History"
-                when :favorites then "Favorite Tracks"
-                when :focus then "Focus"
-                when :recent then "Recently Added"
-                when :unrated then "Unrated"
-                when :missing then "Missing"
-                when :failed then "Failed to Scan"
-                when :most_played then "Most Played"
-                when :all then "All Songs"
-                when Array then ["Tracks", @breadcrumb].compact.join(" · ")
-                else "Tracks"
+        label = if @mode.is_a?(Array)
+                  ["Tracks", @breadcrumb].compact.join(" · ")
+                else
+                  Views.label(@mode) || "Tracks"
                 end
         text = "#{label} · #{filtered_tracks.size}"
         return text unless max_width && text.size > max_width
@@ -93,16 +84,12 @@ module RubyPlayer
           case @mode
           when :queue then @queue_source.call
           when :focus then @focus_source.call
+          # History can't live in the Views query table: it takes a
+          # config-driven limit and returns {track:, started_at:} rows that
+          # need unwrapping, unlike the plain track-list queries.
           when :history then @library.history(limit: @history_limit).map { |h| h[:track] }
-          when :favorites then @library.favorites
-          when :recent then @library.recently_added
-          when :unrated then @library.unrated
-          when :missing then @library.missing_tracks
-          when :failed then @library.failed_tracks
-          when :most_played then @library.most_played
-          when :all then @library.all_tracks
           when Array then @library.tracks_under(@mode[1])
-          else []
+          else Views.query(@mode, @library)
           end
         apply_sort
       end
