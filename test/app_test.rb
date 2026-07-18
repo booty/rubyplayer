@@ -931,6 +931,29 @@ class AppTest < Minitest::Test
     assert_equal count, out.string.scan("\e]4;").size
   end
 
+  # Regression: unthrottled palette bursts (one per 30fps step change)
+  # back iTerm2's input queue up seconds deep — it kept pulsing ~5s after
+  # the app was SIGKILLed. Bursts are capped at ui.pulse_max_hz; skipped
+  # steps emit their newest colors on the next eligible frame.
+  def test_palette_bursts_are_throttled
+    @app.set_theme!(:neon_cyberpunk)
+    start_normal_playback
+    @app.handle_key("b")
+    pin_beat_step(7)
+    out = use_screen
+    @app.render
+    count = out.string.scan("\e]4;").size
+    assert_operator count, :>, 0
+
+    pin_beat_step(2) # new step immediately: inside the min interval
+    @app.render
+    assert_equal count, out.string.scan("\e]4;").size, "burst inside min interval must wait"
+
+    @app.instance_variable_set(:@last_palette_at, 0.0) # interval elapsed
+    @app.render
+    assert_operator out.string.scan("\e]4;").size, :>, count
+  end
+
   def test_turning_pulse_off_resets_the_palette
     @app.set_theme!(:neon_cyberpunk)
     start_normal_playback

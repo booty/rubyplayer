@@ -511,19 +511,12 @@ module RubyPlayer
         @indexed_theme
       end
 
-      # Only slots whose color actually changed since the last emission are
-      # written — steady state between beat steps costs zero bytes.
+      # Records the *desired* slot colors; emission happens (throttled) in
+      # emit_palette. Desired state and written state are tracked
+      # separately so a throttled-away intermediate step can never mark a
+      # color as sent that the terminal never received.
       def queue_palette_updates(pulsed)
-        @palette_sent ||= {}
-        out = +""
-        Theme::PULSE_ROLES[@pulse_mode].each do |role|
-          hex = pulsed[role]
-          next unless hex.is_a?(String) && @palette_sent[role] != hex
-
-          @palette_sent[role] = hex
-          out << Palette.set(Theme::PULSE_SLOTS[role][1], hex)
-        end
-        @palette_pending = out unless out.empty?
+        @palette_target = Theme::PULSE_ROLES[@pulse_mode].to_h { |role| [role, pulsed[role]] }
         @palette_active = true
       end
 
@@ -533,15 +526,44 @@ module RubyPlayer
         return unless @palette_active
 
         @palette_active = false
-        @palette_sent = {}
-        @palette_pending = Palette.reset
+        @palette_target = nil
+        @palette_reset_pending = true
       end
 
+      # Throttled to ui.pulse_max_hz: every OSC 4 makes iTerm2 invalidate
+      # and re-render its entire screen internally, so bursts at the 30fps
+      # step rate back its input queue up by seconds and kill interactivity
+      # (observed: UI kept pulsing ~5s after the app was SIGKILLed).
+      # Skipped bursts aren't lost — the target sticks around and the next
+      # eligible frame emits the newest colors, dropping stale
+      # intermediates. The reset bypasses the throttle: giving the slots
+      # back must never wait.
       def emit_palette
-        return unless @palette_pending
+        if @palette_reset_pending
+          @palette_reset_pending = false
+          @palette_written = {}
+          @last_palette_at = nil
+          @io_out.write(Palette.reset)
+          return
+        end
+        return unless @palette_target
 
-        @io_out.write(@palette_pending)
-        @palette_pending = nil
+        now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        min_interval = 1.0 / @config["ui", "pulse_max_hz"]
+        return if @last_palette_at && now - @last_palette_at < min_interval
+
+        @palette_written ||= {}
+        out = +""
+        @palette_target.each do |role, hex|
+          next unless hex.is_a?(String) && @palette_written[role] != hex
+
+          @palette_written[role] = hex
+          out << Palette.set(Theme::PULSE_SLOTS[role][1], hex)
+        end
+        return if out.empty?
+
+        @last_palette_at = now
+        @io_out.write(out)
       end
 
       # Base theme with the accent replaced by the current cover's average

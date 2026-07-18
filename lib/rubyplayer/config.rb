@@ -73,6 +73,11 @@ module RubyPlayer
       "pulse_decay" => 0.85,
       # How far scoped colors move toward white at full beat, in percent.
       "pulse_shift_percent" => 99,
+      # Palette bursts per second, max. Every OSC 4 forces iTerm2 to
+      # invalidate and re-render its whole screen internally; unthrottled
+      # (one per 30fps step change) its input queue backs up seconds deep
+      # and input goes dead. 10Hz still reads as a smooth pulse.
+      "pulse_max_hz" => 10,
     },
     "audio" => {
       "sample_rate" => "auto",
