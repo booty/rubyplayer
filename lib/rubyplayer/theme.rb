@@ -454,6 +454,20 @@ module RubyPlayer
                primary info text_muted text],
     }.freeze
 
+    # Palette-cycling pulse: each pulse-scoped role renders as a named ANSI
+    # index (left column — what Screen emits) whose terminal palette slot
+    # (right column) is reprogrammed per beat step via OSC 4. Truecolor
+    # themes never touch the 16 ANSI slots, so all of them are free to
+    # repurpose as role slots while a hex theme is active. The Default
+    # (ANSI) theme can't pulse — its slots are the user's real terminal
+    # colors.
+    PULSE_SLOTS = {
+      border: [:black, 0], border_focus: [:red, 1], surface: [:green, 2],
+      surface_alt: [:yellow, 3], selection_bg: [:blue, 4], accent: [:magenta, 5],
+      primary: [:cyan, 6], info: [:white, 7], text_muted: [:bright_black, 8],
+      text: [:bright_red, 9],
+    }.freeze
+
     def self.truecolor?(theme)
       theme[:border].is_a?(String)
     end

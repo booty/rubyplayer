@@ -465,26 +465,83 @@ module RubyPlayer
           @config_error = error
         end
         message = "Beat pulse: #{@pulse_mode}"
-        message += " (needs a truecolor theme)" if @pulse_mode != :off && !Theme.truecolor?(@base_theme)
+        if @pulse_mode != :off && !(Theme.truecolor?(@base_theme) && @art_supported)
+          message += " (needs iTerm2 and a truecolor theme)"
+        end
         @status_line.set_message(message)
       end
 
-      # Swaps the frame's theme for a beat-brightened derivative. Runs only
-      # while animating — stopped/paused, the dirty-flag loop isn't
-      # rendering at all, which is what keeps the pulse's idle cost at
-      # exactly zero. No repaint forcing needed either way: when the step
-      # (or a pause) changes the colors, the cell diff picks it up.
+      # Palette-cycling pulse: while active, pulse-scoped roles render as
+      # ANSI indices (see Theme::PULSE_SLOTS) and each beat step reprograms
+      # those palette slots via OSC 4 — a few hundred bytes, zero cell
+      # changes, zero repaint. This replaced a cell-based approach that
+      # swapped brightened hex into the theme per step; at high mode that
+      # was a near-full-screen repaint several times a beat, and the SGR
+      # flood made input visibly laggy. Theme.pulsed is retained purely as
+      # the per-step color source for the slot values.
       def update_pulse
         base = tinted_base_theme
-        if @pulse_mode != :off && animating? && Theme.truecolor?(base)
+        if @pulse_mode != :off && animating? && Theme.truecolor?(base) && @art_supported
+          @theme = indexed_theme(base)
           @beat.sample(@engine.levels)
-          @theme = Theme.pulsed(base, mode: @pulse_mode, step: @beat.step,
+          pulsed = Theme.pulsed(base, mode: @pulse_mode, step: @beat.step,
                                 steps: @config["ui", "pulse_steps"],
                                 shift: @config["ui", "pulse_shift_percent"] / 100.0)
+          queue_palette_updates(pulsed)
         else
           @beat.reset
           @theme = base
+          deactivate_palette
         end
+      end
+
+      # Base theme with the mode's pulse roles swapped for their ANSI index
+      # symbols. Memoized per (base, mode): a stable object keeps the cell
+      # diff quiet — the whole point is that cells never change while the
+      # palette does.
+      def indexed_theme(base)
+        key = [base.object_id, @pulse_mode]
+        if @indexed_key != key
+          overlay = Theme::PULSE_ROLES[@pulse_mode].to_h do |role|
+            [role, Theme::PULSE_SLOTS[role][0]]
+          end
+          @indexed_key = key
+          @indexed_theme = base.merge(overlay).freeze
+        end
+        @indexed_theme
+      end
+
+      # Only slots whose color actually changed since the last emission are
+      # written — steady state between beat steps costs zero bytes.
+      def queue_palette_updates(pulsed)
+        @palette_sent ||= {}
+        out = +""
+        Theme::PULSE_ROLES[@pulse_mode].each do |role|
+          hex = pulsed[role]
+          next unless hex.is_a?(String) && @palette_sent[role] != hex
+
+          @palette_sent[role] = hex
+          out << Palette.set(Theme::PULSE_SLOTS[role][1], hex)
+        end
+        @palette_pending = out unless out.empty?
+        @palette_active = true
+      end
+
+      # The palette is session-global terminal state, not ours: hand the
+      # slots back the moment the pulse stops using them.
+      def deactivate_palette
+        return unless @palette_active
+
+        @palette_active = false
+        @palette_sent = {}
+        @palette_pending = Palette.reset
+      end
+
+      def emit_palette
+        return unless @palette_pending
+
+        @io_out.write(@palette_pending)
+        @palette_pending = nil
       end
 
       # Base theme with the accent replaced by the current cover's average
@@ -857,6 +914,7 @@ module RubyPlayer
         render_theme_picker_modal if @theme_picker
         render_config_error_modal if @config_error
         @screen.flush
+        emit_palette
         emit_art
       end
 
@@ -1181,7 +1239,10 @@ module RubyPlayer
       end
 
       def restore_terminal
-        @io_out.write("\e[?2004l\e[?25h\e[?1049l")
+        # Palette reset first: leaving the alternate screen does not undo
+        # OSC 4 slot programming, and the shell prompt would otherwise
+        # inherit pulsed colors.
+        @io_out.write("#{Palette.reset}\e[?2004l\e[?25h\e[?1049l")
         $stdin.cooked! if $stdin.tty?
       end
 

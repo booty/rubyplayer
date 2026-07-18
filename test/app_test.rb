@@ -894,16 +894,77 @@ class AppTest < Minitest::Test
     assert_equal :off, @app.pulse_mode # low -> medium -> high -> off
   end
 
-  def test_pulse_swaps_in_a_brightened_theme_while_playing
+  # Pulse is palette cycling: scoped roles render as ANSI indices whose
+  # slots are reprogrammed via OSC 4 per beat step — cells never change, so
+  # a beat costs a few hundred bytes instead of a repaint (the cell-based
+  # predecessor made input laggy at high mode).
+  def test_pulse_renders_scoped_roles_as_indices_and_programs_slots
     @app.set_theme!(:neon_cyberpunk)
     start_normal_playback
     @app.handle_key("b") # -> low
     pin_beat_step(7)
-    use_screen
+    out = use_screen
     @app.render
 
-    refute_same base_theme, current_theme
-    refute_equal base_theme[:border], current_theme[:border]
+    slot_symbol, slot = RubyPlayer::Theme::PULSE_SLOTS[:border]
+    assert_equal slot_symbol, current_theme[:border]
+    assert_equal base_theme[:text], current_theme[:text] # unscoped stays hex
+    # Derive expected color from live config — pulse_steps/shift are user
+    # tunables, and hardcoding them here couples the test to DEFAULTS.
+    config = @app.instance_variable_get(:@config)
+    expected = RubyPlayer::Theme.pulsed(
+      base_theme, mode: :low, step: 7, steps: config["ui", "pulse_steps"],
+      shift: config["ui", "pulse_shift_percent"] / 100.0
+    )[:border]
+    assert_includes out.string, RubyPlayer::UI::Palette.set(slot, expected)
+  end
+
+  def test_unchanged_beat_step_emits_no_palette_bytes
+    @app.set_theme!(:neon_cyberpunk)
+    start_normal_playback
+    @app.handle_key("b")
+    pin_beat_step(4)
+    out = use_screen
+    @app.render
+    count = out.string.scan("\e]4;").size
+    @app.render # same step: palette diff is empty
+    assert_equal count, out.string.scan("\e]4;").size
+  end
+
+  def test_turning_pulse_off_resets_the_palette
+    @app.set_theme!(:neon_cyberpunk)
+    start_normal_playback
+    @app.handle_key("b")
+    pin_beat_step(4)
+    out = use_screen
+    @app.render
+    3.times { @app.handle_key("b") } # low -> medium -> high -> off
+    @app.render
+
+    assert_includes out.string, RubyPlayer::UI::Palette.reset
+    assert_same base_theme, current_theme
+  end
+
+  def test_pulse_needs_iterm
+    @app.shutdown # native audio shim allows one instance per process
+    @app = make_app(env: {}, config_path: File.join(@tmp, "noiterm-config.rb"))
+    @app.scan_paths([@music], wait: true)
+    @app.set_theme!(:neon_cyberpunk)
+    start_normal_playback
+    @app.handle_key("b")
+    pin_beat_step(7)
+    out = use_screen
+    @app.render
+
+    assert_same base_theme, current_theme
+    refute_includes out.string, "\e]4;"
+  end
+
+  def test_restore_terminal_resets_the_palette
+    out = StringIO.new
+    @app.instance_variable_set(:@io_out, out)
+    @app.send(:restore_terminal)
+    assert_includes out.string, RubyPlayer::UI::Palette.reset
   end
 
   def test_pulse_is_identity_when_not_playing
