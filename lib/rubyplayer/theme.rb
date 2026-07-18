@@ -441,5 +441,50 @@ module RubyPlayer
     def self.[](id)
       ALL[id&.to_sym] || DEFAULT
     end
+
+    # Which semantic roles each pulse intensity may brighten. Scope doubles
+    # as the cost model: the roles are ordered by how many cells they touch,
+    # so "low" repaints a few hundred border cells per beat while "high"
+    # sweeps the whole frame. (Border glow and selection shimmer are these
+    # scopes, not separate effects.)
+    PULSE_ROLES = {
+      low: %i[border border_focus],
+      medium: %i[border border_focus surface surface_alt selection_bg accent],
+      high: %i[border border_focus surface surface_alt selection_bg accent
+               primary info text_muted text],
+    }.freeze
+
+    def self.truecolor?(theme)
+      theme[:border].is_a?(String)
+    end
+
+    # Derived pulse frames are cached per (theme, mode, step): the beat
+    # envelope revisits the same handful of quantized steps continuously, so
+    # after the first beat every frame is a Hash lookup — no per-frame color
+    # math, and identical Hash objects keep Screen's cell diff cheap.
+    # step 0 returns the base theme itself: "no pulse" must be
+    # indistinguishable from the feature not existing.
+    def self.pulsed(theme, mode:, step:, steps:, shift:)
+      return theme if step.zero? || !PULSE_ROLES.key?(mode)
+
+      @pulse_cache ||= {}
+      @pulse_cache[[theme.object_id, mode, step, steps, shift]] ||= begin
+        fraction = step.to_f / (steps - 1) * shift
+        overlay = PULSE_ROLES[mode].to_h { |role| [role, brighten(theme[role], fraction)] }
+        theme.merge(overlay).freeze
+      end
+    end
+
+    # Named-ANSI values (the Default theme) pass through: there is nothing
+    # to interpolate toward in a 16-color palette.
+    def self.brighten(color, fraction)
+      return color unless color.is_a?(String) && color.start_with?("#")
+
+      channels = [color[1, 2], color[3, 2], color[5, 2]].map do |hex|
+        value = hex.to_i(16)
+        (value + (255 - value) * fraction).round
+      end
+      format("#%02x%02x%02x", *channels)
+    end
   end
 end
