@@ -29,6 +29,11 @@ class KeyDecoderTest < Minitest::Test
     assert_equal ["shift_down"], decode("\e[1;2B")
   end
 
+  def test_decodes_ctrl_arrows
+    assert_equal ["ctrl_up"], decode("\e[1;5A")
+    assert_equal ["ctrl_down"], decode("\e[1;5B")
+  end
+
   def test_ctrl_chords
     assert_equal ["ctrl_r"], decode("\u0012")
     assert_equal ["ctrl_x"], decode("\u0018")

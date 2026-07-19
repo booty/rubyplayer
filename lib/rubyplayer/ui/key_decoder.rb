@@ -7,8 +7,9 @@ module RubyPlayer
       PASTE_END = "\e[201~"
       ESC_SEQS = { "[A" => "up", "[B" => "down", "[C" => "right", "[D" => "left",
                    "[5~" => "pgup", "[6~" => "pgdn",
-                   # xterm-style modifier encoding: "1;2" = shift
-                   "[1;2A" => "shift_up", "[1;2B" => "shift_down" }.freeze
+                   # xterm-style modifier encoding: "1;2" = shift, "1;5" = ctrl
+                   "[1;2A" => "shift_up", "[1;2B" => "shift_down",
+                   "[1;5A" => "ctrl_up", "[1;5B" => "ctrl_down" }.freeze
 
       def self.decode(bytes)
         keys = []
