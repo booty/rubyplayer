@@ -115,4 +115,14 @@ class KeymapTest < Minitest::Test
     assert_equal :show_track_info, k.action_for("i", pane: :tracks)
     assert_nil k.action_for("i", pane: :library)
   end
+
+  def test_playlist_bindings
+    map = RubyPlayer::Keymap.new({})
+    assert_equal :add_to_playlist, map.action_for("l", pane: :tracks)
+    assert_equal :add_to_playlist, map.action_for("l", pane: :library)
+    assert_equal :duplicate_playlist, map.action_for("c", pane: :library)
+    assert_equal :rename_playlist, map.action_for("r", pane: :library)
+    assert_equal :move_entry_up, map.action_for("ctrl_up", pane: :tracks)
+    assert_equal :move_entry_down, map.action_for("ctrl_down", pane: :tracks)
+  end
 end

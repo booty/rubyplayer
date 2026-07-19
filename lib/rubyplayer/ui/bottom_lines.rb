@@ -93,6 +93,8 @@ module RubyPlayer
         show_track_info: "info", show_help: "help", show_theme_picker: "theme",
         filter_tracks: "filter", cycle_art_mode: "art",
         show_now_playing: "now playing",
+        add_to_playlist: "playlist+", duplicate_playlist: "dup playlist",
+        rename_playlist: "rename", move_entry_up: nil, move_entry_down: nil,
       }.freeze
 
       def initialize(keymap:)

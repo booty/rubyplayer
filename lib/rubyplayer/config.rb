@@ -63,6 +63,8 @@ module RubyPlayer
       # Tint the theme's accent color toward the current cover's average
       # color while a track with art is playing.
       "art_accent" => true,
+      # Direct-pick rows at the top of the add-to-playlist modal.
+      "playlist_recent_count" => 3,
     },
     "audio" => {
       "sample_rate" => "auto",

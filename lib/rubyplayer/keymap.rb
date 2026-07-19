@@ -28,6 +28,8 @@ module RubyPlayer
         # "v" for "view": cycles album-art placement (off/inset/pane/corner).
         "v" => "cycle_art_mode",
         "o" => "show_now_playing",
+        # "l" for "list": opens the add-to-playlist modal on the highlighted track.
+        "l" => "add_to_playlist",
       },
       # Page navigation gets three spellings per direction: pgup/pgdn for
       # full-size keyboards, shift+arrows for keyboards without those keys,
@@ -41,6 +43,11 @@ module RubyPlayer
         # Overrides the global "x" => remove_from_queue binding while the
         # Library pane is focused (pane-local bindings win, see #action_for).
         "x" => "remove_library_item",
+        # Playlist management lives pane-local: c/r only make sense on a
+        # playlist child row, and keeping them out of "global" leaves the
+        # letters free for future tracks-pane bindings.
+        "c" => "duplicate_playlist",
+        "r" => "rename_playlist",
       },
       # Matching is case-insensitive (see #action_for), so "g" here also
       # matches "G" from the terminal. sort_number/sort_artist/sort_title use
@@ -57,6 +64,9 @@ module RubyPlayer
         "g" => "toggle_group",
         "y" => "sort_title", "#" => "sort_number", "@" => "sort_artist",
         "i" => "show_track_info",
+        # Reorder is ctrl+arrows (not letters): it repeats rapidly when held,
+        # and arrow keys already mean "vertical movement" here.
+        "ctrl_up" => "move_entry_up", "ctrl_down" => "move_entry_down",
       },
     }.freeze
 
