@@ -16,7 +16,7 @@ module RubyPlayer
       attr_reader :engine, :library_pane, :tracks_pane, :active_pane, :input_buffer,
                   :pending_delete, :info_track, :show_help, :theme_id, :theme_picker,
                   :focus_player, :filter_buffer, :pending_missing_purge, :config_error,
-                  :art_mode, :show_now_playing
+                  :art_mode, :show_now_playing, :playlist_modal
 
       def initialize(argv: [], config_path: nil, data_path: nil, null_audio: false,
                      io_out: $stdout, focus_player: nil, env: ENV)
@@ -62,6 +62,7 @@ module RubyPlayer
         @filter_before_edit = nil
         @pending_delete = nil
         @pending_missing_purge = nil
+        @playlist_modal = nil
         @info_track = nil
         @show_help = false
         @theme_picker = false
@@ -153,6 +154,9 @@ module RubyPlayer
         return handle_now_playing_key(key) if @show_now_playing
         return handle_missing_purge_key(key) if @pending_missing_purge
         return handle_confirm_key(key) if @pending_delete
+        # Before the Paste check: a paste mid-modal must not fall through to
+        # the path-scanner.
+        return handle_playlist_modal_key(key) if @playlist_modal
         return handle_paste(key.text) if key.is_a?(KeyDecoder::Paste)
         return handle_filter_mode_key(key) if @filter_buffer
         return handle_input_mode_key(key) if @input_buffer
@@ -331,6 +335,7 @@ module RubyPlayer
         when :show_theme_picker then request_show_theme_picker
         when :cycle_art_mode then cycle_art_mode
         when :show_now_playing then request_show_now_playing
+        when :add_to_playlist then request_add_to_playlist
         when *RATE_ACTIONS.keys then rate_current(RATE_ACTIONS[action])
         else route_to_pane(action)
         end
@@ -546,7 +551,7 @@ module RubyPlayer
 
       def modal_active?
         !!(@pending_delete || @pending_missing_purge || @info_track ||
-           @show_help || @theme_picker || @config_error)
+           @show_help || @theme_picker || @config_error || @playlist_modal)
       end
 
       # Called after Screen#flush: the image must be re-emitted when its
@@ -616,6 +621,92 @@ module RubyPlayer
         return play_focus(sound) if sound
 
         enqueue(:now)
+      end
+
+      def request_add_to_playlist
+        track = @active_pane == :tracks && @tracks_pane.selected_track
+        return @status_line.set_message("Select a track to add to a playlist") unless track
+
+        @playlist_modal = { track: track, filter: "", selection: 0, confirm: nil, error: nil }
+      end
+
+      # Recent direct-picks first, then the alphabetical list narrowed by the
+      # filter, then the create row (the filter text doubles as the name — a
+      # playlist is always born holding at least one track).
+      def playlist_modal_rows
+        filter = @playlist_modal[:filter].strip
+        needle = filter.downcase
+        recent = @library.playlists(sort: :recency).first(@config["ui", "playlist_recent_count"])
+        all = @library.playlists(sort: :alpha)
+        all = all.select { |p| p["name"].downcase.include?(needle) } unless needle.empty?
+        rows = recent.map { |p| { kind: :playlist, playlist: p, recent: true } }
+        rows += all.map { |p| { kind: :playlist, playlist: p } }
+        rows << { kind: :create } unless filter.empty?
+        rows
+      end
+
+      def handle_playlist_modal_key(key)
+        return unless key.is_a?(String) # swallow pastes; they aren't names
+
+        modal = @playlist_modal
+        if (playlist = modal[:confirm])
+          case key
+          when "y", "enter"
+            @playlist_modal = nil
+            add_track_to_playlist(playlist, modal[:track])
+          when "n", "escape" then modal[:confirm] = nil
+          end
+          return
+        end
+
+        rows = playlist_modal_rows
+        case key
+        when "escape" then @playlist_modal = nil
+        when "up" then modal[:selection] = (modal[:selection] - 1).clamp(0, [rows.size - 1, 0].max)
+        when "down" then modal[:selection] = (modal[:selection] + 1).clamp(0, [rows.size - 1, 0].max)
+        when "enter"
+          row = rows[modal[:selection]]
+          return unless row
+
+          if row[:kind] == :create
+            create_playlist_and_add(modal[:filter].strip, modal[:track])
+          elsif @library.playlist_contains?(row[:playlist]["id"], modal[:track].id)
+            modal[:confirm] = row[:playlist]
+          else
+            @playlist_modal = nil
+            add_track_to_playlist(row[:playlist], modal[:track])
+          end
+        else
+          edited = edit_line(modal[:filter], key)
+          if edited
+            modal[:filter] = edited
+            modal[:error] = nil
+            # The row list just changed shape under the cursor.
+            modal[:selection] = modal[:selection].clamp(0, [playlist_modal_rows.size - 1, 0].max)
+          end
+        end
+      end
+
+      def add_track_to_playlist(playlist, track)
+        @library.add_to_playlist(playlist["id"], track.id)
+        @library_pane.rebuild!
+        @tracks_pane.reload!
+        @status_line.set_message("Added to \"#{playlist['name']}\"")
+      rescue Library::PlaylistError => e
+        @status_line.set_message(e.message)
+      end
+
+      def create_playlist_and_add(name, track)
+        id = @library.create_playlist(name)
+        @playlist_modal = nil
+        @library.add_to_playlist(id, track.id)
+        @library_pane.rebuild!
+        @status_line.set_message("Created \"#{name}\" and added track")
+      rescue Library::PlaylistNameTaken => e
+        # Keep the modal open so the user can adjust the name in place.
+        @playlist_modal[:error] = e.message if @playlist_modal
+      rescue Library::PlaylistError => e
+        @status_line.set_message(e.message)
       end
 
       # Enter on a row of the playlist LIST opens the playlist rather than
@@ -864,6 +955,7 @@ module RubyPlayer
         end
         @hotkey_line.render(@screen, row: rows - 2, w: cols, h: 2, pane: @active_pane, theme: @theme)
         render_now_playing_modal if @show_now_playing
+        render_playlist_modal if @playlist_modal
         render_confirm_modal if @pending_delete
         render_missing_purge_modal if @pending_missing_purge
         render_info_modal if @info_track
@@ -1035,6 +1127,47 @@ module RubyPlayer
         draw_box(x, y, w, h, active: true, title: title)
         yield x, y if block_given?
         @screen.put(y + h - 2, x + 2, hint[0, w - 4], fg: @theme[:text_muted], bg: hint_bg) if hint
+      end
+
+      def render_playlist_modal
+        modal = @playlist_modal
+        if (playlist = modal[:confirm])
+          message = "Already in \"#{playlist['name']}\". Add again?"
+          prompt = "[y] Add duplicate    [n/esc] Back"
+          w = [message.size, prompt.size].max + 4
+          render_modal(title: "Add to Playlist", w: w, h: 5) do |x, y|
+            @screen.put(y + 2, x + 2, message[0, w - 4], fg: @theme[:accent], bold: true)
+            @screen.put(y + 3, x + 2, prompt[0, w - 4], fg: @theme[:primary], bold: true)
+          end
+          return
+        end
+
+        rows = playlist_modal_rows
+        labels = rows.map do |row|
+          if row[:kind] == :create
+            "+ New playlist: #{modal[:filter].strip}"
+          else
+            "#{row[:recent] ? '* ' : '  '}#{row[:playlist]['name']} (#{row[:playlist]['track_count']})"
+          end
+        end
+        labels = ["(no playlists — type a name)"] if labels.empty?
+        labels = labels.first([@screen.rows - 9, 1].max) # tiny terminals: keep chrome visible
+        filter_line = "Filter/name: #{modal[:filter]}_"
+        hint = "[enter] Add  [esc] Cancel"
+        w = [(labels.map(&:size) + [filter_line.size, hint.size,
+                                    (modal[:error] || "").size]).max + 6, @screen.cols - 2].min
+        h = labels.size + (modal[:error] ? 6 : 5)
+        render_modal(title: "Add to Playlist", w: w, h: h, hint: hint) do |x, y|
+          @screen.put(y + 1, x + 2, filter_line[0, w - 4], fg: @theme[:accent])
+          labels.each_with_index do |label, i|
+            selected = !rows.empty? && i == modal[:selection]
+            bg = selected ? @theme[:selection_bg] : nil
+            fg = selected ? @theme[:selection_text] : @theme[:text]
+            @screen.put(y + 2 + i, x + 1, " " * (w - 2), bg: bg) if selected
+            @screen.put(y + 2 + i, x + 2, label[0, w - 4], fg: fg, bg: bg, bold: selected)
+          end
+          @screen.put(y + h - 3, x + 2, modal[:error][0, w - 4], fg: @theme[:error]) if modal[:error]
+        end
       end
 
       def render_confirm_modal

@@ -1193,6 +1193,74 @@ class AppTest < Minitest::Test
     assert_equal %w[A B], lib.playlist_tracks(pid).map(&:title)
   end
 
+  def show_all_songs_in_tracks_pane
+    pane = @app.library_pane
+    pane.rebuild!
+    pane.instance_variable_set(:@selection, pane.rows.index { |r| r.kind == :all })
+    @app.send(:show_selected_tracks)
+    @app.instance_variable_set(:@active_pane, :tracks)
+  end
+
+  def test_l_opens_add_modal_and_typing_a_name_creates_playlist_with_track
+    lib = @app.instance_variable_get(:@library)
+    tid = seed_playlist_tracks(%w[a]).first
+    show_all_songs_in_tracks_pane
+    @app.handle_key("l")
+    refute_nil @app.playlist_modal
+    selected = @app.tracks_pane.selected_track.id
+    "Mix".each_char { |ch| @app.handle_key(ch) }
+    @app.handle_key("enter") # only row is "New playlist: Mix"
+    assert_nil @app.playlist_modal
+    lists = lib.playlists
+    assert_equal ["Mix"], lists.map { |p| p["name"] }
+    assert_equal [selected], lib.playlist_tracks(lists.first["id"]).map(&:id)
+    assert_kind_of Integer, tid
+  end
+
+  def test_add_modal_picks_existing_playlist
+    lib = @app.instance_variable_get(:@library)
+    seed_playlist_tracks(%w[a])
+    pid = lib.create_playlist("Mix")
+    show_all_songs_in_tracks_pane
+    selected = @app.tracks_pane.selected_track.id
+    @app.handle_key("l")
+    @app.handle_key("enter") # first row: recent "Mix"
+    assert_nil @app.playlist_modal
+    assert_equal [selected], lib.playlist_tracks(pid).map(&:id)
+  end
+
+  def test_add_modal_confirms_duplicates
+    lib = @app.instance_variable_get(:@library)
+    seed_playlist_tracks(%w[a])
+    pid = lib.create_playlist("Mix")
+    show_all_songs_in_tracks_pane
+    selected = @app.tracks_pane.selected_track.id
+    lib.add_to_playlist(pid, selected)
+    @app.handle_key("l")
+    @app.handle_key("enter")
+    refute_nil @app.playlist_modal[:confirm] # already contains the track
+    @app.handle_key("n")
+    assert_nil @app.playlist_modal[:confirm] # back to the list
+    @app.handle_key("enter")
+    @app.handle_key("y")
+    assert_nil @app.playlist_modal
+    assert_equal [selected, selected], lib.playlist_tracks(pid).map(&:id)
+  end
+
+  def test_add_modal_escape_cancels
+    seed_playlist_tracks(%w[a])
+    show_all_songs_in_tracks_pane
+    @app.handle_key("l")
+    @app.handle_key("escape")
+    assert_nil @app.playlist_modal
+  end
+
+  def test_l_without_selected_track_shows_message_not_modal
+    @app.instance_variable_set(:@active_pane, :library)
+    @app.handle_key("l")
+    assert_nil @app.playlist_modal
+  end
+
   private
 
   def force_config_reload
