@@ -16,7 +16,8 @@ module RubyPlayer
       attr_reader :engine, :library_pane, :tracks_pane, :active_pane, :input_buffer,
                   :pending_delete, :info_track, :show_help, :theme_id, :theme_picker,
                   :focus_player, :filter_buffer, :pending_missing_purge, :config_error,
-                  :art_mode, :show_now_playing, :playlist_modal
+                  :art_mode, :show_now_playing, :playlist_modal, :name_prompt,
+                  :pending_playlist_delete
 
       def initialize(argv: [], config_path: nil, data_path: nil, null_audio: false,
                      io_out: $stdout, focus_player: nil, env: ENV)
@@ -63,6 +64,8 @@ module RubyPlayer
         @pending_delete = nil
         @pending_missing_purge = nil
         @playlist_modal = nil
+        @name_prompt = nil
+        @pending_playlist_delete = nil
         @info_track = nil
         @show_help = false
         @theme_picker = false
@@ -155,7 +158,10 @@ module RubyPlayer
         return handle_missing_purge_key(key) if @pending_missing_purge
         return handle_confirm_key(key) if @pending_delete
         # Before the Paste check: a paste mid-modal must not fall through to
-        # the path-scanner.
+        # the path-scanner. Delete confirm outranks the other playlist states,
+        # mirroring the existing confirm ordering.
+        return handle_playlist_delete_key(key) if @pending_playlist_delete
+        return handle_name_prompt_key(key) if @name_prompt
         return handle_playlist_modal_key(key) if @playlist_modal
         return handle_paste(key.text) if key.is_a?(KeyDecoder::Paste)
         return handle_filter_mode_key(key) if @filter_buffer
@@ -336,6 +342,8 @@ module RubyPlayer
         when :cycle_art_mode then cycle_art_mode
         when :show_now_playing then request_show_now_playing
         when :add_to_playlist then request_add_to_playlist
+        when :rename_playlist then request_playlist_name(:rename)
+        when :duplicate_playlist then request_playlist_name(:duplicate)
         when *RATE_ACTIONS.keys then rate_current(RATE_ACTIONS[action])
         else route_to_pane(action)
         end
@@ -378,6 +386,10 @@ module RubyPlayer
       # entries, so there's nothing in the DB for them to remove.
       def request_remove_library_item
         row = @library_pane.selected
+        if row&.kind == :playlist
+          @pending_playlist_delete = row.playlist
+          return
+        end
         if row&.kind != :folder
           @status_line.set_message("Only library folders can be removed")
           return
@@ -551,7 +563,8 @@ module RubyPlayer
 
       def modal_active?
         !!(@pending_delete || @pending_missing_purge || @info_track ||
-           @show_help || @theme_picker || @config_error || @playlist_modal)
+           @show_help || @theme_picker || @config_error || @playlist_modal ||
+           @name_prompt || @pending_playlist_delete)
       end
 
       # Called after Screen#flush: the image must be re-emitted when its
@@ -707,6 +720,62 @@ module RubyPlayer
         @playlist_modal[:error] = e.message if @playlist_modal
       rescue Library::PlaylistError => e
         @status_line.set_message(e.message)
+      end
+
+      # c/r act on the specific playlist under the cursor — the parent row
+      # names no playlist, so it only earns a hint.
+      def request_playlist_name(op)
+        row = @library_pane.selected
+        return @status_line.set_message("Select a playlist first") unless row&.kind == :playlist
+
+        buffer = op == :duplicate ? "#{row.playlist['name']} copy" : row.playlist["name"].dup
+        @name_prompt = { op: op, playlist: row.playlist, buffer: buffer, error: nil }
+      end
+
+      def handle_name_prompt_key(key)
+        return unless key.is_a?(String)
+
+        prompt = @name_prompt
+        case key
+        when "escape" then @name_prompt = nil
+        when "enter"
+          name = prompt[:buffer].strip
+          return prompt[:error] = "Name cannot be blank" if name.empty?
+
+          begin
+            if prompt[:op] == :rename
+              @library.rename_playlist(prompt[:playlist]["id"], name)
+              @status_line.set_message("Renamed to \"#{name}\"")
+            else
+              @library.duplicate_playlist(prompt[:playlist]["id"], name)
+              @status_line.set_message("Duplicated as \"#{name}\"")
+            end
+            @name_prompt = nil
+            @library_pane.rebuild!
+            show_selected_tracks
+          rescue Library::PlaylistNameTaken => e
+            prompt[:error] = e.message
+          end
+        else
+          edited = edit_line(prompt[:buffer], key)
+          if edited
+            prompt[:buffer] = edited
+            prompt[:error] = nil
+          end
+        end
+      end
+
+      def handle_playlist_delete_key(key)
+        case key
+        when "y", "enter"
+          playlist = @pending_playlist_delete
+          @pending_playlist_delete = nil
+          @library.delete_playlist(playlist["id"])
+          @library_pane.rebuild!
+          show_selected_tracks
+          @status_line.set_message("Deleted playlist \"#{playlist['name']}\"")
+        when "n", "escape" then @pending_playlist_delete = nil
+        end
       end
 
       # Enter on a row of the playlist LIST opens the playlist rather than
@@ -956,6 +1025,8 @@ module RubyPlayer
         @hotkey_line.render(@screen, row: rows - 2, w: cols, h: 2, pane: @active_pane, theme: @theme)
         render_now_playing_modal if @show_now_playing
         render_playlist_modal if @playlist_modal
+        render_name_prompt_modal if @name_prompt
+        render_playlist_delete_modal if @pending_playlist_delete
         render_confirm_modal if @pending_delete
         render_missing_purge_modal if @pending_missing_purge
         render_info_modal if @info_track
@@ -1167,6 +1238,28 @@ module RubyPlayer
             @screen.put(y + 2 + i, x + 2, label[0, w - 4], fg: fg, bg: bg, bold: selected)
           end
           @screen.put(y + h - 3, x + 2, modal[:error][0, w - 4], fg: @theme[:error]) if modal[:error]
+        end
+      end
+
+      def render_name_prompt_modal
+        prompt = @name_prompt
+        title = prompt[:op] == :rename ? "Rename Playlist" : "Duplicate Playlist"
+        line = "Name: #{prompt[:buffer]}_"
+        hint = "[enter] Save  [esc] Cancel"
+        w = [[line.size, hint.size, (prompt[:error] || "").size].max + 6, @screen.cols - 2].min
+        render_modal(title: title, w: w, h: 6, hint: hint) do |x, y|
+          @screen.put(y + 2, x + 2, line[0, w - 4], fg: @theme[:accent], bold: true)
+          @screen.put(y + 3, x + 2, prompt[:error][0, w - 4], fg: @theme[:error]) if prompt[:error]
+        end
+      end
+
+      def render_playlist_delete_modal
+        message = "Delete playlist \"#{@pending_playlist_delete['name']}\"?"
+        prompt = "[y] Delete    [n/esc] Cancel"
+        w = [message.size, prompt.size].max + 4
+        render_modal(title: "Confirm Delete", w: w, h: 5) do |x, y|
+          @screen.put(y + 2, x + 2, message[0, w - 4], fg: @theme[:accent], bold: true)
+          @screen.put(y + 3, x + 2, prompt[0, w - 4], fg: @theme[:primary], bold: true)
         end
       end
 

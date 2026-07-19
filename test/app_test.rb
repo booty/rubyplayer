@@ -1261,6 +1261,83 @@ class AppTest < Minitest::Test
     assert_nil @app.playlist_modal
   end
 
+  def select_playlist_child(pid)
+    @app.library_pane.rebuild!
+    @app.library_pane.select_playlist(pid)
+    @app.send(:show_selected_tracks)
+    @app.instance_variable_set(:@active_pane, :library)
+  end
+
+  def test_r_renames_selected_playlist
+    lib = @app.instance_variable_get(:@library)
+    pid = lib.create_playlist("Old")
+    select_playlist_child(pid)
+    @app.handle_key("r")
+    refute_nil @app.name_prompt
+    3.times { @app.handle_key("backspace") }
+    "New".each_char { |ch| @app.handle_key(ch) }
+    @app.handle_key("enter")
+    assert_nil @app.name_prompt
+    assert_equal ["New"], lib.playlists.map { |p| p["name"] }
+  end
+
+  def test_rename_to_taken_name_shows_error_and_keeps_prompt
+    lib = @app.instance_variable_get(:@library)
+    lib.create_playlist("Taken")
+    pid = lib.create_playlist("Mine")
+    select_playlist_child(pid)
+    @app.handle_key("r")
+    4.times { @app.handle_key("backspace") }
+    "Taken".each_char { |ch| @app.handle_key(ch) }
+    @app.handle_key("enter")
+    refute_nil @app.name_prompt
+    refute_nil @app.name_prompt[:error]
+  end
+
+  def test_c_duplicates_playlist_with_entries
+    lib = @app.instance_variable_get(:@library)
+    tid = seed_playlist_tracks(%w[a]).first
+    pid = lib.create_playlist("Mix")
+    lib.add_to_playlist(pid, tid)
+    select_playlist_child(pid)
+    @app.handle_key("c")
+    assert_equal "Mix copy", @app.name_prompt[:buffer]
+    @app.handle_key("enter")
+    names = lib.playlists(sort: :alpha).map { |p| p["name"] }
+    assert_equal ["Mix", "Mix copy"], names
+    copy = lib.playlists(sort: :alpha).last
+    assert_equal [tid], lib.playlist_tracks(copy["id"]).map(&:id)
+  end
+
+  def test_x_on_playlist_child_asks_then_deletes
+    lib = @app.instance_variable_get(:@library)
+    pid = lib.create_playlist("Doomed")
+    select_playlist_child(pid)
+    @app.handle_key("x")
+    refute_nil @app.pending_playlist_delete
+    @app.handle_key("y")
+    assert_nil @app.pending_playlist_delete
+    assert_empty lib.playlists
+  end
+
+  def test_x_on_playlist_delete_can_cancel
+    lib = @app.instance_variable_get(:@library)
+    lib.create_playlist("Kept")
+    select_playlist_child(lib.playlists.first["id"])
+    @app.handle_key("x")
+    @app.handle_key("n")
+    assert_nil @app.pending_playlist_delete
+    assert_equal 1, lib.playlists.size
+  end
+
+  def test_rename_on_non_playlist_row_is_message_only
+    @app.library_pane.rebuild!
+    @app.library_pane.handle_action(:select_queue)
+    @app.instance_variable_set(:@active_pane, :library)
+    @app.handle_key("r")
+    assert_nil @app.name_prompt
+  end
+
   private
 
   def force_config_reload
