@@ -7,14 +7,14 @@ module RubyPlayer
     class LibraryPane
       include ScrollableList
 
-      Row = Struct.new(:kind, :folder, :depth, keyword_init: true)
+      Row = Struct.new(:kind, :folder, :playlist, :depth, keyword_init: true)
 
       attr_reader :selection
 
       def initialize(library:, glyphs:)
         @library = library
         @glyphs = glyphs
-        @expanded = { all: true }
+        @expanded = { all: true, playlists: true }
         @selection = 0
         @scroll = 0
         @rows = []
@@ -23,9 +23,18 @@ module RubyPlayer
 
       def rebuild!
         @breadcrumbs = {}
+        @rows = []
         # Views::ALL's insertion order is the sidebar order; :all is last so
         # the folder tree (its expanded children) renders directly beneath it.
-        @rows = Views::ALL.keys.map { |kind| Row.new(kind: kind, depth: 0) }
+        # Playlist children hang off :playlists the same way.
+        Views::ALL.keys.each do |kind|
+          @rows << Row.new(kind: kind, depth: 0)
+          next unless kind == :playlists && @expanded[:playlists]
+
+          @library.playlists.each do |playlist|
+            @rows << Row.new(kind: :playlist, playlist: playlist, depth: 1)
+          end
+        end
         @library.roots.each { |f| append_folder(f, 1, []) } if @expanded[:all]
         @selection = @selection.clamp(0, [@rows.size - 1, 0].max)
       end
@@ -35,9 +44,18 @@ module RubyPlayer
 
       def breadcrumb_for(row)
         return "" unless row
+        return "Playlists / #{row.playlist['name']}" if row.kind == :playlist
         return Views.label(row.kind) unless row.kind == :folder
 
         @breadcrumbs.fetch(row.folder["id"], row.folder["name"].to_s)
+      end
+
+      def select_playlist(id)
+        @expanded[:playlists] = true
+        rebuild!
+        index = @rows.index { |r| r.kind == :playlist && r.playlist["id"] == id }
+        @selection = index if index
+        !!index
       end
 
       def handle_action(action)
@@ -93,6 +111,8 @@ module RubyPlayer
         case row&.kind
         when :all
           @expanded[:all] = open
+        when :playlists
+          @expanded[:playlists] = open
         when :folder
           @expanded[row.folder["id"]] = open
         else
@@ -102,7 +122,9 @@ module RubyPlayer
       end
 
       def label_for(row)
-        if row.kind == :folder
+        if row.kind == :playlist
+          ["#{@glyphs['playlist']} #{row.playlist['name']}", "(#{row.playlist['track_count']})"]
+        elsif row.kind == :folder
           f = row.folder
           icon = @glyphs[f["kind"]] || @glyphs["dir"]
           ["#{icon} #{f['name']}", "(#{f['track_count']})"]

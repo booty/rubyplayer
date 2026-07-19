@@ -26,10 +26,10 @@ class LibraryPaneTest < Minitest::Test
   def kinds = @pane.rows.map(&:kind)
 
   def test_specials_then_all_songs_and_visible_roots
-    assert_equal %i[queue history favorites focus recent unrated missing failed most_played all folder], kinds
-    assert_equal :all, @pane.rows[9].kind
-    assert_equal "Music", @pane.rows[10].folder["name"] # Empty (0 tracks) hidden
-    assert_equal 1, @pane.rows[10].depth
+    assert_equal %i[queue history favorites focus recent unrated missing failed most_played playlists all folder], kinds
+    assert_equal :all, @pane.rows[10].kind
+    assert_equal "Music", @pane.rows[11].folder["name"] # Empty (0 tracks) hidden
+    assert_equal 1, @pane.rows[11].depth
   end
 
   def test_smart_views_follow_focus_in_declared_order
@@ -46,17 +46,17 @@ class LibraryPaneTest < Minitest::Test
   end
 
   def test_expand_and_collapse
-    10.times { @pane.handle_action(:nav_down) } # select Music after fixed views and All Songs
+    11.times { @pane.handle_action(:nav_down) } # select Music after fixed views and All Songs
     assert_equal :folder, @pane.selected.kind
     @pane.handle_action(:expand)
     assert_equal %w[Music Sega], @pane.rows.select { |r| r.kind == :folder }.map { |r| r.folder["name"] }
     assert_equal 2, @pane.rows.last.depth
     @pane.handle_action(:collapse)
-    assert_equal 11, @pane.rows.size
+    assert_equal 12, @pane.rows.size
   end
 
   def test_all_songs_starts_expanded_and_can_collapse_and_reexpand
-    9.times { @pane.handle_action(:nav_down) }
+    10.times { @pane.handle_action(:nav_down) }
 
     assert_equal :all, @pane.selected.kind
     assert_equal ["Music"], @pane.rows.select { |row| row.kind == :folder }.map { |row| row.folder["name"] }
@@ -69,7 +69,7 @@ class LibraryPaneTest < Minitest::Test
   end
 
   def test_all_songs_collapse_preserves_nested_folder_expansion
-    10.times { @pane.handle_action(:nav_down) }
+    11.times { @pane.handle_action(:nav_down) }
     @pane.handle_action(:expand)
     @pane.handle_action(:nav_up)
 
@@ -92,7 +92,7 @@ class LibraryPaneTest < Minitest::Test
   end
 
   def test_breadcrumb_uses_folder_ancestry
-    10.times { @pane.handle_action(:nav_down) }
+    11.times { @pane.handle_action(:nav_down) }
     @pane.handle_action(:expand)
     @pane.handle_action(:nav_down)
 
@@ -103,7 +103,7 @@ class LibraryPaneTest < Minitest::Test
   def test_nav_clamps
     @pane.handle_action(:nav_up)
     assert_equal 0, @pane.selection
-    10.times { @pane.handle_action(:nav_down) }
+    15.times { @pane.handle_action(:nav_down) }
     assert_equal @pane.rows.size - 1, @pane.selection
   end
 
@@ -139,8 +139,8 @@ class LibraryPaneTest < Minitest::Test
   end
 
   def test_render_shows_specials_folder_and_count
-    screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 11, cols: 40)
-    @pane.render(screen, x: 0, y: 0, w: 40, h: 11, active: true, theme: RubyPlayer::Theme::DEFAULT)
+    screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 12, cols: 40)
+    @pane.render(screen, x: 0, y: 0, w: 40, h: 12, active: true, theme: RubyPlayer::Theme::DEFAULT)
     out = screen.flush
     assert_includes out, "Playback Queue"
     assert_includes out, "Music"
@@ -148,8 +148,8 @@ class LibraryPaneTest < Minitest::Test
   end
 
   def test_render_draws_scrollbar_only_when_rows_overflow
-    short = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 11, cols: 20)
-    @pane.render(short, x: 0, y: 0, w: 20, h: 11, active: true,
+    short = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 12, cols: 20)
+    @pane.render(short, x: 0, y: 0, w: 20, h: 12, active: true,
                  theme: RubyPlayer::Theme::DEFAULT)
     refute_includes short.instance_variable_get(:@back).map { |row| row[19].ch }, "█"
 
@@ -159,5 +159,43 @@ class LibraryPaneTest < Minitest::Test
     edge = overflowing.instance_variable_get(:@back).map { |row| row[19].ch }
     assert_includes edge, "█"
     assert_includes edge, "│"
+  end
+
+  def test_playlists_parent_sits_above_all_songs_with_children_expanded
+    @lib.create_playlist("Battle Themes")
+    chill = @lib.create_playlist("Chill")
+    @lib.rename_playlist(chill, "Chill") # unambiguous recency bump
+    @pane.rebuild!
+    row_kinds = kinds
+    playlists_at = row_kinds.index(:playlists)
+    all_at = row_kinds.index(:all)
+    refute_nil playlists_at
+    # Children (recency order) directly beneath the parent, before All Songs.
+    assert_equal %i[playlist playlist], row_kinds[(playlists_at + 1), 2]
+    assert_operator playlists_at, :<, all_at
+    child = @pane.rows[playlists_at + 1]
+    assert_equal 1, child.depth
+    assert_equal "Chill", child.playlist["name"]
+    assert_equal "Playlists / Chill", @pane.breadcrumb_for(child)
+  end
+
+  def test_playlists_node_collapses
+    @lib.create_playlist("P")
+    @pane.rebuild!
+    @pane.instance_variable_set(:@selection, kinds.index(:playlists))
+    @pane.handle_action(:collapse)
+    refute_includes kinds, :playlist
+    @pane.handle_action(:expand)
+    assert_includes kinds, :playlist
+  end
+
+  def test_select_playlist_expands_and_moves_selection
+    id = @lib.create_playlist("P")
+    @pane.rebuild!
+    @pane.instance_variable_set(:@selection, kinds.index(:playlists))
+    @pane.handle_action(:collapse)
+    assert @pane.select_playlist(id)
+    assert_equal :playlist, @pane.selected.kind
+    assert_equal id, @pane.selected.playlist["id"]
   end
 end

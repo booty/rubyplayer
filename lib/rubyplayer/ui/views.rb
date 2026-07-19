@@ -29,6 +29,9 @@ module RubyPlayer
                          query: ->(library) { library.failed_tracks }),
         most_played: View.new(label: "Most Played", glyph: "play",
                               query: ->(library) { library.most_played }),
+        # nil query: the parent row is a container — enqueueing it wholesale
+        # is a no-op (children carry the tracks), same rule as queue/history.
+        playlists: View.new(label: "Playlists", glyph: "playlist"),
         all: View.new(label: "All Songs", glyph: "dir",
                       query: ->(library) { library.all_tracks }),
       }.freeze
