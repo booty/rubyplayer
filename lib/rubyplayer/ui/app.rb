@@ -318,7 +318,12 @@ module RubyPlayer
           @status_line.set_message("Skipped")
         when :seek_forward then seek_by(1)
         when :seek_back then seek_by(-1)
-        when :remove_from_queue then remove_from_queue
+        when :remove_from_queue
+          # Same key, view-dependent meaning: in a playlist view "x" removes
+          # the entry; everywhere else it keeps its queue semantics.
+          @tracks_pane.playlist_id ? remove_playlist_entry : remove_from_queue
+        when :move_entry_up then move_playlist_entry(-1)
+        when :move_entry_down then move_playlist_entry(1)
         when :remove_library_item then request_remove_library_item
         when :purge_visible_missing then request_missing_purge
         when :show_track_info then request_show_track_info
@@ -604,10 +609,58 @@ module RubyPlayer
       end
 
       def play_now
+        if (playlist = @active_pane == :tracks && @tracks_pane.selected_playlist)
+          return jump_to_playlist(playlist)
+        end
         sound = selected_focus_sound
         return play_focus(sound) if sound
 
         enqueue(:now)
+      end
+
+      # Enter on a row of the playlist LIST opens the playlist rather than
+      # playing it — the list is a navigation surface; playback starts from
+      # the sidebar child or from inside the playlist.
+      def jump_to_playlist(playlist)
+        @library_pane.select_playlist(playlist["id"])
+        show_selected_tracks
+        @active_pane = :tracks
+      end
+
+      def move_playlist_entry(delta)
+        id = @tracks_pane.playlist_id
+        return @status_line.set_message("Open a playlist to reorder tracks") unless id
+        # Filtered rows hide neighbors: the visible index the user sees no
+        # longer matches the playlist's visible position, so a move would hit
+        # the wrong entry. Refuse instead of guessing.
+        return @status_line.set_message("Clear the filter before reordering") unless @tracks_pane.filter.empty?
+
+        index = @tracks_pane.selected_track_index
+        return unless index
+
+        moved = @library.move_playlist_entry(id, index, delta)
+        return unless moved
+
+        # reload! restores selection by track identity, so the highlight
+        # follows the moved track without explicit index bookkeeping.
+        @tracks_pane.reload!
+        @library_pane.rebuild! # updated_at bumped: recency order may shift
+      end
+
+      def remove_playlist_entry
+        id = @tracks_pane.playlist_id
+        return unless id
+        return @status_line.set_message("Clear the filter before removing") unless @tracks_pane.filter.empty?
+
+        index = @tracks_pane.selected_track_index
+        return unless index
+
+        removed = @library.remove_playlist_entry(id, index)
+        return unless removed
+
+        @tracks_pane.reload!
+        @library_pane.rebuild!
+        @status_line.set_message("Removed from playlist")
       end
 
       def play_focus(sound)
@@ -635,6 +688,9 @@ module RubyPlayer
           row = @library_pane.selected
           if row&.kind == :folder
             @library.tracks_under(row.folder["id"])
+          elsif row&.kind == :playlist
+            # Visible entries only: hidden-missing tracks can't play anyway.
+            @library.playlist_tracks(row.playlist["id"])
           else
             # Views.query returns [] for queue/history/focus (nil query in the
             # table), preserving the rule that enqueueing those sidebar rows

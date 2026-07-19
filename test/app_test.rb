@@ -1116,6 +1116,82 @@ class AppTest < Minitest::Test
     assert_operator @app.tracks_pane.display_rows.size, :>=, 2
   end
 
+  # ---- playlists ----
+
+  def seed_playlist_tracks(names)
+    lib = @app.instance_variable_get(:@library)
+    root = lib.upsert_folder(parent_id: nil, name: "PM", path: "/pm", kind: "dir")
+    names.map do |n|
+      lib.upsert_track(folder_id: root, physical_path: "/pm/#{n}.vgm", backend: "gme",
+                       format: "vgm", title: n.upcase, album: "Al", artist: "Ar",
+                       composer: "C", track_number: 1, duration_ms: 1000)
+    end
+  end
+
+  def open_playlist(pid)
+    @app.library_pane.rebuild!
+    @app.library_pane.select_playlist(pid)
+    @app.send(:show_selected_tracks)
+    @app.instance_variable_set(:@active_pane, :tracks)
+  end
+
+  def test_selected_tracks_for_sidebar_playlist_child
+    lib = @app.instance_variable_get(:@library)
+    tid = seed_playlist_tracks(%w[a]).first
+    pid = lib.create_playlist("P")
+    lib.add_to_playlist(pid, tid)
+    @app.library_pane.rebuild!
+    assert @app.library_pane.select_playlist(pid)
+    @app.instance_variable_set(:@active_pane, :library)
+    assert_equal ["A"], @app.selected_tracks.map(&:title)
+  end
+
+  def test_enter_on_playlist_list_row_jumps_into_playlist
+    lib = @app.instance_variable_get(:@library)
+    pid = lib.create_playlist("P")
+    pane = @app.library_pane
+    pane.rebuild!
+    pane.instance_variable_set(:@selection, pane.rows.index { |r| r.kind == :playlists })
+    @app.send(:show_selected_tracks)
+    @app.instance_variable_set(:@active_pane, :tracks)
+    @app.handle_key("enter")
+    assert_equal :playlist, pane.selected.kind
+    assert_equal pid, pane.selected.playlist["id"]
+    assert_equal pid, @app.tracks_pane.playlist_id
+  end
+
+  def test_ctrl_down_moves_playlist_entry_and_selection_follows
+    lib = @app.instance_variable_get(:@library)
+    ids = seed_playlist_tracks(%w[a b])
+    pid = lib.create_playlist("P")
+    ids.each { |t| lib.add_to_playlist(pid, t) }
+    open_playlist(pid)
+    @app.handle_key("ctrl_down") # move A below B
+    assert_equal %w[B A], lib.playlist_tracks(pid).map(&:title)
+    # Selection follows the moved track (reload! restores by identity).
+    assert_equal "A", @app.tracks_pane.selected_track.title
+  end
+
+  def test_x_removes_playlist_entry
+    lib = @app.instance_variable_get(:@library)
+    tid = seed_playlist_tracks(%w[a]).first
+    pid = lib.create_playlist("P")
+    lib.add_to_playlist(pid, tid)
+    open_playlist(pid)
+    @app.handle_key("x")
+    assert_empty lib.playlist_tracks(pid)
+  end
+
+  def test_move_refused_while_filter_active
+    lib = @app.instance_variable_get(:@library)
+    ids = seed_playlist_tracks(%w[a b])
+    pid = lib.create_playlist("P")
+    ids.each { |t| lib.add_to_playlist(pid, t) }
+    open_playlist(pid)
+    @app.tracks_pane.filter = "B"
+    @app.handle_key("ctrl_down")
+    assert_equal %w[A B], lib.playlist_tracks(pid).map(&:title)
+  end
 
   private
 
