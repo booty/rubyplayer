@@ -1,3 +1,5 @@
+require "time"
+
 module RubyPlayer
   module UI
     class TracksPane
@@ -15,6 +17,7 @@ module RubyPlayer
         @scroll = 0
         @group_by_album = false
         @sort = nil
+        @playlist_sort = :recency
         @filter = ""
         @view_states = {}
         @page_size = ScrollableList::PAGE_SIZE_FALLBACK
@@ -31,7 +34,12 @@ module RubyPlayer
 
       def show(library_row, breadcrumb: nil)
         save_view_state if @mode
-        @mode = library_row.kind == :folder ? [:folder, library_row.folder["id"]] : library_row.kind
+        @mode =
+          case library_row.kind
+          when :folder then [:folder, library_row.folder["id"]]
+          when :playlist then [:playlist, library_row.playlist["id"]]
+          else library_row.kind
+          end
         @breadcrumb = breadcrumb || library_row.folder&.fetch("name", nil)
         # @group_by_album/@sort are the user's preference and are shared across
         # views (folder/history/favorites/queue) -- they are NOT reset here.
@@ -89,7 +97,9 @@ module RubyPlayer
           # config-driven limit and returns {track:, started_at:} rows that
           # need unwrapping, unlike the plain track-list queries.
           when :history then @library.history(limit: @history_limit).map { |h| h[:track] }
-          when Array then @library.tracks_under(@mode[1])
+          when :playlists then @library.playlists(sort: @playlist_sort)
+          when Array
+            @mode[0] == :playlist ? @library.playlist_tracks(@mode[1]) : @library.tracks_under(@mode[1])
           else Views.query(@mode, @library)
           end
         apply_sort
@@ -103,6 +113,21 @@ module RubyPlayer
         if %i[queue focus].include?(@mode) && %i[toggle_group sort_title sort_number sort_artist].include?(action)
           noun = @mode == :queue ? "Queue order" : "Focus sounds"
           return [:disabled, "#{noun} cannot be sorted or grouped"]
+        end
+        if playlist_tracks_view? &&
+           %i[toggle_group sort_title sort_number sort_artist].include?(action)
+          return [:disabled, "Playlist order is fixed — ctrl+arrows move tracks"]
+        end
+        if @mode == :playlists
+          case action
+          when :sort_title
+            @playlist_sort = @playlist_sort == :alpha ? :recency : :alpha
+            load_tracks
+            clamp_selection
+            return true
+          when :toggle_group, :sort_number, :sort_artist
+            return [:disabled, "Playlists sort by name/recency — Y toggles"]
+          end
         end
         case action
         when :nav_up then move_selection(-1)
@@ -147,6 +172,17 @@ module RubyPlayer
 
       def selected_queue_track
         @mode == :queue ? selected_track : nil
+      end
+
+      def selected_playlist
+        row = display_rows[@selection]
+        row && row[:type] == :playlist ? row[:playlist] : nil
+      end
+
+      # Non-nil only while showing a playlist's tracks — App's move/remove
+      # entry actions gate on it.
+      def playlist_id
+        @mode.is_a?(Array) && @mode[0] == :playlist ? @mode[1] : nil
       end
 
       def visible_tracks
@@ -206,6 +242,10 @@ module RubyPlayer
         # for other views.
         return flat_rows if @mode == :queue
         return focus_rows if @mode == :focus
+        return playlist_rows if @mode == :playlists
+        # Playlist tracks are position-ordered like the queue: headers would
+        # break row-index == playlist-position, which move/remove rely on.
+        return flat_rows if playlist_tracks_view?
         return flat_rows unless @group_by_album
         grouped_rows
       end
@@ -215,6 +255,7 @@ module RubyPlayer
 
         case @mode
         when :queue then "Queue empty — press N to add selected tracks"
+        when :playlists then "No playlists yet — press L on a track to create one"
         when :history then "No playback history yet"
         when :favorites then "No favorites yet — press 1–6 while a track plays"
         else "No tracks in this view"
@@ -260,6 +301,31 @@ module RubyPlayer
         end
       end
 
+      def playlist_tracks_view?
+        @mode.is_a?(Array) && @mode[0] == :playlist
+      end
+
+      def playlist_rows
+        filtered_tracks.map do |p|
+          count = "  (#{p['track_count']})"
+          used = "  #{relative_time(p['updated_at'])}"
+          { type: :playlist, text: "#{p['name']}#{count}#{used}",
+            segments: [{ text: p["name"], bold: true },
+                       { text: count, fg: :text_muted },
+                       { text: used, fg: :text_muted }],
+            playlist: p }
+        end
+      end
+
+      def relative_time(iso)
+        seconds = Time.now.utc - Time.parse(iso)
+        return "just now" if seconds < 60
+        return "#{(seconds / 60).to_i}m ago" if seconds < 3600
+        return "#{(seconds / 3600).to_i}h ago" if seconds < 86_400
+
+        "#{(seconds / 86_400).to_i}d ago"
+      end
+
       def focus_rows
         filtered_tracks.map do |sound|
           { type: :focus, text: sound.title,
@@ -294,7 +360,9 @@ module RubyPlayer
         # The queue's displayed order must equal engine.queue_items (playback
         # order), since App#dispatch(:remove_from_queue) removes by displayed
         # index -- a lingering @sort from another view must not reorder it.
-        return if %i[queue focus].include?(@mode)
+        # Playlist tracks share that rule (position order), and the playlist
+        # list orders itself via @playlist_sort in load_tracks.
+        return if %i[queue focus playlists].include?(@mode) || playlist_tracks_view?
 
         case @sort
         when :title then @tracks.sort_by! { |t| t.title.to_s.downcase }
@@ -317,6 +385,8 @@ module RubyPlayer
         @tracks.select do |item|
           values = if @mode == :focus
                      [item.title]
+                   elsif @mode == :playlists
+                     [item["name"]]
                    else
                      [item.title, item.artist, item.album, item.composer,
                       item.physical_path, item.archive_entry]
@@ -330,6 +400,7 @@ module RubyPlayer
         case row&.dig(:type)
         when :track then [:track, row[:track].id]
         when :focus then [:focus, row[:focus_sound].id]
+        when :playlist then [:playlist, row[:playlist]["id"]]
         end
       end
 
@@ -351,6 +422,7 @@ module RubyPlayer
           case identity&.first
           when :track then row[:type] == :track && row[:track].id == identity[1]
           when :focus then row[:type] == :focus && row[:focus_sound].id == identity[1]
+          when :playlist then row[:type] == :playlist && row[:playlist]["id"] == identity[1]
           end
         end
         @selection = match || fallback
@@ -363,7 +435,7 @@ module RubyPlayer
         loop do
           i += delta
           return unless i.between?(0, rows.size - 1)
-          break if %i[track focus].include?(rows[i][:type])
+          break if %i[track focus playlist].include?(rows[i][:type])
         end
         @selection = i
       end

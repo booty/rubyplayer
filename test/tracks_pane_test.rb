@@ -497,4 +497,85 @@ class TracksPaneTest < Minitest::Test
       assert_includes @pane.display_rows.first[:text], "!!"
     end
   end
+
+  # ---- playlists ----
+
+  def playlist_row(id, name: "P")
+    RubyPlayer::UI::LibraryPane::Row.new(
+      kind: :playlist, playlist: { "id" => id, "name" => name }, depth: 1
+    )
+  end
+
+  def playlists_row
+    RubyPlayer::UI::LibraryPane::Row.new(kind: :playlists, depth: 0)
+  end
+
+  def track_id(file)
+    @lib.all_tracks.find { |t| t.physical_path == "/m/#{file}" }.id
+  end
+
+  def test_playlist_mode_shows_tracks_in_position_order
+    id = @lib.create_playlist("P")
+    @lib.add_to_playlist(id, track_id("b.vgm"))
+    @lib.add_to_playlist(id, track_id("a.vgm"))
+    @pane.show(playlist_row(id))
+    assert_equal %w[Bravo Alpha], titles
+    assert_equal id, @pane.playlist_id
+  end
+
+  def test_playlist_mode_refuses_sort_and_group
+    # Row index == playlist position is load-bearing (move/remove address it),
+    # same regression class as the queue view being reordered by a stale @sort.
+    id = @lib.create_playlist("P")
+    @lib.add_to_playlist(id, track_id("b.vgm"))
+    @lib.add_to_playlist(id, track_id("a.vgm"))
+    @pane.show(playlist_row(id))
+    outcome = @pane.handle_action(:sort_title)
+    assert_equal :disabled, outcome[0]
+    assert_equal %w[Bravo Alpha], titles
+    outcome = @pane.handle_action(:toggle_group)
+    assert_equal :disabled, outcome[0]
+  end
+
+  def test_stale_sort_flag_does_not_reorder_playlist
+    @pane.instance_variable_set(:@sort, :title)
+    id = @lib.create_playlist("P")
+    @lib.add_to_playlist(id, track_id("b.vgm"))
+    @lib.add_to_playlist(id, track_id("a.vgm"))
+    @pane.show(playlist_row(id))
+    assert_equal %w[Bravo Alpha], titles
+  end
+
+  def test_playlists_mode_lists_playlists_and_selects
+    @lib.create_playlist("Alpha")
+    beta = @lib.create_playlist("Beta")
+    @lib.rename_playlist(beta, "Beta") # unambiguous recency bump
+    @pane.show(playlists_row)
+    rows = @pane.display_rows
+    assert(rows.all? { |r| r[:type] == :playlist })
+    assert_equal "Beta", rows.first[:playlist]["name"] # recency default
+    assert_equal beta, @pane.selected_playlist["id"]
+    assert_nil @pane.selected_track
+  end
+
+  def test_playlists_mode_sort_title_toggles_alpha_and_recency
+    @lib.create_playlist("Alpha")
+    beta = @lib.create_playlist("Beta")
+    @lib.rename_playlist(beta, "Beta") # unambiguous recency bump
+    @pane.show(playlists_row)
+    names = -> { @pane.display_rows.map { |r| r[:playlist]["name"] } }
+    assert_equal %w[Beta Alpha], names.call
+    @pane.handle_action(:sort_title)
+    assert_equal %w[Alpha Beta], names.call
+    @pane.handle_action(:sort_title)
+    assert_equal %w[Beta Alpha], names.call
+  end
+
+  def test_playlists_mode_filter_matches_names
+    @lib.create_playlist("Battle Themes")
+    @lib.create_playlist("Chill")
+    @pane.show(playlists_row)
+    @pane.filter = "batt"
+    assert_equal ["Battle Themes"], @pane.display_rows.map { |r| r[:playlist]["name"] }
+  end
 end
