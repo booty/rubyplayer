@@ -75,6 +75,85 @@ module RubyPlayer
       end
     end
 
+    def playlist_tracks(id)
+      rows = @db.read do |s|
+        s.execute(<<~SQL, [id])
+          SELECT t.* FROM playlist_tracks pt
+          JOIN tracks t ON t.id = pt.track_id
+          WHERE pt.playlist_id = ? AND t.missing = 0
+          ORDER BY pt.position
+        SQL
+      end
+      rows.map { |r| Track.from_row(r) }
+    end
+
+    # UI move/remove address the row the user SEES. Missing entries are hidden
+    # but keep their positions, so the visible index is re-resolved to a real
+    # position inside the write transaction — same stale-target discipline as
+    # purge_missing_tracks! (the missing-set can shift while UI state is held).
+    def move_playlist_entry(id, visible_index, delta)
+      @db.write do |s|
+        visible = visible_positions(s, id)
+        target = visible_index + delta
+        next nil unless visible_index.between?(0, visible.size - 1) &&
+                        target.between?(0, visible.size - 1)
+
+        a = visible[visible_index]
+        b = visible[target]
+        # Three-step swap dodges the (playlist_id, position) primary key.
+        s.execute("UPDATE playlist_tracks SET position = -1 WHERE playlist_id = ? AND position = ?", [id, a])
+        s.execute("UPDATE playlist_tracks SET position = ? WHERE playlist_id = ? AND position = ?", [a, id, b])
+        s.execute("UPDATE playlist_tracks SET position = ? WHERE playlist_id = ? AND position = -1", [b, id])
+        s.execute("UPDATE playlists SET updated_at = ? WHERE id = ?", [Time.now.utc.iso8601(6), id])
+        target
+      end
+    end
+
+    def remove_playlist_entry(id, visible_index)
+      @db.write do |s|
+        visible = visible_positions(s, id)
+        position = visible_index >= 0 ? visible[visible_index] : nil
+        next nil unless position
+
+        track_id = s.get_first_value(
+          "SELECT track_id FROM playlist_tracks WHERE playlist_id = ? AND position = ?",
+          [id, position]
+        )
+        s.execute("DELETE FROM playlist_tracks WHERE playlist_id = ? AND position = ?", [id, position])
+        # Renumber everything (hidden entries included) contiguously; ascending
+        # order only ever moves a row into a just-freed slot, so the PK holds.
+        remaining = s.execute(
+          "SELECT position FROM playlist_tracks WHERE playlist_id = ? ORDER BY position", [id]
+        ).map { |r| r["position"] }
+        remaining.each_with_index do |pos, i|
+          next if pos == i
+
+          s.execute("UPDATE playlist_tracks SET position = ? WHERE playlist_id = ? AND position = ?",
+                    [i, id, pos])
+        end
+        s.execute("UPDATE playlists SET updated_at = ? WHERE id = ?", [Time.now.utc.iso8601(6), id])
+        track_id
+      end
+    end
+
+    # Hidden-missing entries are copied too: they reappear in the copy when a
+    # rescan restores the files, same as in the original.
+    def duplicate_playlist(id, name)
+      now = Time.now.utc.iso8601(6)
+      @db.write do |s|
+        s.execute("INSERT INTO playlists (name, created_at, updated_at) VALUES (?, ?, ?)",
+                  [name, now, now])
+        new_id = s.get_first_value("SELECT id FROM playlists WHERE name = ?", [name])
+        s.execute(<<~SQL, [new_id, id])
+          INSERT INTO playlist_tracks (playlist_id, track_id, position)
+          SELECT ?, track_id, position FROM playlist_tracks WHERE playlist_id = ?
+        SQL
+        new_id
+      end
+    rescue SQLite3::ConstraintException
+      raise PlaylistNameTaken, "A playlist named \"#{name}\" already exists"
+    end
+
     def upsert_folder(parent_id:, name:, path:, kind:, mtime: nil, size: nil)
       @db.write do |s|
         s.execute(<<~SQL, [parent_id, name, path, kind, mtime, size, Time.now.utc.iso8601])
@@ -188,6 +267,9 @@ module RubyPlayer
         actual_placeholders = (["?"] * actual.size).join(",")
         db.execute("DELETE FROM playback_history WHERE track_id IN (#{actual_placeholders})", actual)
         db.execute("DELETE FROM track_metadata WHERE track_id IN (#{actual_placeholders})", actual)
+        # Before the tracks DELETE, or its FK blocks the purge; also keeps
+        # purged tracks from resurfacing in playlists after a rescan.
+        db.execute("DELETE FROM playlist_tracks WHERE track_id IN (#{actual_placeholders})", actual)
         db.execute("DELETE FROM tracks WHERE id IN (#{actual_placeholders})", actual)
         actual
       end
@@ -358,6 +440,15 @@ module RubyPlayer
     def query_tracks(where_and_order)
       rows = @db.read { |s| s.execute("SELECT * FROM tracks WHERE #{where_and_order}") }
       rows.map { |row| Track.from_row(row) }
+    end
+
+    def visible_positions(s, playlist_id)
+      s.execute(<<~SQL, [playlist_id]).map { |r| r["position"] }
+        SELECT pt.position FROM playlist_tracks pt
+        JOIN tracks t ON t.id = pt.track_id
+        WHERE pt.playlist_id = ? AND t.missing = 0
+        ORDER BY pt.position
+      SQL
     end
 
     def visible_folders(where, params = [])

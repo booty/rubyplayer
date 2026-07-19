@@ -286,6 +286,83 @@ class LibraryTest < Minitest::Test
     assert_equal 0, @lib.playlists.first["track_count"]
   end
 
+  def playlist_with_tracks(names)
+    id = @lib.create_playlist("P")
+    ids = names.map { |n| add_track("/m/sega/#{n}.vgm", title: n) }
+    ids.each { |t| @lib.add_to_playlist(id, t) }
+    [id, ids]
+  end
+
+  def test_playlist_tracks_in_position_order_hiding_missing
+    id, ids = playlist_with_tracks(%w[a b c])
+    assert_equal %w[a b c], @lib.playlist_tracks(id).map(&:title)
+    @lib.mark_missing(track_ids: [ids[1]], folder_ids: [])
+    assert_equal %w[a c], @lib.playlist_tracks(id).map(&:title)
+  end
+
+  def test_hidden_entry_reappears_at_its_position_when_restored
+    id, ids = playlist_with_tracks(%w[a b c])
+    @lib.mark_missing(track_ids: [ids[1]], folder_ids: [])
+    # Rescan restoring the file clears missing (upsert_track sets missing=0).
+    add_track("/m/sega/b.vgm", title: "b")
+    assert_equal %w[a b c], @lib.playlist_tracks(id).map(&:title)
+  end
+
+  def test_move_playlist_entry_swaps_visible_neighbors
+    id, = playlist_with_tracks(%w[a b c])
+    assert_equal 2, @lib.move_playlist_entry(id, 1, 1) # b down -> a c b
+    assert_equal %w[a c b], @lib.playlist_tracks(id).map(&:title)
+    assert_equal 0, @lib.move_playlist_entry(id, 1, -1) # c up -> c a b
+    assert_equal %w[c a b], @lib.playlist_tracks(id).map(&:title)
+  end
+
+  def test_move_playlist_entry_skips_over_hidden_entries
+    id, ids = playlist_with_tracks(%w[a b c])
+    @lib.mark_missing(track_ids: [ids[1]], folder_ids: [])
+    # Visible list is [a c]; moving a down must swap with c, not hidden b.
+    @lib.move_playlist_entry(id, 0, 1)
+    assert_equal %w[c a], @lib.playlist_tracks(id).map(&:title)
+    # b restored: it kept its middle position, order is now c b a.
+    add_track("/m/sega/b.vgm", title: "b")
+    assert_equal %w[c b a], @lib.playlist_tracks(id).map(&:title)
+  end
+
+  def test_move_playlist_entry_out_of_range_is_nil_noop
+    id, = playlist_with_tracks(%w[a b])
+    assert_nil @lib.move_playlist_entry(id, 0, -1)
+    assert_nil @lib.move_playlist_entry(id, 1, 1)
+    assert_equal %w[a b], @lib.playlist_tracks(id).map(&:title)
+  end
+
+  def test_remove_playlist_entry_renumbers_contiguously
+    id, ids = playlist_with_tracks(%w[a b c])
+    assert_equal ids[1], @lib.remove_playlist_entry(id, 1)
+    assert_equal %w[a c], @lib.playlist_tracks(id).map(&:title)
+    positions = @db.read do |s|
+      s.execute("SELECT position FROM playlist_tracks WHERE playlist_id = ? ORDER BY position",
+                [id]).map { |r| r["position"] }
+    end
+    assert_equal [0, 1], positions
+  end
+
+  def test_duplicate_playlist_copies_all_entries_including_hidden
+    id, ids = playlist_with_tracks(%w[a b])
+    @lib.mark_missing(track_ids: [ids[0]], folder_ids: [])
+    copy = @lib.duplicate_playlist(id, "P copy")
+    assert_equal %w[b], @lib.playlist_tracks(copy).map(&:title)
+    add_track("/m/sega/a.vgm", title: "a")
+    assert_equal %w[a b], @lib.playlist_tracks(copy).map(&:title)
+  end
+
+  def test_purge_missing_tracks_removes_playlist_entries
+    id, ids = playlist_with_tracks(%w[a b])
+    @lib.mark_missing(track_ids: [ids[0]], folder_ids: [])
+    @lib.purge_missing_tracks!([ids[0]])
+    assert_equal %w[b], @lib.playlist_tracks(id).map(&:title)
+    add_track("/m/sega/a.vgm", title: "a") # restore file: entry must NOT come back
+    assert_equal %w[b], @lib.playlist_tracks(id).map(&:title)
+  end
+
   private
 
   def record_play(track_id, day:, seconds:)
