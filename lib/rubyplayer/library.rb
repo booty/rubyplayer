@@ -6,6 +6,75 @@ module RubyPlayer
       @db = db
     end
 
+    # Playlists are user curation, not disk state: the library's soft-delete
+    # philosophy does not apply, so deletes are hard and cascade.
+    PlaylistError = Class.new(StandardError)
+    PlaylistNameTaken = Class.new(PlaylistError)
+
+    def playlists(sort: :recency)
+      order = sort == :alpha ? "name COLLATE NOCASE" : "updated_at DESC"
+      @db.read do |s|
+        s.execute(<<~SQL)
+          SELECT p.*, (
+            SELECT COUNT(*) FROM playlist_tracks pt
+            JOIN tracks t ON t.id = pt.track_id
+            WHERE pt.playlist_id = p.id AND t.missing = 0
+          ) AS track_count
+          FROM playlists p ORDER BY #{order}
+        SQL
+      end
+    end
+
+    def create_playlist(name)
+      # Microsecond precision: recency ordering must distinguish two edits in
+      # the same second (whole-second timestamps made the sort a coin flip).
+      now = Time.now.utc.iso8601(6)
+      @db.write do |s|
+        s.execute("INSERT INTO playlists (name, created_at, updated_at) VALUES (?, ?, ?)",
+                  [name, now, now])
+        s.get_first_value("SELECT id FROM playlists WHERE name = ?", [name])
+      end
+    rescue SQLite3::ConstraintException
+      raise PlaylistNameTaken, "A playlist named \"#{name}\" already exists"
+    end
+
+    def rename_playlist(id, name)
+      @db.write do |s|
+        s.execute("UPDATE playlists SET name = ?, updated_at = ? WHERE id = ?",
+                  [name, Time.now.utc.iso8601(6), id])
+      end
+    rescue SQLite3::ConstraintException
+      raise PlaylistNameTaken, "A playlist named \"#{name}\" already exists"
+    end
+
+    def delete_playlist(id)
+      @db.write { |s| s.execute("DELETE FROM playlists WHERE id = ?", [id]) }
+    end
+
+    def add_to_playlist(id, track_id)
+      @db.write do |s|
+        pos = s.get_first_value(
+          "SELECT COALESCE(MAX(position) + 1, 0) FROM playlist_tracks WHERE playlist_id = ?", [id]
+        )
+        s.execute("INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?, ?, ?)",
+                  [id, track_id, pos])
+        s.execute("UPDATE playlists SET updated_at = ? WHERE id = ?",
+                  [Time.now.utc.iso8601(6), id])
+      end
+    rescue SQLite3::ConstraintException
+      # FK failure: the track was hard-purged while the add modal was open.
+      raise PlaylistError, "Track is no longer in the library"
+    end
+
+    def playlist_contains?(id, track_id)
+      !!@db.read do |s|
+        s.get_first_value(
+          "SELECT 1 FROM playlist_tracks WHERE playlist_id = ? AND track_id = ? LIMIT 1",
+          [id, track_id]
+        )
+      end
+    end
+
     def upsert_folder(parent_id:, name:, path:, kind:, mtime: nil, size: nil)
       @db.write do |s|
         s.execute(<<~SQL, [parent_id, name, path, kind, mtime, size, Time.now.utc.iso8601])

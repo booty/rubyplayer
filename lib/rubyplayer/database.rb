@@ -4,7 +4,7 @@ require "time"
 
 module RubyPlayer
   class Database
-    SCHEMA_VERSION = 1
+    SCHEMA_VERSION = 2
 
     SCHEMA = <<~SQL
       CREATE TABLE folders (
@@ -55,6 +55,23 @@ module RubyPlayer
         ended_at TEXT NOT NULL
       );
 
+      CREATE TABLE playlists (
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL       -- bumped on any content/name change; recency sort key
+      );
+
+      CREATE TABLE playlist_tracks (
+        playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+        track_id INTEGER NOT NULL REFERENCES tracks(id),
+        position INTEGER NOT NULL,
+        -- Position integrity as a DB constraint: a buggy renumber fails loudly
+        -- in tests instead of silently corrupting playlist order.
+        PRIMARY KEY (playlist_id, position)
+      );
+
+      CREATE INDEX idx_playlist_tracks_track ON playlist_tracks(track_id);
       CREATE INDEX idx_tracks_folder ON tracks(folder_id);
       CREATE INDEX idx_tracks_rating ON tracks(rating);
       CREATE INDEX idx_tracks_path ON tracks(physical_path);

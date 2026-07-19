@@ -210,6 +210,81 @@ class LibraryTest < Minitest::Test
     assert_raises(SQLite3::ConstraintException) { @lib.set_rating(id, 9) }
   end
 
+  # ---- playlists (user curation; see docs/superpowers/specs/2026-07-18-playlists-design.md) ----
+
+  def test_create_playlist_and_list
+    id = @lib.create_playlist("Chill VGM")
+    assert_kind_of Integer, id
+    lists = @lib.playlists
+    assert_equal ["Chill VGM"], lists.map { |p| p["name"] }
+    assert_equal 0, lists.first["track_count"]
+  end
+
+  def test_create_playlist_rejects_duplicate_name_case_insensitively
+    @lib.create_playlist("Chill")
+    assert_raises(RubyPlayer::Library::PlaylistNameTaken) { @lib.create_playlist("chill") }
+  end
+
+  def test_playlists_sorts_by_recency_default_and_alpha_on_request
+    a = @lib.create_playlist("Alpha")
+    b = @lib.create_playlist("Beta")
+    # Adding a track bumps updated_at, so Alpha becomes most recent.
+    t = add_track("/m/sega/a.vgm")
+    @lib.add_to_playlist(a, t)
+    assert_equal %w[Alpha Beta], @lib.playlists(sort: :recency).map { |p| p["name"] }
+    assert_equal %w[Alpha Beta], @lib.playlists(sort: :alpha).map { |p| p["name"] }
+    @lib.add_to_playlist(b, t)
+    assert_equal %w[Beta Alpha], @lib.playlists(sort: :recency).map { |p| p["name"] }
+  end
+
+  def test_rename_playlist_bumps_updated_at_and_rejects_taken_names
+    a = @lib.create_playlist("Old")
+    @lib.create_playlist("Taken")
+    assert_raises(RubyPlayer::Library::PlaylistNameTaken) { @lib.rename_playlist(a, "taken") }
+    @lib.rename_playlist(a, "New")
+    assert_equal %w[New Taken], @lib.playlists(sort: :alpha).map { |p| p["name"] }
+  end
+
+  def test_add_to_playlist_and_contains
+    id = @lib.create_playlist("P")
+    t = add_track("/m/sega/a.vgm")
+    refute @lib.playlist_contains?(id, t)
+    @lib.add_to_playlist(id, t)
+    assert @lib.playlist_contains?(id, t)
+    assert_equal 1, @lib.playlists.first["track_count"]
+  end
+
+  def test_add_to_playlist_allows_duplicates
+    id = @lib.create_playlist("P")
+    t = add_track("/m/sega/a.vgm")
+    @lib.add_to_playlist(id, t)
+    @lib.add_to_playlist(id, t)
+    assert_equal 2, @lib.playlists.first["track_count"]
+  end
+
+  def test_add_to_playlist_raises_for_vanished_track
+    id = @lib.create_playlist("P")
+    assert_raises(RubyPlayer::Library::PlaylistError) { @lib.add_to_playlist(id, 999_999) }
+  end
+
+  def test_delete_playlist_is_hard_and_cascades_entries
+    id = @lib.create_playlist("P")
+    t = add_track("/m/sega/a.vgm")
+    @lib.add_to_playlist(id, t)
+    @lib.delete_playlist(id)
+    assert_empty @lib.playlists
+    # Entries must be gone too, or a future playlist reusing the id would inherit them.
+    count = @db.read { |s| s.get_first_value("SELECT COUNT(*) FROM playlist_tracks") }
+    assert_equal 0, count
+  end
+
+  def test_playlist_track_count_excludes_missing_tracks
+    id = @lib.create_playlist("P")
+    t = add_track("/m/sega/a.vgm")
+    @lib.add_to_playlist(id, t)
+    @lib.mark_missing(track_ids: [t], folder_ids: [])
+    assert_equal 0, @lib.playlists.first["track_count"]
+  end
 
   private
 
