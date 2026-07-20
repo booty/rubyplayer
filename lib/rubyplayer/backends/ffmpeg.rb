@@ -173,8 +173,19 @@ module RubyPlayer
         format_tags.merge(stream_tags)
       end
 
+      # Single normalization choke point: every tag value, whether it lands
+      # in a promoted column (title/album/artist/...) or in :extra, flows
+      # through here — so the size cap has to live here, not just in
+      # extra_tags, or an oversized promoted-column value (corrupt/huge frame)
+      # bloats a tracks row that every SELECT * view query hydrates.
       def normalize_tags(tags)
-        tags.each_with_object({}) { |(key, value), h| h[key.to_s.downcase] = value.to_s.scrub }
+        limit = RubyPlayer::DEFAULTS["library"]["metadata_value_limit"]
+        tags.each_with_object({}) do |(key, value), h|
+          # byteslice can split a multibyte character; the scrub after it
+          # repairs that (scrub before byteslice wouldn't help, since slicing
+          # happens after).
+          h[key.to_s.downcase] = value.to_s.byteslice(0, limit).scrub
+        end
       end
 
       # ID3v2.3 (TYER), v2.4 (TDRC), MP4 (©day) and Vorbis (DATE) all funnel
@@ -187,14 +198,12 @@ module RubyPlayer
         nil
       end
 
+      # Values are already capped and scrubbed by normalize_tags.
       def extra_tags(tags)
-        limit = RubyPlayer::DEFAULTS["library"]["metadata_value_limit"]
         tags.each_with_object({}) do |(key, value), extras|
           next if CONSUMED_TAGS.include?(key) || value.empty?
 
-          # byteslice can split a multibyte character; the second scrub
-          # (normalize_tags already scrubbed once) repairs it.
-          extras[key] = value.byteslice(0, limit).scrub
+          extras[key] = value
         end
       end
 

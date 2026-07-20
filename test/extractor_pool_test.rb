@@ -254,6 +254,64 @@ class ExtractorPoolTest < Minitest::Test
     assert_empty @lib.track_metadata_for(track_id)
   end
 
+  # Bug: upsert only called replace_track_metadata when extras was truthy AND
+  # non-empty, so a rescan where the backend now reports extra: {} (all extra
+  # tags removed from the file) left the previous scan's KV rows in place —
+  # contradicts "scan is the single source of truth" for file-derived metadata.
+  def test_rescan_with_now_empty_extras_clears_stale_track_metadata
+    path = File.join(@music, "song.vgm")
+    File.write(path, "fake vgm data")
+    backend = FakeBackend.new(
+      "fake",
+      metadata: { path => { title: "Song", format: "vgm", album: "Album", extra: { "genre" => "VGM" } } }
+    )
+    registry = FakeRegistry.new(backend: backend)
+    pool = RubyPlayer::ExtractorPool.new(library: @lib, registry: registry, thread_count: 1)
+    work = [RubyPlayer::WorkItem.new(path: path, parent_folder_id: root_folder_id, status: :new)]
+    pool.process(work)
+    track_id = track_row(path)["id"]
+    assert_equal({ "genre" => "VGM" }, @lib.track_metadata_for(track_id))
+
+    # rescan: file was retagged to drop all extra tags
+    rescan_backend = FakeBackend.new(
+      "fake",
+      metadata: { path => { title: "Song", format: "vgm", album: "Album", extra: {} } }
+    )
+    rescan_registry = FakeRegistry.new(backend: rescan_backend)
+    rescan_pool = RubyPlayer::ExtractorPool.new(library: @lib, registry: rescan_registry, thread_count: 1)
+    rescan_pool.process(work)
+
+    assert_empty @lib.track_metadata_for(track_id)
+  end
+
+  # A backend with no :extra concept at all (gme/openmpt) must never touch
+  # track_metadata, including across a rescan where other fields changed.
+  def test_rescan_without_extra_key_leaves_existing_track_metadata_untouched
+    path = File.join(@music, "song.vgm")
+    File.write(path, "fake vgm data")
+    backend = FakeBackend.new(
+      "fake",
+      metadata: { path => { title: "Song", format: "vgm", album: "Album", extra: { "genre" => "VGM" } } }
+    )
+    registry = FakeRegistry.new(backend: backend)
+    pool = RubyPlayer::ExtractorPool.new(library: @lib, registry: registry, thread_count: 1)
+    work = [RubyPlayer::WorkItem.new(path: path, parent_folder_id: root_folder_id, status: :new)]
+    pool.process(work)
+    track_id = track_row(path)["id"]
+    assert_equal({ "genre" => "VGM" }, @lib.track_metadata_for(track_id))
+
+    # rescan with a backend that has no :extra key at all
+    no_extra_backend = FakeBackend.new(
+      "fake",
+      metadata: { path => { title: "Song 2", format: "vgm", album: "Album" } }
+    )
+    no_extra_registry = FakeRegistry.new(backend: no_extra_backend)
+    no_extra_pool = RubyPlayer::ExtractorPool.new(library: @lib, registry: no_extra_registry, thread_count: 1)
+    no_extra_pool.process(work)
+
+    assert_equal({ "genre" => "VGM" }, @lib.track_metadata_for(track_id))
+  end
+
   def test_album_artist_and_year_flow_through_upsert
     path = File.join(@music, "song.vgm")
     File.write(path, "fake vgm data")

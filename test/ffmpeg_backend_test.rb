@@ -27,6 +27,20 @@ class FfmpegBackendTest < Minitest::Test
     end
   end
 
+  # Bug: the metadata_value_limit cap was only applied in extra_tags, so a
+  # promoted tag column like title (bloated by a corrupt/oversized frame) was
+  # stored uncapped, even though every SELECT * view query hydrates it.
+  def test_metadata_caps_oversized_title_tag
+    Dir.mktmpdir do |dir|
+      long_title = "x" * 10_000
+      path = tagged_fixture(dir, "title" => long_title)
+      meta = RubyPlayer::Backends::Ffmpeg.new.metadata(path, 0)
+      limit = RubyPlayer::DEFAULTS["library"]["metadata_value_limit"]
+      assert_operator meta[:title].bytesize, :<=, limit
+      assert meta[:title].valid_encoding?
+    end
+  end
+
   def test_metadata_year_nil_when_absent_or_implausible
     Dir.mktmpdir do |dir|
       path = tagged_fixture(dir, "date" => "not a date", "title" => "Song")

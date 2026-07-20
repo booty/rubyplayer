@@ -98,8 +98,12 @@ module RubyPlayer
         track_number: meta[:track_number], duration_ms: meta[:duration_ms],
         file_mtime: stat.mtime.to_f, file_size: stat.size
       )
-      extras = meta[:extra]
-      @library.replace_track_metadata(track_id, extras) if extras && !extras.empty?
+      # nil means "this backend has no extras concept" (gme/openmpt never
+      # produce :extra) — leave existing KV rows alone. {} means "the backend
+      # looked and the file has none" (ffmpeg after a retag that dropped all
+      # extra tags) — still must clear stale rows from a prior scan, since
+      # the scan is the single source of truth for file-derived metadata.
+      @library.replace_track_metadata(track_id, meta[:extra]) unless meta[:extra].nil?
       track_id
     end
 
