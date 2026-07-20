@@ -11,6 +11,10 @@ module RubyPlayer
 
       READ_SIZE = 16 * 1024
 
+      # Tags folded into named metadata fields; everything else lands in
+      # :extra rather than being silently dropped.
+      CONSUMED_TAGS = %w[title album artist album_artist composer track].freeze
+
       def name = "ffmpeg"
 
       def track_count(_path) = 1
@@ -25,10 +29,13 @@ module RubyPlayer
           title: presence(tags["title"]) || File.basename(path, ".*"),
           album: presence(tags["album"]),
           artist: presence(tags["artist"]) || presence(tags["album_artist"]),
+          album_artist: presence(tags["album_artist"]),
           composer: presence(tags["composer"]),
           track_number: parse_track_number(tags["track"]),
+          year: parse_year(tags),
           duration_ms: duration_ms(format, stream),
           format: File.extname(path).delete_prefix(".").downcase,
+          extra: extra_tags(tags),
         }
       end
 
@@ -167,7 +174,28 @@ module RubyPlayer
       end
 
       def normalize_tags(tags)
-        tags.each_with_object({}) { |(key, value), h| h[key.to_s.downcase] = value.to_s }
+        tags.each_with_object({}) { |(key, value), h| h[key.to_s.downcase] = value.to_s.scrub }
+      end
+
+      # ID3v2.3 (TYER), v2.4 (TDRC), MP4 (©day) and Vorbis (DATE) all funnel
+      # into these ffprobe tag names; the first plausible 4-digit number wins.
+      def parse_year(tags)
+        %w[date year tdrc tdrl originaldate].each do |key|
+          match = tags[key].to_s[/\b(1\d{3}|2\d{3})\b/]
+          return match.to_i if match
+        end
+        nil
+      end
+
+      def extra_tags(tags)
+        limit = RubyPlayer::DEFAULTS["library"]["metadata_value_limit"]
+        tags.each_with_object({}) do |(key, value), extras|
+          next if CONSUMED_TAGS.include?(key) || value.empty?
+
+          # byteslice can split a multibyte character; the second scrub
+          # (normalize_tags already scrubbed once) repairs it.
+          extras[key] = value.byteslice(0, limit).scrub
+        end
       end
 
       def duration_ms(format, stream)

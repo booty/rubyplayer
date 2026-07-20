@@ -80,6 +80,8 @@ module RubyPlayer
       "undo_depth" => 10,
       "archive_cache_dir" => File.join(Dir.home, ".cache", "rubyplayer", "archives"),
       "archive_tool" => "bsdtar",
+      # Byte cap per stored tag value; a corrupt frame must not bloat the DB.
+      "metadata_value_limit" => 8192,
     },
     "eq" => { "bands" => 16, "fps" => 30 },
     "glyphs" => {
