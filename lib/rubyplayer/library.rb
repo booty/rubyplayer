@@ -170,18 +170,20 @@ module RubyPlayer
 
     def upsert_track(attrs)
       a = { archive_entry: "", subtune_index: 0, errored: 0,
-            file_mtime: nil, file_size: nil }.merge(attrs)
+            file_mtime: nil, file_size: nil, album_artist: nil, year: nil }.merge(attrs)
       now = Time.now.utc.iso8601
       sql = <<~SQL
         INSERT INTO tracks (folder_id, physical_path, archive_entry, subtune_index,
                             backend, format, title, album, artist, composer,
+                            album_artist, year,
                             track_number, duration_ms, file_mtime, file_size,
                             errored, added_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(physical_path, archive_entry, subtune_index) DO UPDATE SET
           folder_id=excluded.folder_id, backend=excluded.backend, format=excluded.format,
           title=excluded.title, album=excluded.album, artist=excluded.artist,
-          composer=excluded.composer, track_number=excluded.track_number,
+          composer=excluded.composer, album_artist=excluded.album_artist, year=excluded.year,
+          track_number=excluded.track_number,
           duration_ms=excluded.duration_ms, file_mtime=excluded.file_mtime,
           file_size=excluded.file_size, errored=excluded.errored,
           missing=0, updated_at=excluded.updated_at
@@ -189,12 +191,33 @@ module RubyPlayer
       @db.write do |s|
         s.execute(sql, [a[:folder_id], a[:physical_path], a[:archive_entry], a[:subtune_index],
                         a[:backend], a[:format], a[:title], a[:album], a[:artist], a[:composer],
+                        a[:album_artist], a[:year],
                         a[:track_number], a[:duration_ms], a[:file_mtime], a[:file_size],
                         a[:errored], now, now])
         s.get_first_value(
           "SELECT id FROM tracks WHERE physical_path = ? AND archive_entry = ? AND subtune_index = ?",
           [a[:physical_path], a[:archive_entry], a[:subtune_index]]
         )
+      end
+    end
+
+    # Total replacement, not merge: the scan is the single source of truth
+    # for file-derived metadata, and a tag deleted from the file must not
+    # linger from an earlier scan.
+    def replace_track_metadata(track_id, pairs)
+      @db.write do |s|
+        s.execute("DELETE FROM track_metadata WHERE track_id = ?", [track_id])
+        (pairs || {}).each do |key, value|
+          s.execute("INSERT INTO track_metadata (track_id, key, value) VALUES (?, ?, ?)",
+                    [track_id, key.to_s, value.to_s])
+        end
+      end
+    end
+
+    def track_metadata_for(track_id)
+      @db.read do |s|
+        s.execute("SELECT key, value FROM track_metadata WHERE track_id = ?", [track_id])
+         .to_h { |r| [r["key"], r["value"]] }
       end
     end
 

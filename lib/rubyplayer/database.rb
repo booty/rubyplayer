@@ -4,7 +4,7 @@ require "time"
 
 module RubyPlayer
   class Database
-    SCHEMA_VERSION = 2
+    SCHEMA_VERSION = 3
 
     SCHEMA = <<~SQL
       CREATE TABLE folders (
@@ -29,6 +29,8 @@ module RubyPlayer
         backend TEXT NOT NULL,
         format TEXT NOT NULL,
         title TEXT, album TEXT, artist TEXT, composer TEXT,
+        album_artist TEXT,                        -- ID3 TPE2 / MP4 aART / Vorbis ALBUMARTIST
+        year INTEGER,                             -- normalized 4-digit release year
         track_number INTEGER,
         duration_ms INTEGER,
         file_mtime REAL,                          -- stat data for the Scanner's change diff

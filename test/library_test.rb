@@ -363,6 +363,36 @@ class LibraryTest < Minitest::Test
     assert_equal %w[b], @lib.playlist_tracks(id).map(&:title)
   end
 
+  # ---- rich metadata (see docs/superpowers/specs/2026-07-20-rich-metadata-design.md) ----
+
+  def test_upsert_track_persists_album_artist_and_year
+    id = @lib.upsert_track(folder_id: @sub, physical_path: "/m/sega/meta.mp3",
+                           backend: "ffmpeg", format: "mp3", title: "T", album: "A",
+                           artist: "Ar", composer: nil, track_number: 1,
+                           duration_ms: 1000, album_artist: "Various", year: 1998)
+    t = @lib.find_track(id)
+    assert_equal "Various", t.album_artist
+    assert_equal 1998, t.year
+  end
+
+  def test_upsert_track_defaults_album_artist_and_year_to_nil
+    id = add_track("/m/sega/plain.vgm")
+    t = @lib.find_track(id)
+    assert_nil t.album_artist
+    assert_nil t.year
+  end
+
+  def test_replace_track_metadata_round_trip_and_replacement
+    id = add_track("/m/sega/kv.vgm")
+    @lib.replace_track_metadata(id, { "genre" => "VGM", "comment" => "rip" })
+    assert_equal({ "genre" => "VGM", "comment" => "rip" }, @lib.track_metadata_for(id))
+    # Replacement is total: stale keys from the previous scan must not linger.
+    @lib.replace_track_metadata(id, { "genre" => "Chip" })
+    assert_equal({ "genre" => "Chip" }, @lib.track_metadata_for(id))
+    @lib.replace_track_metadata(id, {})
+    assert_empty @lib.track_metadata_for(id)
+  end
+
   private
 
   def record_play(track_id, day:, seconds:)
