@@ -62,11 +62,13 @@ module RubyPlayer
                                            path: item.path, kind: "multitrack",
                                            mtime: stat.mtime.to_f, size: stat.size)
         count.times do |i|
-          upsert(item.path, folder_id, i, backend, backend.metadata(item.path, i), stat)
+          upsert(item.path, folder_id, i, backend, backend.metadata(item.path, i), stat,
+                 album_fallback: File.basename(item.path, ".*"))
         end
       else
         upsert(item.path, item.parent_folder_id, 0, backend,
-               backend.metadata(item.path, 0), stat)
+               backend.metadata(item.path, 0), stat,
+               album_fallback: File.basename(File.dirname(item.path)))
       end
       true
     rescue StandardError
@@ -81,15 +83,24 @@ module RubyPlayer
       false
     end
 
-    def upsert(path, folder_id, subtune, backend, meta, stat, archive_entry: "")
-      @library.upsert_track(
+    def upsert(path, folder_id, subtune, backend, meta, stat, archive_entry: "",
+               album_fallback: nil)
+      track_id = @library.upsert_track(
         folder_id: folder_id, physical_path: path, archive_entry: archive_entry,
         subtune_index: subtune,
         backend: backend.name, format: meta[:format], title: meta[:title],
-        album: meta[:album], artist: meta[:artist], composer: meta[:composer],
+        # Fallback is baked at ingest so SQL ORDER BY, Ruby sorts, and the
+        # live filter all see the same value (render-time fallback would
+        # give SQL-ordered views a different order than the pane shows).
+        album: meta[:album] || album_fallback,
+        artist: meta[:artist], composer: meta[:composer],
+        album_artist: meta[:album_artist], year: meta[:year],
         track_number: meta[:track_number], duration_ms: meta[:duration_ms],
         file_mtime: stat.mtime.to_f, file_size: stat.size
       )
+      extras = meta[:extra]
+      @library.replace_track_metadata(track_id, extras) if extras && !extras.empty?
+      track_id
     end
 
     # An archive becomes an "archive"-kind folder whose descendants are its
@@ -135,11 +146,11 @@ module RubyPlayer
                                         mtime: stat.mtime.to_f, size: stat.size)
         count.times do |i|
           upsert(archive_path, sub_id, i, backend, backend.metadata(real, i), stat,
-                 archive_entry: entry)
+                 archive_entry: entry, album_fallback: File.basename(archive_path, ".*"))
         end
       else
         upsert(archive_path, folder_id, 0, backend, backend.metadata(real, 0), stat,
-               archive_entry: entry)
+               archive_entry: entry, album_fallback: File.basename(archive_path, ".*"))
       end
     rescue StandardError
       # One undecodable entry must not sink the whole archive.

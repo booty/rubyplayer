@@ -2,6 +2,39 @@ require "test_helper"
 require "tmpdir"
 require "fileutils"
 
+# Minimal stand-ins for Backends::Registry / a backend instance so album
+# fallback and KV-persistence tests can control #metadata precisely without
+# depending on what real fixture files happen to tag.
+class FakeBackend
+  attr_reader :name
+
+  def initialize(name, metadata: {}, track_counts: {})
+    @name = name
+    @metadata = metadata
+    @track_counts = track_counts
+  end
+
+  def track_count(path) = @track_counts.fetch(path, 1)
+
+  def metadata(path, subtune_index)
+    @metadata.fetch([path, subtune_index]) { @metadata.fetch(path, {}) }
+  end
+end
+
+class FakeRegistry
+  def initialize(backend:, multitrack_paths: [], archive_paths: [])
+    @backend = backend
+    @multitrack_paths = multitrack_paths
+    @archive_paths = archive_paths
+  end
+
+  def archive?(path) = @archive_paths.include?(path)
+  def multitrack?(path) = @multitrack_paths.include?(path)
+  def supported?(_path) = true
+  def backend_for(_path) = @backend
+  def backend_name_for(_path) = @backend.name
+end
+
 class ExtractorPoolTest < Minitest::Test
   def setup
     @tmp = Dir.mktmpdir
@@ -74,6 +107,10 @@ class ExtractorPoolTest < Minitest::Test
                  rows.map { |r| r["archive_entry"] }
     assert_equal ["gme"], rows.map { |r| r["backend"] }.uniq
     assert(rows.all? { |r| r["duration_ms"].to_i.positive? })
+    # musha.zip's entries carry an explicit GME "game" tag ("M.U.S.H.A."); the
+    # ingest-time album fallback (meta[:album] || album_fallback) must not
+    # clobber it with the archive basename.
+    assert_equal ["M.U.S.H.A."], rows.map { |r| r["album"] }.uniq
     # entries inherit the archive's stat so the scanner's diff pass works
     stat = File.stat(zip)
     assert_equal [stat.mtime.to_f], rows.map { |r| r["file_mtime"] }.uniq
@@ -122,5 +159,116 @@ class ExtractorPoolTest < Minitest::Test
     pool.process(@scanner.reconcile(@music))
     assert_equal 3, events.count { |t, _| t == :scan_progress }
     assert_equal 1, events.count { |t, _| t == :scan_complete }
+  end
+
+  def root_folder_id
+    @lib.upsert_folder(parent_id: nil, name: "music", path: @music, kind: "dir")
+  end
+
+  def track_row(path)
+    @db.read { |s| s.execute("SELECT * FROM tracks WHERE physical_path = ?", [path]).first }
+  end
+
+  def test_album_falls_back_to_parent_folder_for_plain_files
+    dir = File.join(@music, "Zelda Rips")
+    FileUtils.mkdir_p(dir)
+    path = File.join(dir, "song.vgm")
+    File.write(path, "fake vgm data")
+    backend = FakeBackend.new("fake", metadata: { path => { title: "Song", format: "vgm", album: nil } })
+    registry = FakeRegistry.new(backend: backend)
+    pool = RubyPlayer::ExtractorPool.new(library: @lib, registry: registry, thread_count: 1)
+
+    work = [RubyPlayer::WorkItem.new(path: path, parent_folder_id: root_folder_id, status: :new)]
+    result = pool.process(work)
+
+    assert_equal 1, result[:processed]
+    assert_equal 0, result[:errored]
+    assert_equal "Zelda Rips", track_row(path)["album"]
+  end
+
+  def test_album_falls_back_to_container_name_for_multitrack
+    path = File.join(@music, "game.nsf")
+    File.write(path, "fake nsf data")
+    backend = FakeBackend.new(
+      "fake",
+      metadata: {
+        [path, 0] => { title: "Track 1", format: "nsf", album: nil },
+        [path, 1] => { title: "Track 2", format: "nsf", album: nil }
+      },
+      track_counts: { path => 2 }
+    )
+    registry = FakeRegistry.new(backend: backend, multitrack_paths: [path])
+    pool = RubyPlayer::ExtractorPool.new(library: @lib, registry: registry, thread_count: 1)
+
+    work = [RubyPlayer::WorkItem.new(path: path, parent_folder_id: root_folder_id, status: :new)]
+    pool.process(work)
+
+    rows = @db.read { |s| s.execute("SELECT * FROM tracks WHERE physical_path = ? ORDER BY subtune_index", [path]) }
+    assert_equal 2, rows.size
+    assert_equal ["game", "game"], rows.map { |r| r["album"] }
+  end
+
+  def test_explicit_album_tag_wins_over_fallback
+    dir = File.join(@music, "Some Folder")
+    FileUtils.mkdir_p(dir)
+    path = File.join(dir, "song.vgm")
+    File.write(path, "fake vgm data")
+    backend = FakeBackend.new("fake", metadata: { path => { title: "Song", format: "vgm", album: "Real Album" } })
+    registry = FakeRegistry.new(backend: backend)
+    pool = RubyPlayer::ExtractorPool.new(library: @lib, registry: registry, thread_count: 1)
+
+    work = [RubyPlayer::WorkItem.new(path: path, parent_folder_id: root_folder_id, status: :new)]
+    pool.process(work)
+
+    assert_equal "Real Album", track_row(path)["album"]
+  end
+
+  def test_extra_tags_persist_to_track_metadata
+    path = File.join(@music, "song.vgm")
+    File.write(path, "fake vgm data")
+    backend = FakeBackend.new(
+      "fake",
+      metadata: { path => { title: "Song", format: "vgm", album: "Album", extra: { "genre" => "VGM" } } }
+    )
+    registry = FakeRegistry.new(backend: backend)
+    pool = RubyPlayer::ExtractorPool.new(library: @lib, registry: registry, thread_count: 1)
+
+    work = [RubyPlayer::WorkItem.new(path: path, parent_folder_id: root_folder_id, status: :new)]
+    pool.process(work)
+
+    track_id = track_row(path)["id"]
+    assert_equal({ "genre" => "VGM" }, @lib.track_metadata_for(track_id))
+  end
+
+  def test_no_extra_tags_leaves_track_metadata_empty
+    path = File.join(@music, "song.vgm")
+    File.write(path, "fake vgm data")
+    backend = FakeBackend.new("fake", metadata: { path => { title: "Song", format: "vgm", album: "Album" } })
+    registry = FakeRegistry.new(backend: backend)
+    pool = RubyPlayer::ExtractorPool.new(library: @lib, registry: registry, thread_count: 1)
+
+    work = [RubyPlayer::WorkItem.new(path: path, parent_folder_id: root_folder_id, status: :new)]
+    pool.process(work)
+
+    track_id = track_row(path)["id"]
+    assert_empty @lib.track_metadata_for(track_id)
+  end
+
+  def test_album_artist_and_year_flow_through_upsert
+    path = File.join(@music, "song.vgm")
+    File.write(path, "fake vgm data")
+    backend = FakeBackend.new(
+      "fake",
+      metadata: { path => { title: "Song", format: "vgm", album: "Album", album_artist: "V.A.", year: 2001 } }
+    )
+    registry = FakeRegistry.new(backend: backend)
+    pool = RubyPlayer::ExtractorPool.new(library: @lib, registry: registry, thread_count: 1)
+
+    work = [RubyPlayer::WorkItem.new(path: path, parent_folder_id: root_folder_id, status: :new)]
+    pool.process(work)
+
+    row = track_row(path)
+    assert_equal "V.A.", row["album_artist"]
+    assert_equal 2001, row["year"]
   end
 end
