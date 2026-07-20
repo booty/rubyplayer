@@ -110,12 +110,13 @@ module RubyPlayer
         # display_rows already force flat/unsorted rendering in :queue mode
         # (see below), so honoring these here would just flip flags with no
         # visible effect -- swallow them instead of confusing the user.
-        if %i[queue focus].include?(@mode) && %i[toggle_group sort_title sort_number sort_artist].include?(action)
+        if %i[queue focus].include?(@mode) &&
+           %i[toggle_group sort_title sort_number sort_artist sort_year].include?(action)
           noun = @mode == :queue ? "Queue order" : "Focus sounds"
           return [:disabled, "#{noun} cannot be sorted or grouped"]
         end
         if playlist_tracks_view? &&
-           %i[toggle_group sort_title sort_number sort_artist].include?(action)
+           %i[toggle_group sort_title sort_number sort_artist sort_year].include?(action)
           return [:disabled, "Playlist order is fixed — ctrl+arrows move tracks"]
         end
         if @mode == :playlists
@@ -125,7 +126,7 @@ module RubyPlayer
             load_tracks
             clamp_selection
             return true
-          when :toggle_group, :sort_number, :sort_artist
+          when :toggle_group, :sort_number, :sort_artist, :sort_year
             return [:disabled, "Playlists sort by name/recency — Y toggles"]
           end
         end
@@ -140,9 +141,10 @@ module RubyPlayer
         when :sort_title then @sort = :title
         when :sort_number then @sort = :number
         when :sort_artist then @sort = :artist
+        when :sort_year then @sort = :year
         else return false
         end
-        apply_sort if %i[sort_title sort_number sort_artist toggle_group].include?(action)
+        apply_sort if %i[sort_title sort_number sort_artist sort_year toggle_group].include?(action)
         clamp_selection
         true
       end
@@ -334,9 +336,13 @@ module RubyPlayer
       end
 
       def grouped_rows
-        groups = filtered_tracks.group_by { |t| t.album.to_s }.sort_by { |album, _| album }
-        groups.flat_map do |album, tracks|
-          album_artist = tracks.map(&:artist).tally.max_by { |_, n| n }&.first
+        groups = filtered_tracks.group_by { |t| [t.album_artist.to_s, t.album.to_s] }
+                                .sort_by { |(album_artist, album), _| [album, album_artist] }
+        groups.flat_map do |(_, album), tracks|
+          # An explicit album_artist tag beats the majority-artist guess —
+          # that guess is why compilations used to show every artist inline.
+          album_artist = tracks.filter_map(&:album_artist).tally.max_by { |_, n| n }&.first ||
+                         tracks.map(&:artist).tally.max_by { |_, n| n }&.first
           [{ type: :header, text: album }] + tracks.map do |t|
             segments = TrackFormatter.render(
               @grouped_formatter, t, album_artist: album_artist, star_glyph: @star_glyph
@@ -368,6 +374,7 @@ module RubyPlayer
         when :title then @tracks.sort_by! { |t| t.title.to_s.downcase }
         when :number then @tracks.sort_by! { |t| [t.album.to_s, t.track_number || 0] }
         when :artist then @tracks.sort_by! { |t| [t.artist.to_s.downcase, t.title.to_s.downcase] }
+        when :year then @tracks.sort_by! { |t| [t.year || 0, t.album.to_s, t.track_number || 0] }
         end
       end
 

@@ -1295,20 +1295,29 @@ module RubyPlayer
       def render_info_modal
         t = @info_track
         stats = @library.play_stats(t.id)
-        rows = [
-          ["Title", t.title], ["Album", t.album], ["Artist", t.artist],
+        rows = [["Title", t.title], ["Album", t.album]]
+        rows << ["Album artist", t.album_artist] unless t.album_artist.to_s.empty?
+        rows += [
+          ["Artist", t.artist],
           ["Composer", t.composer], ["Track #", t.track_number],
           ["Format", t.format], ["Backend", t.backend],
           ["Length", fmt_length(t.duration_ms)],
           ["Rating", t.rating ? "#{@config['glyphs', 'star']} x#{t.rating}" : "unrated"],
-          ["Path", t.physical_path],
         ]
+        rows << ["Year", t.year] if t.year
+        rows << ["Path", t.physical_path]
         rows << ["Archive entry", t.archive_entry] unless t.archive_entry.to_s.empty?
         rows << ["Subtune", t.subtune_index] if t.subtune_index.to_i.positive?
         flags = [("missing" if t.missing == 1), ("errored" if t.errored == 1)].compact
         rows << ["Status", flags.join(", ")] unless flags.empty?
         rows << ["Played", stats[:count].zero? ? "never" :
           "#{stats[:count]}x, #{fmt_length(stats[:total_played_ms])} total (last #{stats[:last_played_at]})"]
+
+        extras = @library.track_metadata_for(t.id)
+        max_extras = @config["ui", "info_metadata_rows"]
+        extras.sort.first(max_extras).each do |key, value|
+          rows << [key, value.to_s.lines.first.to_s.chomp]
+        end
 
         lines = rows.map { |label, value| "#{label}: #{value.nil? || value.to_s.empty? ? '—' : value}" }
         hint = "[i/esc/enter] Close"

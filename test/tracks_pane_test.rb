@@ -26,10 +26,11 @@ class TracksPaneTest < Minitest::Test
     FileUtils.remove_entry(@tmp)
   end
 
-  def add(file, title:, album:, artist:, number:)
+  def add(file, title:, album:, artist:, number:, album_artist: nil, year: nil)
     @lib.upsert_track(folder_id: @folder, physical_path: "/m/#{file}",
                       backend: "gme", format: "vgm", title: title, album: album,
-                      artist: artist, track_number: number, duration_ms: 60_000)
+                      artist: artist, track_number: number, duration_ms: 60_000,
+                      album_artist: album_artist, year: year)
   end
 
   def titles = @pane.display_rows.select { |r| r[:type] == :track }.map { |r| r[:track].title }
@@ -174,6 +175,25 @@ class TracksPaneTest < Minitest::Test
     y_row = apple_rows.find { |r| r[:track].artist == "Y" }
     refute_includes x_row[:text], "X"
     assert_includes y_row[:text], "Y"
+  end
+
+  def test_sort_year_orders_by_year_then_album_then_number
+    # Existing setup tracks have nil year (sort as 0, first).
+    add("y2.vgm", title: "New", album: "Apple", artist: "X", number: 1, year: 2001)
+    add("y1.vgm", title: "Mid", album: "Apple", artist: "X", number: 1, year: 1991)
+    @pane.show(@folder_row)
+    @pane.handle_action(:sort_year)
+    assert_equal %w[Bravo Alpha Charlie Mid New], titles
+  end
+
+  def test_grouping_separates_same_album_name_by_album_artist
+    add("g1.vgm", title: "G1", album: "Hits", artist: "A", number: 1, album_artist: "ArtistOne")
+    add("g2.vgm", title: "G2", album: "Hits", artist: "B", number: 1, album_artist: "ArtistTwo")
+    @pane.show(@folder_row)
+    @pane.handle_action(:toggle_group)
+    headers = @pane.display_rows.select { |r| r[:type] == :header }.map { |r| r[:text] }
+    # Two different "Hits" albums must not merge into one group.
+    assert_equal 2, headers.count("Hits")
   end
 
   def test_grouped_album_header_is_rendered_as_a_dashed_separator

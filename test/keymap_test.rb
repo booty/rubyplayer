@@ -116,6 +116,12 @@ class KeymapTest < Minitest::Test
     assert_nil k.action_for("i", pane: :library)
   end
 
+  def test_sort_year_binding
+    map = RubyPlayer::Keymap.new({})
+    assert_equal :sort_year, map.action_for("e", pane: :tracks)
+    assert_nil map.action_for("e", pane: :library)
+  end
+
   def test_playlist_bindings
     map = RubyPlayer::Keymap.new({})
     assert_equal :add_to_playlist, map.action_for("l", pane: :tracks)

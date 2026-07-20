@@ -1338,6 +1338,25 @@ class AppTest < Minitest::Test
     assert_nil @app.name_prompt
   end
 
+  def test_info_modal_shows_album_artist_year_and_extras
+    lib = @app.instance_variable_get(:@library)
+    root = lib.upsert_folder(parent_id: nil, name: "MM", path: "/mm", kind: "dir")
+    tid = lib.upsert_track(folder_id: root, physical_path: "/mm/a.mp3", backend: "ffmpeg",
+                           format: "mp3", title: "A", album: "Al", artist: "Ar",
+                           composer: nil, track_number: 1, duration_ms: 1000,
+                           album_artist: "V.A.", year: 1998)
+    lib.replace_track_metadata(tid, { "genre" => "Rock" })
+    lib.recompute_counts!
+    @app.library_pane.rebuild!
+    track = lib.find_track(tid)
+    @app.instance_variable_set(:@info_track, track)
+    @app.send(:render)
+    text = back_buffer_text
+    assert_includes text, "Album artist: V.A."
+    assert_includes text, "Year: 1998"
+    assert_includes text, "genre: Rock"
+  end
+
   private
 
   def force_config_reload

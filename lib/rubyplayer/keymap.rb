@@ -63,6 +63,9 @@ module RubyPlayer
         "ctrl_u" => "nav_page_up", "ctrl_d" => "nav_page_down",
         "g" => "toggle_group",
         "y" => "sort_title", "#" => "sort_number", "@" => "sort_artist",
+        # "e" (yEar): "y" was already claimed by sort_title for the same
+        # collision reasons documented above.
+        "e" => "sort_year",
         "i" => "show_track_info",
         # Reorder is ctrl+arrows (not letters): it repeats rapidly when held,
         # and arrow keys already mean "vertical movement" here.

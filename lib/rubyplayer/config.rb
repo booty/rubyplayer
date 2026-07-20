@@ -65,6 +65,10 @@ module RubyPlayer
       "art_accent" => true,
       # Direct-pick rows at the top of the add-to-playlist modal.
       "playlist_recent_count" => 3,
+      # Extra KV metadata rows (e.g. genre, comment) shown in the info modal,
+      # sorted by key and capped so an untrimmed tag dump can't blow out the
+      # modal height.
+      "info_metadata_rows" => 8,
     },
     "audio" => {
       "sample_rate" => "auto",
