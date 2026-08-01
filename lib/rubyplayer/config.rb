@@ -222,7 +222,7 @@ module RubyPlayer
         RubyPlayer.configure { |config| #{assignment} }
         #{end_marker}
       RUBY
-      candidate_source = [user_source, managed.rstrip].reject(&:empty?).join("\n\n") + "\n"
+      candidate_source = "#{[user_source, managed.rstrip].reject(&:empty?).join("\n\n")}\n"
       candidate = ConfigDSL.evaluate(candidate_source, path: @path, defaults: DEFAULTS)
 
       atomic_write(@path, candidate_source)

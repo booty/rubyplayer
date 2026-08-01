@@ -446,7 +446,7 @@ module RubyPlayer
 
     # For the Scanner's diff pass: everything the DB knows under `root`.
     def db_paths_under(root)
-      prefix = root.chomp('/') + '/'
+      prefix = "#{root.chomp('/')}/"
       tracks = {}
       folders = {}
       @db.read do |s|

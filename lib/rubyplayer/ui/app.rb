@@ -247,7 +247,7 @@ module RubyPlayer
       def edit_line(buffer, key)
         case key
         when 'backspace' then buffer[0..-2]
-        when 'space' then buffer + ' '
+        when 'space' then "#{buffer} "
         else key.length == 1 ? buffer + key : nil
         end
       end

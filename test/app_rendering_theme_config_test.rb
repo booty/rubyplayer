@@ -146,7 +146,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
     # setup app before booting a second one.
     @app.shutdown
     path = File.join(@tmp, 'art-config.rb')
-    File.write(path, 'RubyPlayer.configure { |config| config.ui.art_mode = "pane" }' + "\n")
+    File.write(path, "RubyPlayer.configure { |config| config.ui.art_mode = \"pane\" }\n")
     @app = make_app(config_path: path)
     assert_equal :pane, @app.art_mode
   end

@@ -140,33 +140,11 @@ Style/MultilineBlockChain:
   Exclude:
     - 'test/tracks_pane_test.rb'
 
-# Offense count: 6
-# This cop supports unsafe autocorrection (--autocorrect-all).
-# Configuration parameters: EnforcedStyle, Recursive.
-# SupportedStyles: literals, strict
-Style/MutableConstant:
-  Exclude:
-    - 'Rakefile'
-    - 'lib/rubyplayer.rb'
-    - 'lib/rubyplayer/archive_cache.rb'
-    - 'lib/rubyplayer/database.rb'
-    - 'lib/rubyplayer/ui/key_decoder.rb'
-
 # Offense count: 1
 # This cop supports unsafe autocorrection (--autocorrect-all).
 Style/SelectByKind:
   Exclude:
     - 'lib/rubyplayer/ui/tracks_pane.rb'
-
-# Offense count: 4
-# This cop supports unsafe autocorrection (--autocorrect-all).
-# Configuration parameters: Mode.
-Style/StringConcatenation:
-  Exclude:
-    - 'lib/rubyplayer/config.rb'
-    - 'lib/rubyplayer/library.rb'
-    - 'lib/rubyplayer/ui/app.rb'
-    - 'test/app_rendering_theme_config_test.rb'
 
 # Offense count: 8
 # This cop supports unsafe autocorrection (--autocorrect-all).
