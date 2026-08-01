@@ -22,6 +22,10 @@ Read `README.md` for user-facing architecture, configuration, and file map.
 Read `docs/README.md` for documentation authority. This file is canonical
 agent guidance: workflow, invariants, gotchas, refactor seams, testing.
 
+Don't create git worktrees.
+
+Work on git branch `main`
+
 ## Commands
 
 ```sh
