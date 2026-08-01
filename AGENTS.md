@@ -32,6 +32,10 @@ mise exec -- bundle exec rake compile                 # native audio shim
 
 Ruby comes from mise. Plain `bundle exec` may select wrong Ruby.
 
+## Performance Goals
+
+- Idle (no music playing) CPU usage should be near-zero
+
 ## Workflow
 
 - TDD: failing test first, minimal green change, full suite before commit.
@@ -102,3 +106,7 @@ Ruby comes from mise. Plain `bundle exec` may select wrong Ruby.
 - UI tests render into `Screen.new(out: StringIO.new, ...)`; inspect
   `screen.flush` or `@back` cells for fg/bg/bold/italic.
 - Regression tests keep comments explaining original bug.
+
+## Memories
+
+- After a successful feature implementation (tests have passed) commit any lessons learned to memories to help future agent sessions. Look for duplication or contradiction with previous memories, updating/merging/removing older memories as needed.

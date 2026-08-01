@@ -1,4 +1,4 @@
-require "test_helper"
+require 'test_helper'
 
 class ScaffoldTest < Minitest::Test
   def test_version
@@ -6,7 +6,7 @@ class ScaffoldTest < Minitest::Test
   end
 
   def test_fixtures_present
-    assert File.exist?(File.join(FIXTURES, "space-debris.mod"))
-    assert File.exist?(File.join(FIXTURES, "mega-man-2.nsf"))
+    assert File.exist?(File.join(FIXTURES, 'space-debris.mod'))
+    assert File.exist?(File.join(FIXTURES, 'mega-man-2.nsf'))
   end
 end

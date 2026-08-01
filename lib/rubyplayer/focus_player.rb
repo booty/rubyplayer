@@ -1,4 +1,4 @@
-require_relative "audio_format"
+require_relative 'audio_format'
 
 module RubyPlayer
   # Owns SoX process and exposes its raw stdout as a pull-based PCM source.
@@ -30,19 +30,19 @@ module RubyPlayer
       # stdout is raw PCM consumed by PlaybackEngine. stdin/stderr use null so
       # child cannot consume TUI keys or paint diagnostics over terminal frame.
       pid = @spawn.call(*command_for(sound, sample_rate), in: File::NULL,
-                        out: writer, err: File::NULL)
+                                                          out: writer, err: File::NULL)
       # Child owns duplicated write descriptor; parent must close its copy for
       # reader to observe EOF when SoX exits.
       writer.close
       @pid = pid
       @reader = reader
       @current = sound
-      @pending = +"".b
+      @pending = +''.b
       true
     rescue SystemCallError => e
       writer&.close unless writer&.closed?
       reader&.close unless reader&.closed?
-      message = e.is_a?(Errno::ENOENT) ? "sox executable not found" : "unable to start sox: #{e.message}"
+      message = e.is_a?(Errno::ENOENT) ? 'sox executable not found' : "unable to start sox: #{e.message}"
       raise Error, message, cause: e
     end
 
@@ -58,14 +58,15 @@ module RubyPlayer
       # Nonblocking read is essential because this runs on decoder thread; a
       # stalled child must not prevent that thread from receiving stop/shutdown.
       chunk = @reader.read_nonblock(READ_SIZE, exception: false)
-      return +"".b if chunk == :wait_readable
+      return +''.b if chunk == :wait_readable
+
       if chunk.nil?
         finish_after_eof
         return nil
       end
 
       @pending << chunk
-      take_complete_frames(target_bytes) || +"".b
+      take_complete_frames(target_bytes) || +''.b
     rescue EOFError, IOError
       finish_after_eof
       nil
@@ -95,20 +96,18 @@ module RubyPlayer
     def command_for(sound, sample_rate)
       # Raw bytes have no header; AudioFormat supplies exact representation
       # expected by native output while runtime sample rate prevents resampling.
-      ["sox", "-q", "-n", "-t", "raw", *AudioFormat::SOX_RAW_ARGS,
-       "-r", sample_rate.to_s, "-", *sound.sox_args]
+      ['sox', '-q', '-n', '-t', 'raw', *AudioFormat::SOX_RAW_ARGS,
+       '-r', sample_rate.to_s, '-', *sound.sox_args]
     end
 
     def finish_after_eof
-      begin
-        pid = @pid
-        @reader&.close unless @reader&.closed?
-        terminate(pid) if pid
-      rescue SystemCallError => e
-        raise Error, "unable to stop sox: #{e.message}", cause: e
-      ensure
-        clear_state
-      end
+      pid = @pid
+      @reader&.close unless @reader&.closed?
+      terminate(pid) if pid
+    rescue SystemCallError => e
+      raise Error, "unable to stop sox: #{e.message}", cause: e
+    ensure
+      clear_state
     end
 
     def take_complete_frames(target_bytes)
@@ -117,7 +116,7 @@ module RubyPlayer
 
       byte_count = [complete_bytes, target_bytes].min
       data = @pending.byteslice(0, byte_count)
-      @pending = @pending.byteslice(byte_count..) || +"".b
+      @pending = @pending.byteslice(byte_count..) || +''.b
       data
     end
 
@@ -125,13 +124,13 @@ module RubyPlayer
       @pid = nil
       @reader = nil
       @current = nil
-      @pending = +"".b
+      @pending = +''.b
     end
 
     def terminate(pid)
       # TERM normally reaps immediately. One-second monotonic deadline handles
       # wedged generators, then KILL guarantees endless SoX cannot outlive app.
-      @kill.call("TERM", pid)
+      @kill.call('TERM', pid)
       return if reaped?(pid)
 
       deadline = @clock.call + TERMINATE_GRACE_PERIOD_SECONDS
@@ -140,7 +139,7 @@ module RubyPlayer
         return if reaped?(pid)
       end
 
-      @kill.call("KILL", pid)
+      @kill.call('KILL', pid)
       @waitpid.call(pid)
     rescue Errno::ESRCH, Errno::ECHILD
       nil

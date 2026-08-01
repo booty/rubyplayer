@@ -1,6 +1,6 @@
-require "sqlite3"
-require "fileutils"
-require "time"
+require 'sqlite3'
+require 'fileutils'
+require 'time'
 
 module RubyPlayer
   class Database
@@ -89,10 +89,10 @@ module RubyPlayer
       FileUtils.mkdir_p(File.dirname(path))
       backup!(backup_retention) if File.exist?(path)
       open_handle
-      unless user_version == SCHEMA_VERSION
-        rebuild! unless user_version.zero?
-        create_schema
-      end
+      return if user_version == SCHEMA_VERSION
+
+      rebuild! unless user_version.zero?
+      create_schema
     end
 
     def write
@@ -118,12 +118,12 @@ module RubyPlayer
       @db = SQLite3::Database.new(@path)
       @db.results_as_hash = true
       @db.busy_timeout = 5000
-      @db.execute("PRAGMA journal_mode = WAL")
-      @db.execute("PRAGMA foreign_keys = ON")
+      @db.execute('PRAGMA journal_mode = WAL')
+      @db.execute('PRAGMA foreign_keys = ON')
     end
 
     def user_version
-      @db.get_first_value("PRAGMA user_version")
+      @db.get_first_value('PRAGMA user_version')
     end
 
     def create_schema
@@ -138,8 +138,8 @@ module RubyPlayer
     end
 
     def backup!(retention)
-      stamp = Time.now.utc.strftime("%Y%m%d%H%M%S")
-      base = File.basename(@path, ".sqlite3")
+      stamp = Time.now.utc.strftime('%Y%m%d%H%M%S')
+      base = File.basename(@path, '.sqlite3')
       dir = File.dirname(@path)
       FileUtils.cp(@path, File.join(dir, "#{base}-#{stamp}.sqlite3"))
       backups = Dir[File.join(dir, "#{base}-*.sqlite3")].sort

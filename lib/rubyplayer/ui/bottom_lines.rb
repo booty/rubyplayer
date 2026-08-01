@@ -1,4 +1,4 @@
-require_relative "../duration_formatter"
+require_relative '../duration_formatter'
 
 module RubyPlayer
   module UI
@@ -20,14 +20,14 @@ module RubyPlayer
       private
 
       def playback_text(state, theme)
-        next_text = state[:next_track] ? " · Next: #{state[:next_track].title}" : ""
+        next_text = state[:next_track] ? " · Next: #{state[:next_track].title}" : ''
         if state[:focus_sound]
           ["Focus — #{state[:focus_sound].title} ∞ Queue paused#{next_text}", theme[:primary]]
         elsif state[:track]
           track = state[:track]
-          icon = state[:paused] ? @glyphs["pause"] : @glyphs["play"]
+          icon = state[:paused] ? @glyphs['pause'] : @glyphs['play']
           time = "#{fmt(state[:position_ms])}/#{fmt(track.duration_ms)}"
-          artist = track.artist ? " — #{track.artist}" : ""
+          artist = track.artist ? " — #{track.artist}" : ''
           ["#{icon} #{track.title}#{artist}  #{time}#{next_text}", theme[:primary]]
         else
           ["#{@glyphs['pause']} stopped#{next_text}", theme[:text_muted]]
@@ -35,12 +35,12 @@ module RubyPlayer
       end
 
       def eq_bars(levels)
-        chars = @glyphs["eq_chars"]
+        chars = @glyphs['eq_chars']
         levels.map { |l| chars[(l * (chars.size - 1)).round] }.join
       end
 
       def fmt(ms)
-        DurationFormatter.format(ms, unknown: "?:??")
+        DurationFormatter.format(ms, unknown: '?:??')
       end
     end
 
@@ -80,21 +80,21 @@ module RubyPlayer
 
     class HotkeyLine
       LABELS = {
-        cycle_pane: "panes", toggle_play: "play/pause", play_now: "play now",
-        enqueue_front: "queue next", enqueue_end: "queue last", select_queue: "queue",
-        undo: "undo", redo: "redo", toggle_skip_disliked: "skip 1-star", add_path: "add",
-        quit: "quit", nav_up: nil, nav_down: nil, collapse: nil, expand: nil,
+        cycle_pane: 'panes', toggle_play: 'play/pause', play_now: 'play now',
+        enqueue_front: 'queue next', enqueue_end: 'queue last', select_queue: 'queue',
+        undo: 'undo', redo: 'redo', toggle_skip_disliked: 'skip 1-star', add_path: 'add',
+        quit: 'quit', nav_up: nil, nav_down: nil, collapse: nil, expand: nil,
         nav_page_up: nil, nav_page_down: nil,
-        toggle_group: "group", sort_title: "title", sort_number: "number",
-        sort_artist: "artist", sort_year: "year",
-        next_track: "next", seek_back: "seek-", seek_forward: "seek+",
-        remove_from_queue: "remove", remove_library_item: "remove",
-        purge_visible_missing: "purge missing",
-        show_track_info: "info", show_help: "help", show_theme_picker: "theme",
-        filter_tracks: "filter", cycle_art_mode: "art",
-        show_now_playing: "now playing",
-        add_to_playlist: "playlist+", duplicate_playlist: "dup playlist",
-        rename_playlist: "rename", move_entry_up: nil, move_entry_down: nil,
+        toggle_group: 'group', sort_title: 'title', sort_number: 'number',
+        sort_artist: 'artist', sort_year: 'year',
+        next_track: 'next', seek_back: 'seek-', seek_forward: 'seek+',
+        remove_from_queue: 'remove', remove_library_item: 'remove',
+        purge_visible_missing: 'purge missing',
+        show_track_info: 'info', show_help: 'help', show_theme_picker: 'theme',
+        filter_tracks: 'filter', cycle_art_mode: 'art',
+        show_now_playing: 'now playing',
+        add_to_playlist: 'playlist+', duplicate_playlist: 'dup playlist',
+        rename_playlist: 'rename', move_entry_up: nil, move_entry_down: nil
       }.freeze
 
       def initialize(keymap:)
@@ -103,7 +103,8 @@ module RubyPlayer
 
       def render(screen, row:, w:, pane:, theme:, h: 1)
         pairs = @keymap.bindings_for(pane).filter_map do |key, action|
-          next if action.to_s.start_with?("rate_")
+          next if action.to_s.start_with?('rate_')
+
           label = LABELS.fetch(action, action.to_s)
           label ? "#{key.upcase}:#{label}" : nil
         end
@@ -112,7 +113,7 @@ module RubyPlayer
         # (same behavior as the old single-line truncation).
         lines = [[]]
         pairs.each do |pair|
-          candidate = (lines.last + [pair]).join("  ")
+          candidate = (lines.last + [pair]).join('  ')
           if candidate.size <= w || lines.last.empty?
             lines.last << pair
           elsif lines.size < h
@@ -122,7 +123,7 @@ module RubyPlayer
           end
         end
         lines.each_with_index do |line, i|
-          screen.put(row + i, 0, line.join("  ")[0, w], fg: theme[:text_muted])
+          screen.put(row + i, 0, line.join('  ')[0, w], fg: theme[:text_muted])
         end
       end
     end

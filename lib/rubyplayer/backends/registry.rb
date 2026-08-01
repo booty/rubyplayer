@@ -17,7 +17,7 @@ module RubyPlayer
         OPENMPT_EXTS.each { |e| @map[e] = :openmpt }
         FFMPEG_EXTS.each { |e| @map[e] = :ffmpeg }
         (overrides || {}).each do |ext, name|
-          e = ext.start_with?(".") ? ext.downcase : ".#{ext.downcase}"
+          e = ext.start_with?('.') ? ext.downcase : ".#{ext.downcase}"
           @map[e] = name.to_sym
         end
         @instances = {}
@@ -38,17 +38,17 @@ module RubyPlayer
           # extension-mapping logic) can be used/tested without the native
           # libgme library being installed.
           @instances[:gme] ||= begin
-            require_relative "gme"
+            require_relative 'gme'
             Gme.new
           end
         when :openmpt
           @instances[:openmpt] ||= begin
-            require_relative "openmpt"
+            require_relative 'openmpt'
             Openmpt.new
           end
         when :ffmpeg
           @instances[:ffmpeg] ||= begin
-            require_relative "ffmpeg"
+            require_relative 'ffmpeg'
             Ffmpeg.new
           end
         end

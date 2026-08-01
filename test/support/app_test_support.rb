@@ -1,7 +1,7 @@
-require "tmpdir"
-require "fileutils"
-require "stringio"
-require "rubyplayer/ui/app"
+require 'tmpdir'
+require 'fileutils'
+require 'stringio'
+require 'rubyplayer/ui/app'
 
 module TestSupport
   module AppTestSupport
@@ -25,7 +25,7 @@ module TestSupport
       def read(frames)
         return nil unless @playing
 
-        ([0.0] * frames * RubyPlayer::AudioFormat::CHANNELS).pack("e*")
+        ([0.0] * frames * RubyPlayer::AudioFormat::CHANNELS).pack('e*')
       end
 
       def stop
@@ -43,19 +43,19 @@ module TestSupport
 
     def setup
       @tmp = Dir.mktmpdir
-      @music = File.join(@tmp, "music")
+      @music = File.join(@tmp, 'music')
       FileUtils.mkdir_p(@music)
-      FileUtils.cp(File.join(FIXTURES, "space-debris.mod"), @music)
-      FileUtils.cp(File.join(FIXTURES, "shantae.gbs"), @music)
+      FileUtils.cp(File.join(FIXTURES, 'space-debris.mod'), @music)
+      FileUtils.cp(File.join(FIXTURES, 'shantae.gbs'), @music)
       @focus_player = FakeFocusPlayer.new
       @app = make_app
       @app.scan_paths([@music], wait: true)
     end
 
-    def make_app(env: { "TERM_PROGRAM" => "iTerm.app" }, config_path: File.join(@tmp, "config.rb"))
+    def make_app(env: { 'TERM_PROGRAM' => 'iTerm.app' }, config_path: File.join(@tmp, 'config.rb'))
       RubyPlayer::UI::App.new(
         config_path: config_path,
-        data_path: File.join(@tmp, "library.sqlite3"),
+        data_path: File.join(@tmp, 'library.sqlite3'),
         null_audio: true, io_out: StringIO.new, focus_player: @focus_player,
         env: env
       )
@@ -68,20 +68,22 @@ module TestSupport
 
     def select_tracks_for(kind)
       select_library_kind(kind)
-      @app.handle_key("tab")
+      @app.handle_key('tab')
     end
 
     def select_library_kind(kind)
       @app.instance_variable_set(:@active_pane, :library)
-      20.times { @app.handle_key("up") }
+      20.times { @app.handle_key('up') }
       index = @app.library_pane.rows.index { |row| row.kind == kind }
-      index.times { @app.handle_key("down") }
+      index.times { @app.handle_key('down') }
     end
 
     def start_normal_playback
       select_tracks_for(:folder)
-      @app.handle_key("enter")
-      wait_until(timeout: 2, interval: 0.01, failure_message: "timed out waiting for condition") { @app.engine.state[:playing] }
+      @app.handle_key('enter')
+      wait_until(timeout: 2, interval: 0.01, failure_message: 'timed out waiting for condition') do
+        @app.engine.state[:playing]
+      end
     end
 
     def art_region = @app.instance_variable_get(:@art_region)
@@ -94,10 +96,10 @@ module TestSupport
     end
 
     def play_with_cover_art
-      File.binwrite(File.join(@music, "cover.jpg"), File.binread(File.join(FIXTURES, "warrior.jpg")))
+      File.binwrite(File.join(@music, 'cover.jpg'), File.binread(File.join(FIXTURES, 'warrior.jpg')))
       start_normal_playback
       # Art resolves on a background thread and lands as an :art_ready event.
-      wait_until(timeout: 2, interval: 0.01, failure_message: "timed out waiting for condition") do
+      wait_until(timeout: 2, interval: 0.01, failure_message: 'timed out waiting for condition') do
         @app.handle_events
         @app.instance_variable_get(:@art_bytes)
       end
@@ -109,11 +111,11 @@ module TestSupport
 
     def seed_playlist_tracks(names)
       lib = @app.instance_variable_get(:@library)
-      root = lib.upsert_folder(parent_id: nil, name: "PM", path: "/pm", kind: "dir")
+      root = lib.upsert_folder(parent_id: nil, name: 'PM', path: '/pm', kind: 'dir')
       names.map do |n|
-        lib.upsert_track(folder_id: root, physical_path: "/pm/#{n}.vgm", backend: "gme",
-                         format: "vgm", title: n.upcase, album: "Al", artist: "Ar",
-                         composer: "C", track_number: 1, duration_ms: 1000)
+        lib.upsert_track(folder_id: root, physical_path: "/pm/#{n}.vgm", backend: 'gme',
+                         format: 'vgm', title: n.upcase, album: 'Al', artist: 'Ar',
+                         composer: 'C', track_number: 1, duration_ms: 1000)
       end
     end
 
@@ -166,7 +168,10 @@ module TestSupport
     def instrument_flushes
       count = { n: 0 }
       screen = @app.instance_variable_get(:@screen)
-      screen.define_singleton_method(:flush) { count[:n] += 1; super() }
+      screen.define_singleton_method(:flush) do
+        count[:n] += 1
+        super()
+      end
       count
     end
   end

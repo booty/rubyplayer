@@ -1,7 +1,7 @@
-require "json"
-require "open3"
-require_relative "../audio_format"
-require_relative "metadata_helper"
+require 'json'
+require 'open3'
+require_relative '../audio_format'
+require_relative 'metadata_helper'
 
 module RubyPlayer
   module Backends
@@ -17,27 +17,27 @@ module RubyPlayer
       # :extra rather than being silently dropped.
       CONSUMED_TAGS = %w[title album artist album_artist composer track].freeze
 
-      def name = "ffmpeg"
+      def name = 'ffmpeg'
 
       def track_count(_path) = 1
 
       def metadata(path, _subtune_index)
         data = probe(path)
-        stream = data.fetch("streams", []).find { |s| s["codec_type"] == "audio" } || {}
-        format = data.fetch("format", {})
+        stream = data.fetch('streams', []).find { |s| s['codec_type'] == 'audio' } || {}
+        format = data.fetch('format', {})
         tags = merged_tags(format, stream)
 
         {
-          title: MetadataHelper.presence(tags["title"]) || File.basename(path, ".*"),
-          album: MetadataHelper.presence(tags["album"]),
-          artist: MetadataHelper.presence(tags["artist"]) || MetadataHelper.presence(tags["album_artist"]),
-          album_artist: MetadataHelper.presence(tags["album_artist"]),
-          composer: MetadataHelper.presence(tags["composer"]),
-          track_number: parse_track_number(tags["track"]),
+          title: MetadataHelper.presence(tags['title']) || File.basename(path, '.*'),
+          album: MetadataHelper.presence(tags['album']),
+          artist: MetadataHelper.presence(tags['artist']) || MetadataHelper.presence(tags['album_artist']),
+          album_artist: MetadataHelper.presence(tags['album_artist']),
+          composer: MetadataHelper.presence(tags['composer']),
+          track_number: parse_track_number(tags['track']),
           year: parse_year(tags),
           duration_ms: duration_ms(format, stream),
           format: MetadataHelper.format_extension(path),
-          extra: extra_tags(tags),
+          extra: extra_tags(tags)
         }
       end
 
@@ -100,25 +100,25 @@ module RubyPlayer
 
         def start_process(start_ms)
           cmd = [
-            "ffmpeg",
-            "-hide_banner",
-            "-loglevel", "error",
-            "-nostdin",
-            "-ss", format("%.3f", start_ms / 1000.0),
-            "-i", @path,
-            "-map", "0:a:0",
-            "-vn",
-            "-f", "f32le",
-            "-acodec", "pcm_f32le",
-            "-ac", AudioFormat::CHANNELS.to_s,
-            "-ar", @sample_rate.to_s,
-            "pipe:1",
+            'ffmpeg',
+            '-hide_banner',
+            '-loglevel', 'error',
+            '-nostdin',
+            '-ss', format('%.3f', start_ms / 1000.0),
+            '-i', @path,
+            '-map', '0:a:0',
+            '-vn',
+            '-f', 'f32le',
+            '-acodec', 'pcm_f32le',
+            '-ac', AudioFormat::CHANNELS.to_s,
+            '-ar', @sample_rate.to_s,
+            'pipe:1'
           ]
 
           @stdin, @stdout, @stderr, @wait_thread = Open3.popen3(*cmd)
           @stdin.close
         rescue Errno::ENOENT
-          raise Error, "ffmpeg executable not found; install it with `brew install ffmpeg`"
+          raise Error, 'ffmpeg executable not found; install it with `brew install ffmpeg`'
         end
 
         def stop_process
@@ -126,9 +126,9 @@ module RubyPlayer
           @stderr&.close unless @stderr&.closed?
 
           if @wait_thread&.alive?
-            Process.kill("TERM", @wait_thread.pid)
+            Process.kill('TERM', @wait_thread.pid)
             @wait_thread.join(1)
-            Process.kill("KILL", @wait_thread.pid) if @wait_thread.alive?
+            Process.kill('KILL', @wait_thread.pid) if @wait_thread.alive?
           end
         rescue Errno::ESRCH, IOError
           nil
@@ -140,7 +140,7 @@ module RubyPlayer
         end
 
         def read_exactly(bytes_wanted)
-          out = +"".b
+          out = +''.b
           while out.bytesize < bytes_wanted
             chunk = @stdout.readpartial([READ_SIZE, bytes_wanted - out.bytesize].min)
             out << chunk
@@ -155,24 +155,25 @@ module RubyPlayer
 
       def probe(path)
         stdout, stderr, status = Open3.capture3(
-          "ffprobe",
-          "-v", "error",
-          "-print_format", "json",
-          "-show_format",
-          "-show_streams",
-          path,
+          'ffprobe',
+          '-v', 'error',
+          '-print_format', 'json',
+          '-show_format',
+          '-show_streams',
+          path
         )
         raise Error, stderr unless status.success?
+
         JSON.parse(stdout)
       rescue Errno::ENOENT
-        raise Error, "ffprobe executable not found; install it with `brew install ffmpeg`"
+        raise Error, 'ffprobe executable not found; install it with `brew install ffmpeg`'
       rescue JSON::ParserError => e
         raise Error, "ffprobe returned invalid JSON for #{path}: #{e.message}"
       end
 
       def merged_tags(format, stream)
-        format_tags = normalize_tags(format.fetch("tags", {}))
-        stream_tags = normalize_tags(stream.fetch("tags", {}))
+        format_tags = normalize_tags(format.fetch('tags', {}))
+        stream_tags = normalize_tags(stream.fetch('tags', {}))
         format_tags.merge(stream_tags)
       end
 
@@ -182,7 +183,7 @@ module RubyPlayer
       # extra_tags, or an oversized promoted-column value (corrupt/huge frame)
       # bloats a tracks row that every SELECT * view query hydrates.
       def normalize_tags(tags)
-        limit = RubyPlayer::DEFAULTS["library"]["metadata_value_limit"]
+        limit = RubyPlayer::DEFAULTS['library']['metadata_value_limit']
         tags.each_with_object({}) do |(key, value), h|
           # byteslice can split a multibyte character; the scrub after it
           # repairs that (scrub before byteslice wouldn't help, since slicing
@@ -211,7 +212,7 @@ module RubyPlayer
       end
 
       def duration_ms(format, stream)
-        seconds = stream["duration"] || format["duration"]
+        seconds = stream['duration'] || format['duration']
         return nil unless seconds
 
         (seconds.to_f * 1000).round
@@ -220,9 +221,8 @@ module RubyPlayer
       def parse_track_number(value)
         return nil if value.nil? || value.empty?
 
-        value.to_s.split("/", 2).first.to_i
+        value.to_s.split('/', 2).first.to_i
       end
-
     end
   end
 end

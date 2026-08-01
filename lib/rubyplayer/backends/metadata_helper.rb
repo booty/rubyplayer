@@ -8,7 +8,7 @@ module RubyPlayer
       end
 
       def format_extension(path)
-        File.extname(path).delete_prefix(".").downcase
+        File.extname(path).delete_prefix('.').downcase
       end
     end
   end

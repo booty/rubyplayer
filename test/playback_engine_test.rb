@@ -1,12 +1,13 @@
-require "test_helper"
-require "tmpdir"
-require "fileutils"
-require "rubyplayer/audio_output"
-require "rubyplayer/playback_engine"
+require 'test_helper'
+require 'tmpdir'
+require 'fileutils'
+require 'rubyplayer/audio_output'
+require 'rubyplayer/playback_engine'
 
 class PlaybackEngineTest < Minitest::Test
   FakeBus = Class.new do
     attr_reader :events
+
     def initialize = @events = Queue.new
     def publish(type, **payload) = @events << [type, payload]
     def all = Array.new(@events.size) { @events.pop }
@@ -16,7 +17,7 @@ class PlaybackEngineTest < Minitest::Test
   # raises on the first read -- reproduces gme_play failing on a
   # corrupt-but-openable file without needing a real corrupt fixture.
   class BoomHandle
-    def read(_frames) = raise "decode boom: read after open"
+    def read(_frames) = raise 'decode boom: read after open'
     def seek(_ms) = false
     def close; end
   end
@@ -59,7 +60,7 @@ class PlaybackEngineTest < Minitest::Test
       return nil unless @playing
 
       @read_threads << Thread.current
-      ([0.0] * frames * RubyPlayer::AudioFormat::CHANNELS).pack("e*")
+      ([0.0] * frames * RubyPlayer::AudioFormat::CHANNELS).pack('e*')
     end
 
     def stop
@@ -70,9 +71,9 @@ class PlaybackEngineTest < Minitest::Test
 
   def setup
     @tmp = Dir.mktmpdir
-    @db = RubyPlayer::Database.new(path: File.join(@tmp, "library.sqlite3"))
+    @db = RubyPlayer::Database.new(path: File.join(@tmp, 'library.sqlite3'))
     @lib = RubyPlayer::Library.new(@db)
-    @folder = @lib.upsert_folder(parent_id: nil, name: "m", path: @tmp, kind: "dir")
+    @folder = @lib.upsert_folder(parent_id: nil, name: 'm', path: @tmp, kind: 'dir')
     @bus = FakeBus.new
     @focus_source = FakeFocusSource.new
     @audio = RubyPlayer::AudioOutput.new(sample_rate: 44_100, ring_buffer_ms: 200,
@@ -80,8 +81,8 @@ class PlaybackEngineTest < Minitest::Test
     @engine = RubyPlayer::PlaybackEngine.new(
       queue: RubyPlayer::PlayQueue.new, registry: RubyPlayer::Backends::Registry.new,
       audio: @audio, library: @lib, event_bus: @bus,
-      config: RubyPlayer::ConfigStore.new(path: "/nonexistent.rb", create_if_missing: false),
-      archive_cache: RubyPlayer::ArchiveCache.new(root: File.join(@tmp, "cache")),
+      config: RubyPlayer::ConfigStore.new(path: '/nonexistent.rb', create_if_missing: false),
+      archive_cache: RubyPlayer::ArchiveCache.new(root: File.join(@tmp, 'cache')),
       focus_player: @focus_source
     )
     @engine.start
@@ -98,7 +99,7 @@ class PlaybackEngineTest < Minitest::Test
   def make_track(fixture, duration_ms: 2_000, subtune: 0)
     path = File.join(FIXTURES, fixture)
     id = @lib.upsert_track(folder_id: @folder, physical_path: path,
-                           subtune_index: subtune, backend: "gme", format: "gbs",
+                           subtune_index: subtune, backend: 'gme', format: 'gbs',
                            title: fixture, duration_ms: duration_ms)
     @lib.find_track(id)
   end
@@ -106,18 +107,16 @@ class PlaybackEngineTest < Minitest::Test
   def wait_for_event(type, timeout = 5)
     wait_until(timeout: timeout, interval: 0.02,
                failure_message: "timed out waiting for #{type}") do
-      begin
-        ev = @bus.events.pop(true)
-        ev if ev[0] == type
-      rescue ThreadError
-        nil
-      end
+      ev = @bus.events.pop(true)
+      ev if ev[0] == type
+    rescue ThreadError
+      nil
     end
   end
 
   def test_play_pause_skip_lifecycle
-    t1 = make_track("shantae.gbs")
-    t2 = make_track("shantae.gbs", subtune: 1)
+    t1 = make_track('shantae.gbs')
+    t2 = make_track('shantae.gbs', subtune: 1)
     @engine.enqueue_now([t1, t2])
     ev = wait_for_event(:track_started)
     assert_equal t1.id, ev[1][:track].id
@@ -138,8 +137,8 @@ class PlaybackEngineTest < Minitest::Test
   end
 
   def test_stop_ends_playback_without_advancing_queue
-    first = make_track("shantae.gbs")
-    second = make_track("shantae.gbs", subtune: 1)
+    first = make_track('shantae.gbs')
+    second = make_track('shantae.gbs', subtune: 1)
     @engine.enqueue_now([first, second])
     wait_for_event(:track_started)
 
@@ -151,7 +150,7 @@ class PlaybackEngineTest < Minitest::Test
   end
 
   def test_focus_pcm_is_pumped_by_decoder_thread_without_changing_queue
-    queued = make_track("shantae.gbs")
+    queued = make_track('shantae.gbs')
     @engine.enqueue_end([queued])
     sound = RubyPlayer::FocusSounds::ALL.first
 
@@ -159,14 +158,14 @@ class PlaybackEngineTest < Minitest::Test
     wait_until { @focus_source.read_threads.any? }
 
     assert_equal [[sound, 44_100]], @focus_source.played
-    assert @focus_source.read_threads.all? { |thread| thread.name == "decoder" }
+    assert(@focus_source.read_threads.all? { |thread| thread.name == 'decoder' })
     assert_equal [queued.id], @engine.queue_items.map(&:id)
   ensure
     @engine.stop_focus
   end
 
   def test_state_exposes_focus_sound_and_queued_track
-    queued = make_track("shantae.gbs")
+    queued = make_track('shantae.gbs')
     @engine.enqueue_end([queued])
     sound = RubyPlayer::FocusSounds::ALL.first
 
@@ -181,8 +180,8 @@ class PlaybackEngineTest < Minitest::Test
   end
 
   def test_state_exposes_track_after_current_as_next
-    first = make_track("shantae.gbs")
-    second = make_track("shantae.gbs", subtune: 1)
+    first = make_track('shantae.gbs')
+    second = make_track('shantae.gbs', subtune: 1)
     @engine.enqueue_now([first, second])
     wait_for_event(:track_started)
 
@@ -193,7 +192,7 @@ class PlaybackEngineTest < Minitest::Test
   end
 
   def test_state_exposes_queue_head_as_next_while_stopped
-    queued = make_track("shantae.gbs")
+    queued = make_track('shantae.gbs')
     @engine.enqueue_end([queued])
 
     state = @engine.state
@@ -203,11 +202,11 @@ class PlaybackEngineTest < Minitest::Test
   end
 
   def test_plays_track_stored_inside_an_archive
-    zip = File.join(FIXTURES, "musha.zip")
+    zip = File.join(FIXTURES, 'musha.zip')
     id = @lib.upsert_track(folder_id: @folder, physical_path: zip,
-                           archive_entry: "10 - Round Clear.vgm",
-                           backend: "gme", format: "vgm",
-                           title: "Round Clear", duration_ms: 2_000)
+                           archive_entry: '10 - Round Clear.vgm',
+                           backend: 'gme', format: 'vgm',
+                           title: 'Round Clear', duration_ms: 2_000)
     track = @lib.find_track(id)
     @engine.enqueue_now([track])
     wait_until { @engine.state[:playing] }
@@ -218,7 +217,7 @@ class PlaybackEngineTest < Minitest::Test
   end
 
   def test_history_recorded_after_5_percent
-    t = make_track("shantae.gbs", duration_ms: 1_000) # 5% = 50ms
+    t = make_track('shantae.gbs', duration_ms: 1_000) # 5% = 50ms
     @engine.enqueue_now([t])
     wait_for_event(:track_started)
     wait_until { @engine.state[:position_ms] > 100 }
@@ -228,7 +227,7 @@ class PlaybackEngineTest < Minitest::Test
   end
 
   def test_no_history_below_5_percent
-    t = make_track("shantae.gbs", duration_ms: 3_600_000) # 5% = 3 minutes
+    t = make_track('shantae.gbs', duration_ms: 3_600_000) # 5% = 3 minutes
     @engine.enqueue_now([t])
     wait_for_event(:track_started)
     @engine.skip
@@ -238,9 +237,9 @@ class PlaybackEngineTest < Minitest::Test
   end
 
   def test_skip_disliked_tracks
-    t1 = make_track("shantae.gbs", subtune: 2)
-    hated = make_track("shantae.gbs", subtune: 3)
-    t3 = make_track("shantae.gbs", subtune: 4)
+    t1 = make_track('shantae.gbs', subtune: 2)
+    hated = make_track('shantae.gbs', subtune: 3)
+    t3 = make_track('shantae.gbs', subtune: 4)
     @lib.set_rating(hated.id, 1)
     assert @engine.toggle_skip_disliked
     @engine.enqueue_now([t1, hated, t3])
@@ -251,11 +250,11 @@ class PlaybackEngineTest < Minitest::Test
   end
 
   def test_errored_track_is_flagged_and_skipped
-    bad_path = File.join(@tmp, "bad.mod")
-    File.write(bad_path, "junk")
+    bad_path = File.join(@tmp, 'bad.mod')
+    File.write(bad_path, 'junk')
     id = @lib.upsert_track(folder_id: @folder, physical_path: bad_path,
-                           backend: "openmpt", format: "mod", title: "bad")
-    good = make_track("shantae.gbs", subtune: 5)
+                           backend: 'openmpt', format: 'mod', title: 'bad')
+    good = make_track('shantae.gbs', subtune: 5)
     @engine.enqueue_now([@lib.find_track(id), good])
     ev = wait_for_event(:track_error)
     assert_equal id, ev[1][:track].id
@@ -265,8 +264,8 @@ class PlaybackEngineTest < Minitest::Test
   end
 
   def test_remove_track_ids_removes_a_queued_track_that_is_not_playing
-    t1 = make_track("shantae.gbs", subtune: 7)
-    t2 = make_track("shantae.gbs", subtune: 8)
+    t1 = make_track('shantae.gbs', subtune: 7)
+    t2 = make_track('shantae.gbs', subtune: 8)
     @engine.enqueue_now([t1, t2])
     wait_for_event(:track_started)
 
@@ -280,8 +279,8 @@ class PlaybackEngineTest < Minitest::Test
   # through :skip (like #remove_at's index-0 case) so finish_and_advance
   # closes the handle and moves on cleanly.
   def test_remove_track_ids_skips_past_the_currently_playing_track
-    t1 = make_track("shantae.gbs", subtune: 9, duration_ms: 60_000)
-    t2 = make_track("shantae.gbs", subtune: 10)
+    t1 = make_track('shantae.gbs', subtune: 9, duration_ms: 60_000)
+    t2 = make_track('shantae.gbs', subtune: 10)
     @engine.enqueue_now([t1, t2])
     ev = wait_for_event(:track_started)
     assert_equal t1.id, ev[1][:track].id
@@ -294,11 +293,11 @@ class PlaybackEngineTest < Minitest::Test
   end
 
   def test_decoder_survives_mid_decode_read_failure
-    boom_path = File.join(@tmp, "boom.gbs")
-    FileUtils.cp(File.join(FIXTURES, "shantae.gbs"), boom_path)
+    boom_path = File.join(@tmp, 'boom.gbs')
+    FileUtils.cp(File.join(FIXTURES, 'shantae.gbs'), boom_path)
     boom_id = @lib.upsert_track(folder_id: @folder, physical_path: boom_path,
-                                backend: "gme", format: "gbs", title: "boom")
-    good = make_track("shantae.gbs", subtune: 6)
+                                backend: 'gme', format: 'gbs', title: 'boom')
+    good = make_track('shantae.gbs', subtune: 6)
 
     # Swap in a registry that traps boom_path to a backend which opens fine
     # but raises on read, i.e. the failure mode this fix targets (open
@@ -326,7 +325,7 @@ class PlaybackEngineTest < Minitest::Test
   # pump published once per decoded chunk (~10/s at 4096 frames), which
   # defeated the idle loop's attempt to sleep between meaningful changes.
   def test_position_publishes_at_most_once_per_displayed_second
-    t = make_track("shantae.gbs", duration_ms: 60_000)
+    t = make_track('shantae.gbs', duration_ms: 60_000)
     @engine.enqueue_now([t])
     wait_for_event(:track_started)
     wait_until { @engine.state[:position_ms] > 500 }

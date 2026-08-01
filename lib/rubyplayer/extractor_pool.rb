@@ -1,4 +1,4 @@
-require "etc"
+require 'etc'
 
 module RubyPlayer
   # Phase-2 scan: bounded worker pool extracting metadata via FFI backends.
@@ -14,6 +14,7 @@ module RubyPlayer
 
     def process(work_items)
       return { processed: 0, errored: 0 } if work_items.empty?
+
       queue = Thread::Queue.new
       work_items.each { |w| queue << w }
       @thread_count.times { queue << :done }
@@ -54,6 +55,7 @@ module RubyPlayer
     def extract(item)
       stat = File.stat(item.path)
       return extract_archive(item, stat) if @registry.archive?(item.path)
+
       extract_tracks(item.path, item.parent_folder_id, stat)
     rescue StandardError
       # Undecodable file: flag it, keep the pool alive.
@@ -65,17 +67,17 @@ module RubyPlayer
       backend = @registry.backend_for(real)
       count = @registry.multitrack?(real) ? backend.track_count(real) : 1
       physical_path = archive_metadata.fetch(:physical_path, real)
-      archive_entry = archive_metadata.fetch(:archive_entry, "")
+      archive_entry = archive_metadata.fetch(:archive_entry, '')
       virtual_path = archive_metadata.fetch(:virtual_path, real)
       album_fallback = archive_metadata.fetch(:album_fallback) do
-        count > 1 ? File.basename(real, ".*") : File.basename(File.dirname(real))
+        count > 1 ? File.basename(real, '.*') : File.basename(File.dirname(real))
       end
 
       if count > 1
         track_folder_id = @library.upsert_folder(parent_id: folder_id,
-                                                  name: File.basename(real),
-                                                  path: virtual_path, kind: "multitrack",
-                                                  mtime: stat.mtime.to_f, size: stat.size)
+                                                 name: File.basename(real),
+                                                 path: virtual_path, kind: 'multitrack',
+                                                 mtime: stat.mtime.to_f, size: stat.size)
         count.times do |i|
           upsert(physical_path, track_folder_id, i, backend, backend.metadata(real, i), stat,
                  archive_entry: archive_entry, album_fallback: album_fallback)
@@ -93,19 +95,19 @@ module RubyPlayer
 
     def upsert_error_track(real, folder_id, stat, archive_metadata: {})
       physical_path = archive_metadata.fetch(:physical_path, real)
-      archive_entry = archive_metadata.fetch(:archive_entry, "")
+      archive_entry = archive_metadata.fetch(:archive_entry, '')
       title_path = archive_entry.empty? ? real : archive_entry
 
       @library.upsert_track(
         folder_id: folder_id, physical_path: physical_path, archive_entry: archive_entry,
         backend: @registry.backend_name_for(real).to_s,
-        format: File.extname(real).delete_prefix(".").downcase,
+        format: File.extname(real).delete_prefix('.').downcase,
         title: File.basename(title_path), errored: 1,
         file_mtime: stat&.mtime&.to_f, file_size: stat&.size
       )
     end
 
-    def upsert(path, folder_id, subtune, backend, meta, stat, archive_entry: "",
+    def upsert(path, folder_id, subtune, backend, meta, stat, archive_entry: '',
                album_fallback: nil)
       track_id = @library.upsert_track(
         folder_id: folder_id, physical_path: path, archive_entry: archive_entry,
@@ -137,25 +139,26 @@ module RubyPlayer
       dir = @archive_cache.extract(item.path)
       folder_id = @library.upsert_folder(parent_id: item.parent_folder_id,
                                          name: File.basename(item.path), path: item.path,
-                                         kind: "archive", mtime: stat.mtime.to_f, size: stat.size)
-      walk_extracted(dir, folder_id, item.path, "", stat)
+                                         kind: 'archive', mtime: stat.mtime.to_f, size: stat.size)
+      walk_extracted(dir, folder_id, item.path, '', stat)
       true
     end
 
     def walk_extracted(dir, folder_id, archive_path, entry_prefix, stat)
       Dir.children(dir).sort.each do |name|
-        next if name.start_with?(".") # includes the cache's .complete marker
+        next if name.start_with?('.') # includes the cache's .complete marker
+
         real = File.join(dir, name)
         entry = entry_prefix.empty? ? name : "#{entry_prefix}/#{name}"
         virtual = "#{archive_path}/#{entry}"
         if File.directory?(real)
-          id = @library.upsert_folder(parent_id: folder_id, name: name, path: virtual, kind: "dir")
+          id = @library.upsert_folder(parent_id: folder_id, name: name, path: virtual, kind: 'dir')
           walk_extracted(real, id, archive_path, entry, stat)
         elsif @registry.archive?(real)
           # nested archive: its own cache entry, but tracks still hang off the
           # OUTER archive's physical_path with a chained entry ("a.zip/b.vgm")
           id = @library.upsert_folder(parent_id: folder_id, name: name, path: virtual,
-                                      kind: "archive")
+                                      kind: 'archive')
           walk_extracted(@archive_cache.extract(real), id, archive_path, entry, stat)
         elsif @registry.supported?(real)
           extract_tracks(real, folder_id, stat,
@@ -163,7 +166,7 @@ module RubyPlayer
                            physical_path: archive_path,
                            archive_entry: entry,
                            virtual_path: virtual,
-                           album_fallback: File.basename(archive_path, ".*")
+                           album_fallback: File.basename(archive_path, '.*')
                          })
         end
       end

@@ -1,6 +1,6 @@
-require "digest"
-require "fileutils"
-require "open3"
+require 'digest'
+require 'fileutils'
+require 'open3'
 
 module RubyPlayer
   # Extracts archive containers (.zip/.7z/.rar) into a content-addressed
@@ -16,13 +16,13 @@ module RubyPlayer
 
     # Cache entries are keyed by path+mtime+size, so a re-downloaded or
     # edited archive naturally gets a fresh entry instead of stale contents.
-    MARKER = ".complete"
+    MARKER = '.complete'
     DIGEST_LENGTH = 16
     private_constant :DIGEST_LENGTH
 
     attr_reader :root
 
-    def initialize(root:, tar: "bsdtar")
+    def initialize(root:, tar: 'bsdtar')
       @root = root
       @tar = tar
     end
@@ -36,7 +36,7 @@ module RubyPlayer
 
       FileUtils.rm_rf(dir)
       FileUtils.mkdir_p(dir)
-      _out, err, status = Open3.capture3(@tar, "-xf", archive_path, "-C", dir)
+      _out, err, status = Open3.capture3(@tar, '-xf', archive_path, '-C', dir)
       unless status.success?
         FileUtils.rm_rf(dir)
         raise ExtractError, "#{@tar} failed on #{archive_path}: #{err.lines.first&.strip}"
@@ -52,14 +52,12 @@ module RubyPlayer
       return physical_path if entry.nil? || entry.empty?
 
       current = extract(physical_path)
-      parts = entry.split("/")
+      parts = entry.split('/')
       parts.each_with_index do |part, i|
         current = File.join(current, part)
         # A *file* with an archive extension mid-chain is a nested archive;
         # a real directory that merely ends in ".zip" falls through as a dir.
-        if i < parts.size - 1 && File.file?(current) && archive_ext?(current)
-          current = extract(current)
-        end
+        current = extract(current) if i < parts.size - 1 && File.file?(current) && archive_ext?(current)
       end
       current
     end

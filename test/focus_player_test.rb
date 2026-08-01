@@ -1,4 +1,4 @@
-require "test_helper"
+require 'test_helper'
 
 class FocusPlayerTest < Minitest::Test
   class FragmentReader
@@ -42,8 +42,8 @@ class FocusPlayerTest < Minitest::Test
 
     assert player.play(sound, sample_rate: 48_000)
 
-    expected = ["sox", "-q", "-n", "-t", "raw", "-e", "floating-point", "-b", "32",
-                "-c", "2", "-r", "48000", "-", *sound.sox_args]
+    expected = ['sox', '-q', '-n', '-t', 'raw', '-e', 'floating-point', '-b', '32',
+                '-c', '2', '-r', '48000', '-', *sound.sox_args]
     assert_equal expected, calls.first[0]
     assert_equal File::NULL, calls.first[1][:in]
     assert_equal File::NULL, calls.first[1][:err]
@@ -72,7 +72,7 @@ class FocusPlayerTest < Minitest::Test
     player = build_player(spawn: ->(*, **) { 42 }, pipe: -> { [reader, writer] })
     player.play(RubyPlayer::FocusSounds::ALL.first, sample_rate: 48_000)
 
-    assert_equal "".b, player.read(1)
+    assert_equal ''.b, player.read(1)
     assert_predicate player, :playing?
   ensure
     player&.stop
@@ -107,7 +107,7 @@ class FocusPlayerTest < Minitest::Test
     player.play(RubyPlayer::FocusSounds::ALL.first, sample_rate: 48_000)
     player.play(RubyPlayer::FocusSounds::ALL[1], sample_rate: 48_000)
 
-    assert_includes killed, ["TERM", 42]
+    assert_includes killed, ['TERM', 42]
     assert_equal RubyPlayer::FocusSounds::ALL[1], player.current
   ensure
     player&.stop
@@ -123,8 +123,8 @@ class FocusPlayerTest < Minitest::Test
     player.play(RubyPlayer::FocusSounds::ALL.first, sample_rate: 48_000)
 
     assert player.stop
-    assert_includes killed, ["TERM", 42]
-    assert_includes killed, ["KILL", 42]
+    assert_includes killed, ['TERM', 42]
+    assert_includes killed, ['KILL', 42]
     refute_predicate player, :playing?
   end
 
@@ -148,7 +148,7 @@ class FocusPlayerTest < Minitest::Test
     error = assert_raises(RubyPlayer::FocusPlayer::Error) do
       player.play(RubyPlayer::FocusSounds::ALL.first, sample_rate: 48_000)
     end
-    assert_equal "sox executable not found", error.message
+    assert_equal 'sox executable not found', error.message
   end
 
   def test_play_closes_pipe_and_wraps_other_spawn_errors

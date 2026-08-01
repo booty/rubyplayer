@@ -1,4 +1,4 @@
-require "test_helper"
+require 'test_helper'
 
 class ThemeTest < Minitest::Test
   def test_default_is_first_and_falls_back_for_unknown_ids
@@ -8,7 +8,7 @@ class ThemeTest < Minitest::Test
   end
 
   def test_lookup_accepts_string_or_symbol
-    assert_equal RubyPlayer::Theme::THEMES[:neon_cyberpunk], RubyPlayer::Theme["neon_cyberpunk"]
+    assert_equal RubyPlayer::Theme::THEMES[:neon_cyberpunk], RubyPlayer::Theme['neon_cyberpunk']
     assert_equal RubyPlayer::Theme::THEMES[:neon_cyberpunk], RubyPlayer::Theme[:neon_cyberpunk]
   end
 
@@ -30,5 +30,4 @@ class ThemeTest < Minitest::Test
       assert(value.nil? || value.is_a?(Symbol), "Default##{k} should be nil or an ANSI symbol")
     end
   end
-
 end

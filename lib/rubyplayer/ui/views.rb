@@ -14,26 +14,26 @@ module RubyPlayer
       # App#selected_tracks relies on those nils too — enqueueing the History
       # sidebar row itself (rather than a track inside it) must stay a no-op.
       ALL = {
-        queue: View.new(label: "Playback Queue", glyph: "play"),
-        history: View.new(label: "History", glyph: "playlist"),
-        favorites: View.new(label: "Favorite Tracks", glyph: "star",
+        queue: View.new(label: 'Playback Queue', glyph: 'play'),
+        history: View.new(label: 'History', glyph: 'playlist'),
+        favorites: View.new(label: 'Favorite Tracks', glyph: 'star',
                             query: ->(library) { library.favorites }),
-        focus: View.new(label: "Focus", glyph: "focus"),
-        recent: View.new(label: "Recently Added", glyph: "playlist",
+        focus: View.new(label: 'Focus', glyph: 'focus'),
+        recent: View.new(label: 'Recently Added', glyph: 'playlist',
                          query: ->(library) { library.recently_added }),
-        unrated: View.new(label: "Unrated", glyph: "playlist",
+        unrated: View.new(label: 'Unrated', glyph: 'playlist',
                           query: ->(library) { library.unrated }),
-        missing: View.new(label: "Missing", glyph: "missing",
+        missing: View.new(label: 'Missing', glyph: 'missing',
                           query: ->(library) { library.missing_tracks }),
-        failed: View.new(label: "Failed to Scan", glyph: "errored",
+        failed: View.new(label: 'Failed to Scan', glyph: 'errored',
                          query: ->(library) { library.failed_tracks }),
-        most_played: View.new(label: "Most Played", glyph: "play",
+        most_played: View.new(label: 'Most Played', glyph: 'play',
                               query: ->(library) { library.most_played }),
         # nil query: the parent row is a container — enqueueing it wholesale
         # is a no-op (children carry the tracks), same rule as queue/history.
-        playlists: View.new(label: "Playlists", glyph: "playlist"),
-        all: View.new(label: "All Songs", glyph: "dir",
-                      query: ->(library) { library.all_tracks }),
+        playlists: View.new(label: 'Playlists', glyph: 'playlist'),
+        all: View.new(label: 'All Songs', glyph: 'dir',
+                      query: ->(library) { library.all_tracks })
       }.freeze
 
       def self.query(kind, library)

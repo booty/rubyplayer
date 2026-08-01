@@ -5,11 +5,11 @@ module RubyPlayer
       Paste = Struct.new(:text)
       PASTE_START = "\e[200~"
       PASTE_END = "\e[201~"
-      ESC_SEQS = { "[A" => "up", "[B" => "down", "[C" => "right", "[D" => "left",
-                   "[5~" => "pgup", "[6~" => "pgdn",
+      ESC_SEQS = { '[A' => 'up', '[B' => 'down', '[C' => 'right', '[D' => 'left',
+                   '[5~' => 'pgup', '[6~' => 'pgdn',
                    # xterm-style modifier encoding: "1;2" = shift, "1;5" = ctrl
-                   "[1;2A" => "shift_up", "[1;2B" => "shift_down",
-                   "[1;5A" => "ctrl_up", "[1;5B" => "ctrl_down" }.freeze
+                   '[1;2A' => 'shift_up', '[1;2B' => 'shift_down',
+                   '[1;5A' => 'ctrl_up', '[1;5B' => 'ctrl_down' }.freeze
 
       def self.decode(bytes)
         keys = []
@@ -29,22 +29,29 @@ module RubyPlayer
               i = bytes.length
             end
           elsif ch == "\e"
-            if bytes[i + 1] == "["
+            if bytes[i + 1] == '['
               seq_end = i + 2
               seq_end += 1 while seq_end < bytes.length && !bytes[seq_end].match?(/[a-zA-Z~]/)
               seq = bytes[(i + 1)..seq_end]
               keys << ESC_SEQS[seq] if ESC_SEQS[seq] # paste markers & unknown seqs: dropped
               i = seq_end + 1
             else
-              keys << "escape"
+              keys << 'escape'
               i += 1
             end
-          elsif ch == "\r" || ch == "\n" then keys << "enter"; i += 1
-          elsif ch == "\t" then keys << "tab"; i += 1
-          elsif ch == " " then keys << "space"; i += 1
-          elsif ch == "\u007F" then keys << "backspace"; i += 1
-          elsif ch.ord < 32 then keys << "ctrl_#{(ch.ord + 96).chr}"; i += 1
-          else keys << ch; i += 1
+          elsif ["\r", "\n"].include?(ch) then keys << 'enter'
+                                               i += 1
+          elsif ch == "\t" then keys << 'tab'
+                                i += 1
+          elsif ch == ' ' then keys << 'space'
+                               i += 1
+          elsif ch == "\u007F" then keys << 'backspace'
+                                    i += 1
+          elsif ch.ord < 32 then keys << "ctrl_#{(ch.ord + 96).chr}"
+                                 i += 1
+          else
+            keys << ch
+            i += 1
           end
         end
         keys

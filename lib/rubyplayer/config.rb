@@ -1,6 +1,6 @@
-require "fileutils"
-require_relative "config_dsl"
-require_relative "artwork" # DEFAULTS references Artwork::DEFAULT_NAMES
+require 'fileutils'
+require_relative 'config_dsl'
+require_relative 'artwork' # DEFAULTS references Artwork::DEFAULT_NAMES
 
 module RubyPlayer
   DEFAULT_FORMAT_GROUPED = lambda do |track, fmt|
@@ -25,103 +25,103 @@ module RubyPlayer
   end
 
   DEFAULTS = {
-    "ui" => {
-      "library_pane_percent" => 33,
-      "frame_fps" => 30,
+    'ui' => {
+      'library_pane_percent' => 33,
+      'frame_fps' => 30,
       # Idle wake-up cadence when nothing is animating. Bounded above by how
       # long a terminal resize may go unnoticed: SIGWINCH only sets a flag
       # the loop polls, so this is the worst-case resize latency.
-      "idle_poll_seconds" => 0.25,
-      "status_message_seconds" => 5,
+      'idle_poll_seconds' => 0.25,
+      'status_message_seconds' => 5,
       # Album-art re-emission waits this long after the last SIGWINCH: a
       # window drag is a continuous resize storm, and re-sending the image
       # per repaint floods the terminal's input pipeline.
-      "resize_settle_seconds" => 0.5,
-      "seek_seconds" => 10,
-      "format_track_grouped" => DEFAULT_FORMAT_GROUPED,
-      "format_track_ungrouped" => DEFAULT_FORMAT_UNGROUPED,
-      "theme" => "default",
+      'resize_settle_seconds' => 0.5,
+      'seek_seconds' => 10,
+      'format_track_grouped' => DEFAULT_FORMAT_GROUPED,
+      'format_track_ungrouped' => DEFAULT_FORMAT_UNGROUPED,
+      'theme' => 'default',
       # Album art placement: off | inset (bottom of library pane) |
       # pane (dedicated right-hand column) | corner (overlay). "off" is the
       # shipped default because rendering requires iTerm2; the V hotkey
       # cycles modes and persists the choice here.
-      "art_mode" => "off",
-      "art_pane_width" => 30,
+      'art_mode' => 'off',
+      'art_pane_width' => 30,
       # Longest side of the emitted image copy, in pixels. Caps the escape
       # payload so re-emission is always cheap regardless of source size.
-      "art_display_max_px" => 480,
-      "art_corner_rows" => 8,
+      'art_display_max_px' => 480,
+      'art_corner_rows' => 8,
       # Below this height the image is an unreadable smear; the region is
       # dropped instead.
-      "art_min_rows" => 3,
+      'art_min_rows' => 3,
       # Caps the inset height so a tall terminal doesn't let the art squeeze
       # the library list into a sliver.
-      "art_inset_max_rows" => 12,
+      'art_inset_max_rows' => 12,
       # Folder-art basenames tried in order (case-insensitive) before
       # falling back to any image in the track's folder.
-      "art_filenames" => Artwork::DEFAULT_NAMES,
+      'art_filenames' => Artwork::DEFAULT_NAMES,
       # Tint the theme's accent color toward the current cover's average
       # color while a track with art is playing.
-      "art_accent" => true,
+      'art_accent' => true,
       # Direct-pick rows at the top of the add-to-playlist modal.
-      "playlist_recent_count" => 3,
+      'playlist_recent_count' => 3,
       # Extra KV metadata rows (e.g. genre, comment) shown in the info modal,
       # sorted by key and capped so an untrimmed tag dump can't blow out the
       # modal height.
-      "info_metadata_rows" => 8,
+      'info_metadata_rows' => 8
     },
-    "audio" => {
-      "sample_rate" => "auto",
-      "ring_buffer_ms" => 500,
-      "decode_chunk_frames" => 4096,
+    'audio' => {
+      'sample_rate' => 'auto',
+      'ring_buffer_ms' => 500,
+      'decode_chunk_frames' => 4096
     },
-    "scanner" => { "thread_count" => 0 },
-    "library" => {
-      "backup_retention" => 10,
-      "history_limit" => 100,
-      "history_min_percent" => 5,
-      "history_min_seconds_unknown" => 30,
-      "undo_depth" => 10,
-      "archive_cache_dir" => File.join(Dir.home, ".cache", "rubyplayer", "archives"),
-      "archive_tool" => "bsdtar",
+    'scanner' => { 'thread_count' => 0 },
+    'library' => {
+      'backup_retention' => 10,
+      'history_limit' => 100,
+      'history_min_percent' => 5,
+      'history_min_seconds_unknown' => 30,
+      'undo_depth' => 10,
+      'archive_cache_dir' => File.join(Dir.home, '.cache', 'rubyplayer', 'archives'),
+      'archive_tool' => 'bsdtar',
       # Byte cap per stored tag value; a corrupt frame must not bloat the DB.
-      "metadata_value_limit" => 8192,
+      'metadata_value_limit' => 8192
     },
-    "eq" => { "bands" => 16, "fps" => 30 },
-    "glyphs" => {
-      "dir" => "\u{f07b}",
-      "archive" => "\u{f1c6}",
-      "playlist" => "\u{f0cb}",
-      "multitrack" => "\u{f0e2a}",
-      "star" => "\u{2605}",
-      "missing" => "\u{f071}",
-      "errored" => "\u{f057}",
-      "play" => "\u{f04b}",
-      "pause" => "\u{f04c}",
-      "eq_chars" => " \u{2581}\u{2582}\u{2583}\u{2584}\u{2585}\u{2586}\u{2587}\u{2588}",
-      "focus" => "\u{e28c}",
+    'eq' => { 'bands' => 16, 'fps' => 30 },
+    'glyphs' => {
+      'dir' => "\u{f07b}",
+      'archive' => "\u{f1c6}",
+      'playlist' => "\u{f0cb}",
+      'multitrack' => "\u{f0e2a}",
+      'star' => "\u{2605}",
+      'missing' => "\u{f071}",
+      'errored' => "\u{f057}",
+      'play' => "\u{f04b}",
+      'pause' => "\u{f04c}",
+      'eq_chars' => " \u{2581}\u{2582}\u{2583}\u{2584}\u{2585}\u{2586}\u{2587}\u{2588}",
+      'focus' => "\u{e28c}"
     },
-    "keymap" => { "global" => {}, "library" => {}, "tracks" => {} },
-    "backends" => {},
+    'keymap' => { 'global' => {}, 'library' => {}, 'tracks' => {} },
+    'backends' => {}
   }.freeze
 
   def self.config_path
-    File.join(Dir.home, ".config", "rubyplayer", "config.rb")
+    File.join(Dir.home, '.config', 'rubyplayer', 'config.rb')
   end
 
   def self.config_sample_path
-    File.expand_path("../../examples/config.rb", __dir__)
+    File.expand_path('../../examples/config.rb', __dir__)
   end
 
   def self.data_dir
-    File.join(Dir.home, ".local", "share", "rubyplayer")
+    File.join(Dir.home, '.local', 'share', 'rubyplayer')
   end
 
   def self.logger
     @logger ||= begin
-      require "logger"
+      require 'logger'
       FileUtils.mkdir_p(data_dir)
-      Logger.new(File.join(data_dir, "rubyplayer.log"), 2, 1_048_576)
+      Logger.new(File.join(data_dir, 'rubyplayer.log'), 2, 1_048_576)
     end
   end
 
@@ -142,7 +142,7 @@ module RubyPlayer
     def initialize(path: RubyPlayer.config_path, sample_path: RubyPlayer.config_sample_path,
                    create_if_missing: true)
       @path = path
-      @previous_path = File.join(File.dirname(path), "config-previous.rb")
+      @previous_path = File.join(File.dirname(path), 'config-previous.rb')
       @sample_path = sample_path
       @create_if_missing = create_if_missing
       bootstrap_primary! if @create_if_missing
@@ -178,11 +178,11 @@ module RubyPlayer
     end
 
     def persist_theme(id)
-      persist_managed("theme", "config.ui.theme = #{id.to_s.inspect}")
+      persist_managed('theme', "config.ui.theme = #{id.to_s.inspect}")
     end
 
     def persist_art_mode(mode)
-      persist_managed("art_mode", "config.ui.art_mode = #{mode.to_s.inspect}")
+      persist_managed('art_mode', "config.ui.art_mode = #{mode.to_s.inspect}")
     end
 
     private
@@ -192,7 +192,7 @@ module RubyPlayer
 
       source = File.binread(target)
       cleaned = source.gsub(MANAGED_BLOCK_PATTERN) do |block|
-        MANAGED_SETTINGS.include?(Regexp.last_match(1)) ? block : ""
+        MANAGED_SETTINGS.include?(Regexp.last_match(1)) ? block : ''
       end
       atomic_write(target, cleaned) unless cleaned == source
     rescue SystemCallError
@@ -213,8 +213,8 @@ module RubyPlayer
       end_marker = "# rubyplayer: managed #{name} end"
       pattern = /^#{Regexp.escape(begin_marker)}\n.*?^#{Regexp.escape(end_marker)}\n?/m
 
-      source = File.file?(@path) ? File.binread(@path) : ""
-      user_source = source.gsub(pattern, "").rstrip
+      source = File.file?(@path) ? File.binread(@path) : ''
+      user_source = source.gsub(pattern, '').rstrip
       managed = <<~RUBY
         #{begin_marker}
         RubyPlayer.configure { |config| #{assignment} }
@@ -245,8 +245,8 @@ module RubyPlayer
       exclusive_atomic_create(@path, source)
     rescue ConfigError
       raise
-    rescue SystemCallError => error
-      raise ConfigError.new(path: source_path || @path, original: error), cause: error
+    rescue SystemCallError => e
+      raise ConfigError.new(path: source_path || @path, original: e), cause: e
     end
 
     def load_startup
@@ -256,8 +256,8 @@ module RubyPlayer
       candidate = ConfigDSL.evaluate(source, path: @path, defaults: DEFAULTS)
       snapshot(source)
       candidate
-    rescue ConfigError => primary_error
-      load_previous(primary_error)
+    rescue ConfigError => e
+      load_previous(e)
     end
 
     def load_previous(primary_error)
@@ -274,11 +274,11 @@ module RubyPlayer
         candidate = ConfigDSL.evaluate(source, path: @previous_path, defaults: DEFAULTS)
         @startup_error = primary_error
         candidate
-      rescue ConfigError => previous_error
+      rescue ConfigError => e
         raise ConfigError.new(
           path: @path,
           original: primary_error,
-          message: "#{primary_error.message}\nFallback failed: #{previous_error.message}"
+          message: "#{primary_error.message}\nFallback failed: #{e.message}"
         )
       end
     end

@@ -1,4 +1,4 @@
-require_relative "audio_format"
+require_relative 'audio_format'
 
 module RubyPlayer
   # EQ animation source: per-band magnitudes of the most recent audio, via the
@@ -30,7 +30,7 @@ module RubyPlayer
     end
 
     def push(frames_string)
-      floats = frames_string.unpack("e*")
+      floats = frames_string.unpack('e*')
       mono = Array.new(floats.size / STEREO_CHANNELS) do |i|
         offset = i * STEREO_CHANNELS
         (floats[offset] + floats[offset + 1]) * 0.5

@@ -11,7 +11,7 @@ module RubyPlayer
       # for the bottom row.
       DOT_BITS = [
         [0x01, 0x02, 0x04, 0x40], # left sub-column, top to bottom
-        [0x08, 0x10, 0x20, 0x80], # right sub-column
+        [0x08, 0x10, 0x20, 0x80] # right sub-column
       ].freeze
       BASE = 0x2800
 
@@ -28,7 +28,7 @@ module RubyPlayer
         end
 
         h.times do |row|
-          line = +""
+          line = +''
           w.times do |cell|
             mask = 0
             DOT_BITS.each_with_index do |bits, sub|

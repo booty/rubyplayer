@@ -1,5 +1,5 @@
-require "ffi"
-require_relative "audio_format"
+require 'ffi'
+require_relative 'audio_format'
 
 module RubyPlayer
   # FFI turns these Ruby method calls into calls to functions exported by the
@@ -9,13 +9,13 @@ module RubyPlayer
   # reacquiring GVL per audio chunk adds coordination cost without concurrency.
   module RpAudio
     extend FFI::Library
-    ffi_lib File.expand_path("native/librp_audio.dylib", __dir__)
-    attach_function :rp_init, [:uint, :uint, :int], :int
+    ffi_lib File.expand_path('native/librp_audio.dylib', __dir__)
+    attach_function :rp_init, %i[uint uint int], :int
     attach_function :rp_sample_rate, [], :uint
     attach_function :rp_start, [], :int
     attach_function :rp_stop, [], :int
     attach_function :rp_set_paused, [:int], :void
-    attach_function :rp_write, [:pointer, :uint], :uint
+    attach_function :rp_write, %i[pointer uint], :uint
     attach_function :rp_writable_frames, [], :uint
     attach_function :rp_buffered_frames, [], :uint
     attach_function :rp_frames_played, [], :uint64
@@ -33,7 +33,7 @@ module RubyPlayer
 
     attr_reader :sample_rate
 
-    def initialize(sample_rate: "auto", ring_buffer_ms: DEFAULT_RING_BUFFER_MS,
+    def initialize(sample_rate: 'auto', ring_buffer_ms: DEFAULT_RING_BUFFER_MS,
                    null_backend: false, native: RpAudio)
       @native = native
       # Normal track decoding and Focus playback use different Ruby threads,
@@ -42,9 +42,10 @@ module RubyPlayer
       # while the other is inside FFI.
       @write_mutex = Mutex.new
       @closed = false
-      rate = sample_rate == "auto" ? 0 : Integer(sample_rate)
+      rate = sample_rate == 'auto' ? 0 : Integer(sample_rate)
       code = @native.rp_init(rate, ring_buffer_ms, null_backend ? 1 : 0)
       raise "rp_audio init failed (code #{code})" unless code.zero?
+
       @sample_rate = @native.rp_sample_rate
     end
 
@@ -55,13 +56,13 @@ module RubyPlayer
       # put_bytes still copied every byte, allowing an out-of-bounds native
       # write. Reject malformed input before crossing the FFI boundary.
       unless (frames_string.bytesize % AudioFormat::BYTES_PER_FRAME).zero?
-        raise ArgumentError, "PCM data must contain complete stereo float32 frames"
+        raise ArgumentError, 'PCM data must contain complete stereo float32 frames'
       end
 
       @write_mutex.synchronize do
         # Ruby owns lifecycle knowledge, so reject stale producer threads here
         # instead of letting them cross FFI into storage already freed by C.
-        raise IOError, "audio output is closed" if @closed
+        raise IOError, 'audio output is closed' if @closed
 
         frame_count = frames_string.bytesize / AudioFormat::BYTES_PER_FRAME
         # FFI::MemoryPointer owns C-addressable memory. Reuse the largest one
@@ -74,15 +75,18 @@ module RubyPlayer
 
     def start = @native.rp_start
     def stop = @native.rp_stop
+
     # Pause/flush/free alter state shared with writes. They use the same mutex
     # so teardown cannot free the C ring while a producer is still writing it.
     def paused=(flag)
       @write_mutex.synchronize { @native.rp_set_paused(flag ? 1 : 0) }
     end
+
     def writable_frames = @native.rp_writable_frames
     def buffered_frames = @native.rp_buffered_frames
     def frames_played = @native.rp_frames_played
     def flush = @write_mutex.synchronize { @native.rp_flush }
+
     def close
       @write_mutex.synchronize do
         return false if @closed

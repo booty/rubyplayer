@@ -1,4 +1,4 @@
-require_relative "duration_formatter"
+require_relative 'duration_formatter'
 
 module RubyPlayer
   class TrackFormatter
@@ -30,7 +30,7 @@ module RubyPlayer
       def number(value, width: 2, **style)
         return nil if value.nil?
 
-        text(format("%0*d", width, Integer(value)), **style)
+        text(format('%0*d', width, Integer(value)), **style)
       end
 
       def duration(milliseconds, **style)
@@ -45,7 +45,7 @@ module RubyPlayer
         text(@star_glyph * Integer(rating), **style)
       end
 
-      def line(*parts, separator: " ")
+      def line(*parts, separator: ' ')
         kept = parts.flat_map { |part| TrackFormatter.normalize(part) }
         kept.each_with_index.flat_map do |part, index|
           index.zero? ? [part] : [TrackFormatter.fragment(separator, {}), part]
@@ -54,27 +54,29 @@ module RubyPlayer
     end
 
     class << self
-      def render(formatter, track, album_artist: nil, star_glyph: "★")
+      def render(formatter, track, album_artist: nil, star_glyph: '★')
         context = Context.new(album_artist: album_artist, star_glyph: star_glyph)
         normalize(formatter.call(track, context)).map do |fragment|
           { text: fragment.text, **STYLE_KEYS.to_h { |key| [key, fragment.style[key]] } }.freeze
         end.freeze
       rescue ConfigError
         raise
-      rescue StandardError => error
-        raise ConfigError.new(path: "<track formatter>", original: error), cause: error
+      rescue StandardError => e
+        raise ConfigError.new(path: '<track formatter>', original: e), cause: e
       end
 
       def fragment(text, style)
         unknown = style.keys - STYLE_KEYS
-        raise ConfigError.new(path: "<track formatter>",
-                              message: "unknown formatter style #{unknown.first.inspect}") unless unknown.empty?
+        unless unknown.empty?
+          raise ConfigError.new(path: '<track formatter>',
+                                message: "unknown formatter style #{unknown.first.inspect}")
+        end
 
         BOOLEAN_STYLES.each do |key|
           value = style[key]
           next if value.nil? || value == true || value == false
 
-          raise ConfigError.new(path: "<track formatter>",
+          raise ConfigError.new(path: '<track formatter>',
                                 message: "#{key} must be true or false")
         end
         %i[fg bg].each { |key| validate_color!(style[key]) if style[key] }
@@ -89,7 +91,7 @@ module RubyPlayer
         when Array then value.flat_map { |child| normalize(child) }
         else
           raise ConfigError.new(
-            path: "<track formatter>",
+            path: '<track formatter>',
             message: "formatter returned unsupported #{value.class}; expected String, fragment, or Array"
           )
         end
@@ -105,7 +107,7 @@ module RubyPlayer
                 end
         return if valid
 
-        raise ConfigError.new(path: "<track formatter>",
+        raise ConfigError.new(path: '<track formatter>',
                               message: "unsupported formatter color #{color.inspect}")
       end
     end

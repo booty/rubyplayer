@@ -1,4 +1,4 @@
-require "open3"
+require 'open3'
 
 module RubyPlayer
   # Resolves cover art for a track: embedded artwork first (only for
@@ -36,15 +36,13 @@ module RubyPlayer
       key = bytes.hash
       @accent_cache.fetch(key) do
         stdout, _stderr, status = Open3.capture3(
-          "ffmpeg", "-hide_banner", "-loglevel", "error",
-          "-i", "pipe:0", "-vf", "scale=1:1", "-frames:v", "1",
-          "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1",
+          'ffmpeg', '-hide_banner', '-loglevel', 'error',
+          '-i', 'pipe:0', '-vf', 'scale=1:1', '-frames:v', '1',
+          '-f', 'rawvideo', '-pix_fmt', 'rgb24', 'pipe:1',
           stdin_data: bytes, binmode: true
         )
         @accent_cache[key] =
-          if status.success? && stdout.bytesize >= 3
-            format("#%02x%02x%02x", *stdout.bytes.first(3))
-          end
+          (format('#%02x%02x%02x', *stdout.bytes.first(3)) if status.success? && stdout.bytesize >= 3)
       end
     rescue Errno::ENOENT
       nil
@@ -66,22 +64,22 @@ module RubyPlayer
 
     def scale_down(bytes, max_px)
       dims, status = Open3.capture2(
-        "ffprobe", "-v", "error", "-select_streams", "v:0",
-        "-show_entries", "stream=width,height", "-of", "csv=p=0", "pipe:0",
+        'ffprobe', '-v', 'error', '-select_streams', 'v:0',
+        '-show_entries', 'stream=width,height', '-of', 'csv=p=0', 'pipe:0',
         stdin_data: bytes, binmode: true
       )
       return nil unless status.success?
 
-      width, height = dims.strip.split(",").map(&:to_i)
+      width, height = dims.strip.split(',').map(&:to_i)
       return nil if width <= max_px && height <= max_px
 
       # JPEG output: photographic covers compress far smaller than PNG, and
       # iTerm2 decodes it natively. Alpha loss is irrelevant for cover art.
       scaled, _stderr, scale_status = Open3.capture3(
-        "ffmpeg", "-hide_banner", "-loglevel", "error",
-        "-i", "pipe:0",
-        "-vf", "scale=#{max_px}:#{max_px}:force_original_aspect_ratio=decrease",
-        "-frames:v", "1", "-f", "image2", "-c:v", "mjpeg", "-q:v", "4", "pipe:1",
+        'ffmpeg', '-hide_banner', '-loglevel', 'error',
+        '-i', 'pipe:0',
+        '-vf', "scale=#{max_px}:#{max_px}:force_original_aspect_ratio=decrease",
+        '-frames:v', '1', '-f', 'image2', '-c:v', 'mjpeg', '-q:v', '4', 'pipe:1',
         stdin_data: bytes, binmode: true
       )
       scale_status.success? && !scaled.empty? ? scaled : nil
@@ -92,7 +90,7 @@ module RubyPlayer
     def embedded(track)
       # Spawning ffmpeg on a gme/openmpt file would cost a process per track
       # only to learn the format cannot contain art.
-      return nil unless track.backend == "ffmpeg"
+      return nil unless track.backend == 'ffmpeg'
 
       path = track.physical_path
       @embedded_cache.fetch(path) { @embedded_cache[path] = @extractor.call(path) }
@@ -102,9 +100,9 @@ module RubyPlayer
     # copying it out avoids a re-encode and preserves the original bytes.
     def extract_embedded(path)
       stdout, _stderr, status = Open3.capture3(
-        "ffmpeg", "-hide_banner", "-loglevel", "error",
-        "-i", path, "-map", "0:v:0", "-frames:v", "1",
-        "-c", "copy", "-f", "image2", "pipe:1",
+        'ffmpeg', '-hide_banner', '-loglevel', 'error',
+        '-i', path, '-map', '0:v:0', '-frames:v', '1',
+        '-c', 'copy', '-f', 'image2', 'pipe:1',
         binmode: true
       )
       status.success? && !stdout.empty? ? stdout : nil
@@ -118,13 +116,13 @@ module RubyPlayer
 
     def read_folder_image(dir)
       images = Dir.children(dir).select do |entry|
-        IMAGE_EXTENSIONS.include?(File.extname(entry).delete_prefix(".").downcase)
+        IMAGE_EXTENSIONS.include?(File.extname(entry).delete_prefix('.').downcase)
       end
       return nil if images.empty?
 
-      named = @names.filter_map { |name|
-        images.find { |entry| File.basename(entry, ".*").downcase == name }
-      }.first
+      named = @names.filter_map do |name|
+        images.find { |entry| File.basename(entry, '.*').downcase == name }
+      end.first
       # .min (alphabetical) rather than .first: Dir.children order is
       # filesystem-dependent, and the fallback pick should be stable across
       # runs and machines.

@@ -18,13 +18,13 @@ module RubyPlayer
 
       if File.directory?(root)
         root_id = @library.upsert_folder(parent_id: nil, name: File.basename(root),
-                                         path: root, kind: "dir")
+                                         path: root, kind: 'dir')
         seen_folders[root] = true
         walk(root, root_id, known, seen_tracks, seen_folders, work)
       elsif File.file?(root) && @registry.supported?(root)
         parent = File.dirname(root)
         parent_id = @library.upsert_folder(parent_id: nil, name: File.basename(parent),
-                                           path: parent, kind: "dir")
+                                           path: parent, kind: 'dir')
         seen_folders[parent] = true
         diff_file(root, parent_id, known, seen_tracks, seen_folders, work)
       end
@@ -41,10 +41,11 @@ module RubyPlayer
 
     def walk(dir, dir_id, known, seen_tracks, seen_folders, work)
       Dir.children(dir).sort.each do |name|
-        next if name.start_with?(".")
+        next if name.start_with?('.')
+
         path = File.join(dir, name)
         if File.directory?(path)
-          id = @library.upsert_folder(parent_id: dir_id, name: name, path: path, kind: "dir")
+          id = @library.upsert_folder(parent_id: dir_id, name: name, path: path, kind: 'dir')
           seen_folders[path] = true
           walk(path, id, known, seen_tracks, seen_folders, work)
         elsif File.file?(path) && @registry.supported?(path)
@@ -57,6 +58,7 @@ module RubyPlayer
 
     def diff_file(path, parent_folder_id, known, seen_tracks, seen_folders, work)
       return diff_archive(path, parent_folder_id, known, seen_tracks, seen_folders, work) if @registry.archive?(path)
+
       seen_tracks[path] = true
       # a multi-subtune file also has a virtual folder row keyed by its path
       seen_folders[path] = true if @registry.multitrack?(path)

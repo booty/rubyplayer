@@ -1,4 +1,4 @@
-require "test_helper"
+require 'test_helper'
 
 class EventBusTest < Minitest::Test
   def test_publish_drain_roundtrip
@@ -12,11 +12,14 @@ class EventBusTest < Minitest::Test
 
   def test_publish_wakes_select
     bus = RubyPlayer::EventBus.new
-    Thread.new { sleep 0.05; bus.publish(:ping) }
+    Thread.new do
+      sleep 0.05
+      bus.publish(:ping)
+    end
     ready = IO.select([bus.reader], nil, nil, 2)
-    refute_nil ready, "publish should make the reader selectable"
+    refute_nil ready, 'publish should make the reader selectable'
     bus.drain
-    assert_nil IO.select([bus.reader], nil, nil, 0.05), "drain should clear the pipe"
+    assert_nil IO.select([bus.reader], nil, nil, 0.05), 'drain should clear the pipe'
   end
 
   def test_many_publishes_never_block

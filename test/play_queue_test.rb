@@ -1,4 +1,4 @@
-require "test_helper"
+require 'test_helper'
 
 class PlayQueueTest < Minitest::Test
   Item = Struct.new(:id)
@@ -9,8 +9,8 @@ class PlayQueueTest < Minitest::Test
 
   def test_enqueue_end_and_advance
     @q.enqueue_end(%w[a b c])
-    assert_equal "a", @q.first
-    assert_equal "b", @q.advance!
+    assert_equal 'a', @q.first
+    assert_equal 'b', @q.advance!
     assert_equal %w[b c], @q.items
   end
 
@@ -67,14 +67,16 @@ class PlayQueueTest < Minitest::Test
     changes = 0
     @q.on_change { changes += 1 }
     @q.enqueue_end(%w[a b])
-    assert_equal "b", @q.remove_at(1)
+    assert_equal 'b', @q.remove_at(1)
     assert_nil @q.remove_at(9)
     assert_equal %w[a], @q.items
     assert_equal 2, changes # enqueue + successful remove (failed remove: no change)
   end
 
   def test_remove_track_ids_removes_matching_items
-    a, b, c = Item.new(1), Item.new(2), Item.new(3)
+    a = Item.new(1)
+    b = Item.new(2)
+    c = Item.new(3)
     @q.enqueue_end([a, b, c])
     @q.remove_track_ids([2])
     assert_equal [a, c], @q.items
@@ -91,7 +93,8 @@ class PlayQueueTest < Minitest::Test
   end
 
   def test_remove_track_ids_is_undoable
-    a, b = Item.new(1), Item.new(2)
+    a = Item.new(1)
+    b = Item.new(2)
     @q.enqueue_end([a, b])
     @q.remove_track_ids([1])
     assert_equal [b], @q.items

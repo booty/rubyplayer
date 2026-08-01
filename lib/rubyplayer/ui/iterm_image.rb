@@ -8,11 +8,11 @@ module RubyPlayer
       def self.supported?(env = ENV)
         # LC_TERMINAL is iTerm2's own ssh story: TERM_PROGRAM doesn't cross
         # ssh, but LC_* commonly survives via AcceptEnv.
-        env["TERM_PROGRAM"] == "iTerm.app" || env["LC_TERMINAL"] == "iTerm2"
+        env['TERM_PROGRAM'] == 'iTerm.app' || env['LC_TERMINAL'] == 'iTerm2'
       end
 
       def self.escape(bytes, width:, height:)
-        encoded = [bytes].pack("m0")
+        encoded = [bytes].pack('m0')
         # size= lets iTerm2 pre-allocate; inline=1 renders at the cursor
         # instead of offering a download.
         "\e]1337;File=inline=1;size=#{bytes.bytesize};" \

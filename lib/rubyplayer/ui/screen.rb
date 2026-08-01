@@ -3,7 +3,7 @@ module RubyPlayer
     # Value equality (Struct#==) is what makes the front/back diff in Screen#flush
     # work with a plain `!=` comparison per cell -- no custom comparator needed.
     Cell = Struct.new(:ch, :fg, :bg, :bold, :italic, :underline, :dim)
-    BLANK = Cell.new(" ", nil, nil, false, false, false, false).freeze
+    BLANK = Cell.new(' ', nil, nil, false, false, false, false).freeze
 
     # Immediate-mode, double-buffered screen: views `put` into the back buffer
     # every frame, and `flush` diffs it against the front buffer (what's actually
@@ -54,7 +54,7 @@ module RubyPlayer
       # we only emit a new SGR sequence when the style actually changes, so a run
       # of same-styled characters costs one escape instead of one per cell.
       def flush
-        out = +""
+        out = +''
         last_style = :none
         @damage = {}
         @rows.times do |r|
@@ -117,18 +117,18 @@ module RubyPlayer
       end
 
       def sgr(cell)
-        codes = ["0"]
-        codes << "1" if cell.bold
-        codes << "2" if cell.dim
-        codes << "3" if cell.italic
-        codes << "4" if cell.underline
+        codes = ['0']
+        codes << '1' if cell.bold
+        codes << '2' if cell.dim
+        codes << '3' if cell.italic
+        codes << '4' if cell.underline
         codes << color_code(cell.fg, foreground: true) if cell.fg
         codes << color_code(cell.bg, foreground: false) if cell.bg
         "\e[#{codes.join(';')}m"
       end
 
       def color_code(color, foreground:)
-        if color.is_a?(String) && color.start_with?("#")
+        if color.is_a?(String) && color.start_with?('#')
           r = color[1, 2].to_i(16)
           g = color[3, 2].to_i(16)
           b = color[5, 2].to_i(16)

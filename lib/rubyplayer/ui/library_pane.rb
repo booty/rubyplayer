@@ -9,7 +9,7 @@ module RubyPlayer
 
       Row = Struct.new(:kind, :folder, :playlist, :depth, keyword_init: true)
 
-      attr_reader :selection
+      attr_reader :selection, :rows
 
       def initialize(library:, glyphs:)
         @library = library
@@ -39,21 +39,20 @@ module RubyPlayer
         @selection = @selection.clamp(0, [@rows.size - 1, 0].max)
       end
 
-      def rows = @rows
       def selected = @rows[@selection]
 
       def breadcrumb_for(row)
-        return "" unless row
+        return '' unless row
         return "Playlists / #{row.playlist['name']}" if row.kind == :playlist
         return Views.label(row.kind) unless row.kind == :folder
 
-        @breadcrumbs.fetch(row.folder["id"], row.folder["name"].to_s)
+        @breadcrumbs.fetch(row.folder['id'], row.folder['name'].to_s)
       end
 
       def select_playlist(id)
         @expanded[:playlists] = true
         rebuild!
-        index = @rows.index { |r| r.kind == :playlist && r.playlist["id"] == id }
+        index = @rows.index { |r| r.kind == :playlist && r.playlist['id'] == id }
         @selection = index if index
         !!index
       end
@@ -80,30 +79,35 @@ module RubyPlayer
         h.times do |i|
           row = @rows[@scroll + i] or break
           selected = (@scroll + i) == @selection
-          bg = selected ? (active ? theme[:selection_bg] : theme[:surface_alt]) : nil
+          bg = if selected
+                 active ? theme[:selection_bg] : theme[:surface_alt]
+               end
           fg = selected ? theme[:selection_text] : theme[:text]
-          screen.put(y + i, x, " " * content_w, bg: bg) if selected
+          screen.put(y + i, x, ' ' * content_w, bg: bg) if selected
           label, suffix = label_for(row)
-          indent = "  " * row.depth
+          indent = '  ' * row.depth
           screen.put(y + i, x, "#{indent}#{label}"[0, content_w], fg: fg, bg: bg, bold: selected)
-          unless suffix.empty?
-            col = x + indent.size + label.size + 1
-            screen.put(y + i, col, suffix[0, [content_w - (col - x), 0].max],
-                       fg: selected ? fg : theme[:text_muted], bg: bg)
-          end
+          next if suffix.empty?
+
+          col = x + indent.size + label.size + 1
+          screen.put(y + i, col, suffix[0, [content_w - (col - x), 0].max],
+                     fg: selected ? fg : theme[:text_muted], bg: bg)
         end
+        return unless scrollbar
+
         draw_scrollbar(screen, x: x + w - 1, y: y, h: h, total: @rows.size,
-                       theme: theme) if scrollbar
+                               theme: theme)
       end
 
       private
 
       def append_folder(folder, depth, ancestors)
-        path = ancestors + [folder["name"]]
-        @breadcrumbs[folder["id"]] = path.join(" / ")
+        path = ancestors + [folder['name']]
+        @breadcrumbs[folder['id']] = path.join(' / ')
         @rows << Row.new(kind: :folder, folder: folder, depth: depth)
-        return unless @expanded[folder["id"]]
-        @library.children_of(folder["id"]).each { |c| append_folder(c, depth + 1, path) }
+        return unless @expanded[folder['id']]
+
+        @library.children_of(folder['id']).each { |c| append_folder(c, depth + 1, path) }
       end
 
       def toggle_expand(open)
@@ -114,7 +118,7 @@ module RubyPlayer
         when :playlists
           @expanded[:playlists] = open
         when :folder
-          @expanded[row.folder["id"]] = open
+          @expanded[row.folder['id']] = open
         else
           return
         end
@@ -126,11 +130,11 @@ module RubyPlayer
           ["#{@glyphs['playlist']} #{row.playlist['name']}", "(#{row.playlist['track_count']})"]
         elsif row.kind == :folder
           f = row.folder
-          icon = @glyphs[f["kind"]] || @glyphs["dir"]
+          icon = @glyphs[f['kind']] || @glyphs['dir']
           ["#{icon} #{f['name']}", "(#{f['track_count']})"]
         else
           view = Views::ALL.fetch(row.kind)
-          ["#{@glyphs[view.glyph]} #{view.label}", ""]
+          ["#{@glyphs[view.glyph]} #{view.label}", '']
         end
       end
     end

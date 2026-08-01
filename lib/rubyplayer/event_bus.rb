@@ -27,7 +27,7 @@ module RubyPlayer
     def publish(type, **payload)
       @queue << [type, payload]
       begin
-        @writer.write_nonblock("!")
+        @writer.write_nonblock('!')
       rescue IO::WaitWritable, Errno::EAGAIN
         # pipe full — a wakeup byte is already pending, which is all we need
       end

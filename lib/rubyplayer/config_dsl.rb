@@ -1,5 +1,5 @@
-require "did_you_mean"
-require_relative "theme"
+require 'did_you_mean'
+require_relative 'theme'
 
 module RubyPlayer
   class ConfigError < StandardError
@@ -47,9 +47,10 @@ module RubyPlayer
 
       def method_missing(name, *args)
         method = name.to_s
-        if method.end_with?("=")
-          key = method.delete_suffix("=")
+        if method.end_with?('=')
+          key = method.delete_suffix('=')
           return super unless args.one?
+
           unknown!(key) unless @data.key?(key)
           @data[key] = args.first
         elsif args.empty? && @data.key?(method)
@@ -60,7 +61,7 @@ module RubyPlayer
       end
 
       def respond_to_missing?(name, include_private = false)
-        @data.key?(name.to_s.delete_suffix("=")) || super
+        @data.key?(name.to_s.delete_suffix('=')) || super
       end
 
       private
@@ -74,9 +75,9 @@ module RubyPlayer
       end
 
       def unknown!(key)
-        full_path = (@path + [key]).join(".")
+        full_path = (@path + [key]).join('.')
         suggestion = DidYouMean::SpellChecker.new(dictionary: @data.keys).correct(key).first
-        hint = suggestion ? "; did you mean #{suggestion.inspect}?" : ""
+        hint = suggestion ? "; did you mean #{suggestion.inspect}?" : ''
         raise SettingError, "unknown setting #{full_path.inspect}#{hint}"
       end
     end
@@ -88,7 +89,8 @@ module RubyPlayer
       builder = Section.new(data)
       facade = Module.new
       facade.define_singleton_method(:configure) do |&block|
-        raise SettingError, "RubyPlayer.configure requires a block" unless block
+        raise SettingError, 'RubyPlayer.configure requires a block' unless block
+
         block.call(builder)
       end
       scope = Module.new
@@ -98,8 +100,8 @@ module RubyPlayer
       data
     rescue ConfigError
       raise
-    rescue ScriptError, StandardError => error
-      raise ConfigError.new(path: path, original: error), cause: error
+    rescue ScriptError, StandardError => e
+      raise ConfigError.new(path: path, original: e), cause: e
     end
 
     def deep_copy(value)
@@ -126,6 +128,7 @@ module RubyPlayer
         expected = defaults[key]
         if expected.is_a?(Hash)
           raise SettingError, "#{current.join('.')} must be a Hash" unless value.is_a?(Hash)
+
           validate_known_tree!(value, expected, current)
         elsif expected.respond_to?(:call)
           raise SettingError, "#{current.join('.')} must respond to call" unless value.respond_to?(:call)
@@ -152,38 +155,38 @@ module RubyPlayer
         raise SettingError, "#{setting} must be a positive Integer" unless value.is_a?(Integer) && value.positive?
       end
 
-      pane_percent = dig(data, "ui.library_pane_percent")
+      pane_percent = dig(data, 'ui.library_pane_percent')
       unless pane_percent.is_a?(Integer) && pane_percent.between?(1, 99)
-        raise SettingError, "ui.library_pane_percent must be an Integer from 1 to 99"
+        raise SettingError, 'ui.library_pane_percent must be an Integer from 1 to 99'
       end
 
-      scan_threads = dig(data, "scanner.thread_count")
+      scan_threads = dig(data, 'scanner.thread_count')
       unless scan_threads.is_a?(Integer) && scan_threads >= 0
-        raise SettingError, "scanner.thread_count must be a nonnegative Integer"
+        raise SettingError, 'scanner.thread_count must be a nonnegative Integer'
       end
 
-      history_percent = dig(data, "library.history_min_percent")
+      history_percent = dig(data, 'library.history_min_percent')
       unless history_percent.is_a?(Integer) && history_percent.between?(0, 100)
-        raise SettingError, "library.history_min_percent must be an Integer from 0 to 100"
+        raise SettingError, 'library.history_min_percent must be an Integer from 0 to 100'
       end
 
-      sample_rate = dig(data, "audio.sample_rate")
-      unless sample_rate == "auto" || (sample_rate.is_a?(Integer) && sample_rate.positive?)
+      sample_rate = dig(data, 'audio.sample_rate')
+      unless sample_rate == 'auto' || (sample_rate.is_a?(Integer) && sample_rate.positive?)
         raise SettingError, 'audio.sample_rate must be "auto" or a positive Integer'
       end
 
-      theme = dig(data, "ui.theme")
-      raise SettingError, "ui.theme must name a known theme" unless Theme::ALL_IDS.include?(theme.to_sym)
+      theme = dig(data, 'ui.theme')
+      raise SettingError, 'ui.theme must name a known theme' unless Theme::ALL_IDS.include?(theme.to_sym)
     end
 
     def validate_dynamic_maps!(data)
-      data.fetch("backends").each do |extension, backend|
+      data.fetch('backends').each do |extension, backend|
         next if backend.is_a?(String) || backend.is_a?(Symbol)
 
         raise SettingError, "backends[#{extension.inspect}] must be a String or Symbol"
       end
 
-      data.fetch("keymap").each do |scope, bindings|
+      data.fetch('keymap').each do |scope, bindings|
         bindings.each do |key, action|
           next if action.is_a?(String) || action.is_a?(Symbol)
 
@@ -194,7 +197,7 @@ module RubyPlayer
     end
 
     def dig(data, path)
-      path.split(".").reduce(data) { |value, key| value.fetch(key) }
+      path.split('.').reduce(data) { |value, key| value.fetch(key) }
     end
   end
 end

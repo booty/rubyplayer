@@ -1,6 +1,6 @@
-require "time"
-require_relative "audio_output"
-require_relative "level_tap"
+require 'time'
+require_relative 'audio_output'
+require_relative 'level_tap'
 
 module RubyPlayer
   # Owns the decoder thread, the authoritative PlayQueue, and the AudioOutput.
@@ -27,10 +27,10 @@ module RubyPlayer
       @focus_sound = nil
       @library = library
       @bus = event_bus
-      @chunk_frames = config["audio", "decode_chunk_frames"]
-      @history_min_pct = config["library", "history_min_percent"]
-      @history_min_unknown_ms = config["library", "history_min_seconds_unknown"] * MILLISECONDS_PER_SECOND
-      @level_tap = LevelTap.new(bands: config["eq", "bands"],
+      @chunk_frames = config['audio', 'decode_chunk_frames']
+      @history_min_pct = config['library', 'history_min_percent']
+      @history_min_unknown_ms = config['library', 'history_min_seconds_unknown'] * MILLISECONDS_PER_SECOND
+      @level_tap = LevelTap.new(bands: config['eq', 'bands'],
                                 sample_rate: audio.sample_rate)
       @commands = Thread::Queue.new
       # Guards @queue and the @current/@playing/@paused/@frames_base/@seek_offset_ms/
@@ -57,7 +57,7 @@ module RubyPlayer
     def start
       @audio.start
       @thread = Thread.new { run }
-      @thread.name = "decoder"
+      @thread.name = 'decoder'
     end
 
     def shutdown
@@ -124,14 +124,15 @@ module RubyPlayer
     def redo = @mutex.synchronize { @queue.redo }
 
     def toggle_play
-      if @playing
-        @commands << :toggle_pause
-      else
-        @commands << :play_head # no-op in the loop if the queue is empty
-      end
+      @commands << if @playing
+                     :toggle_pause
+                   else
+                     :play_head # no-op in the loop if the queue is empty
+                   end
     end
 
     def skip = @commands << :skip
+
     # Focus playback needs a complete handoff, not merely a queued stop request:
     # both sources share AudioOutput, so Focus must not unpause/write before the
     # decoder has closed its handle, paused the device, and flushed old samples.
@@ -142,6 +143,7 @@ module RubyPlayer
       @commands << [:stop_playback, completed]
       completed.pop
     end
+
     def seek(ms) = @commands << [:seek, ms]
 
     # Focus is a process-backed PCM source, but AudioOutput remains decoder-
@@ -174,6 +176,7 @@ module RubyPlayer
 
     def position_ms
       return 0 unless @playing
+
       played = @audio.frames_played - @frames_base
       @seek_offset_ms + (played * MILLISECONDS_PER_SECOND / @audio.sample_rate)
     end
@@ -196,6 +199,7 @@ module RubyPlayer
         # chance to run -- an intentional shutdown is not a decode error and
         # must never be swallowed/retried.
         break if cmd == :stop
+
         begin
           case cmd
           when :play_head then play_head
@@ -246,7 +250,10 @@ module RubyPlayer
       close_handle
       # Reset before advancing so `state` never reports a track that's no
       # longer decoding as current/playing during the retry window.
-      @mutex.synchronize { @current = nil; @playing = false }
+      @mutex.synchronize do
+        @current = nil
+        @playing = false
+      end
       @library.set_errored(track.id) if track&.id
       safe_publish(:track_error, track: track, message: error.message) if track
       nxt = @mutex.synchronize { @queue.advance! }
@@ -311,6 +318,7 @@ module RubyPlayer
     def playable_path(track)
       entry = track.archive_entry.to_s
       return track.physical_path if entry.empty? || @archive_cache.nil?
+
       @archive_cache.materialize(track.physical_path, entry)
     end
 
@@ -318,6 +326,7 @@ module RubyPlayer
       stop_focus_playback
       target = @mutex.synchronize { @queue.first }
       return if target.nil?
+
       close_handle
       open_and_play(target)
     end
@@ -358,9 +367,7 @@ module RubyPlayer
 
     # Applies the skip-rated-1 rule, advancing past disliked tracks.
     def next_playable(track)
-      while track && @skip_disliked && @library.rating_of(track.id) == 1
-        track = @mutex.synchronize { @queue.advance! }
-      end
+      track = @mutex.synchronize { @queue.advance! } while track && @skip_disliked && @library.rating_of(track.id) == 1
       track
     end
 
@@ -429,6 +436,7 @@ module RubyPlayer
 
     def toggle_pause
       return unless @playing
+
       @mutex.synchronize { @paused = !@paused }
       @audio.paused = @paused
       safe_publish(:playback_state, playing: true, paused: @paused)
@@ -436,6 +444,7 @@ module RubyPlayer
 
     def handle_seek(ms)
       return unless @playing && @handle
+
       @audio.paused = true
       @audio.flush
       @pending = nil
@@ -452,6 +461,7 @@ module RubyPlayer
     def record_history
       track = @current
       return unless track
+
       played_ms = position_ms
       threshold = if track.duration_ms&.positive?
                     track.duration_ms * @history_min_pct / 100.0
@@ -459,6 +469,7 @@ module RubyPlayer
                     @history_min_unknown_ms
                   end
       return if played_ms < threshold
+
       @library.record_history(track_id: track.id,
                               started_at: @started_at.iso8601,
                               ended_at: Time.now.utc.iso8601)

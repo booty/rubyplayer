@@ -1,7 +1,7 @@
-require "ffi"
-require_relative "../runtime_dependencies"
-require_relative "../audio_format"
-require_relative "metadata_helper"
+require 'ffi'
+require_relative '../runtime_dependencies'
+require_relative '../audio_format'
+require_relative 'metadata_helper'
 
 module RubyPlayer
   module Backends
@@ -17,18 +17,18 @@ module RubyPlayer
       # on its own handle/buffer and never re-enters Ruby, so marking them blocking:
       # true lets ExtractorPool's worker threads actually run them concurrently
       # across cores instead of serializing on the GVL.
-      attach_function :gme_open_file, [:string, :pointer, :int], :string, blocking: true
+      attach_function :gme_open_file, %i[string pointer int], :string, blocking: true
       attach_function :gme_track_count, [:pointer], :int
-      attach_function :gme_start_track, [:pointer, :int], :string
-      attach_function :gme_play, [:pointer, :int, :pointer], :string, blocking: true
+      attach_function :gme_start_track, %i[pointer int], :string
+      attach_function :gme_play, %i[pointer int pointer], :string, blocking: true
       attach_function :gme_track_ended, [:pointer], :int
-      attach_function :gme_seek, [:pointer, :int], :string, blocking: true
+      attach_function :gme_seek, %i[pointer int], :string, blocking: true
       attach_function :gme_tell, [:pointer], :int
-      attach_function :gme_set_fade, [:pointer, :int], :void
-      attach_function :gme_track_info, [:pointer, :pointer, :int], :string, blocking: true
+      attach_function :gme_set_fade, %i[pointer int], :void
+      attach_function :gme_track_info, %i[pointer pointer int], :string, blocking: true
       attach_function :gme_free_info, [:pointer], :void
       attach_function :gme_delete, [:pointer], :void
-      attach_function :gme_load_m3u, [:pointer, :string], :string, blocking: true
+      attach_function :gme_load_m3u, %i[pointer string], :string, blocking: true
     end
 
     # Mirrors gme_info_t: 16 ints then 16 const char*. Only the named leading
@@ -48,7 +48,7 @@ module RubyPlayer
     class Gme
       class Error < StandardError; end
 
-      def name = "gme"
+      def name = 'gme'
 
       def track_count(path)
         with_emu(path, GmeLib::GME_INFO_ONLY) { |emu| GmeLib.gme_track_count(emu) }
@@ -58,13 +58,13 @@ module RubyPlayer
         with_emu(path, GmeLib::GME_INFO_ONLY) do |emu|
           with_info(emu, subtune_index) do |info|
             {
-              title: MetadataHelper.presence(info[:song]) || format("Track %02d", subtune_index + 1),
+              title: MetadataHelper.presence(info[:song]) || format('Track %02d', subtune_index + 1),
               album: MetadataHelper.presence(info[:game]),
               artist: MetadataHelper.presence(info[:author]),
               composer: MetadataHelper.presence(info[:author]),
               track_number: subtune_index + 1,
               duration_ms: real_length(info),
-              format: MetadataHelper.format_extension(path),
+              format: MetadataHelper.format_extension(path)
             }
           end
         end
@@ -86,22 +86,23 @@ module RubyPlayer
         def initialize(emu, subtune_index)
           @emu = emu
           info_ptr = FFI::MemoryPointer.new(:pointer)
-          if GmeLib.gme_track_info(@emu, info_ptr, subtune_index).nil?
-            info = GmeInfo.new(info_ptr.read_pointer)
-            # info[:length] (see Gme#real_length) is the true reported duration.
-            # play_length is only a fade target for tracks that loop forever --
-            # it defaults to a flat 150000ms (2:30) when nothing else is known,
-            # which is not a real duration and must never be shown as one.
-            @duration_ms = info[:length] >= 0 ? info[:length] : nil
-            play_len = info[:play_length]
-            GmeLib.gme_set_fade(@emu, play_len) if play_len.positive?
-            GmeLib.gme_free_info(info_ptr.read_pointer)
-          end
+          return unless GmeLib.gme_track_info(@emu, info_ptr, subtune_index).nil?
+
+          info = GmeInfo.new(info_ptr.read_pointer)
+          # info[:length] (see Gme#real_length) is the true reported duration.
+          # play_length is only a fade target for tracks that loop forever --
+          # it defaults to a flat 150000ms (2:30) when nothing else is known,
+          # which is not a real duration and must never be shown as one.
+          @duration_ms = info[:length] >= 0 ? info[:length] : nil
+          play_len = info[:play_length]
+          GmeLib.gme_set_fade(@emu, play_len) if play_len.positive?
+          GmeLib.gme_free_info(info_ptr.read_pointer)
         end
 
         # Returns packed float32 stereo, or nil once the track has ended.
         def read(frames)
           return nil if @emu.nil? || GmeLib.gme_track_ended(@emu) != 0
+
           samples = frames * AudioFormat::CHANNELS
           if @buf.nil? || @buf_samples != samples
             @buf = FFI::MemoryPointer.new(:short, samples)
@@ -109,9 +110,10 @@ module RubyPlayer
           end
           err = GmeLib.gme_play(@emu, samples, @buf)
           raise Error, err if err
-          @buf.read_bytes(samples * 2).unpack("s<*").map do |s|
+
+          @buf.read_bytes(samples * 2).unpack('s<*').map do |s|
             s / AudioFormat::GME_INT16_SCALE
-          end.pack("e*")
+          end.pack('e*')
         end
 
         def seek(ms)
@@ -138,6 +140,7 @@ module RubyPlayer
         out = FFI::MemoryPointer.new(:pointer)
         err = GmeLib.gme_open_file(path, out, sample_rate)
         raise Error, err if err
+
         emu = out.read_pointer
         load_sibling_m3u(emu, path)
         emu
@@ -171,13 +174,13 @@ module RubyPlayer
         info_ptr = FFI::MemoryPointer.new(:pointer)
         err = GmeLib.gme_track_info(emu, info_ptr, subtune_index)
         raise Error, err if err
+
         begin
           yield GmeInfo.new(info_ptr.read_pointer)
         ensure
           GmeLib.gme_free_info(info_ptr.read_pointer)
         end
       end
-
     end
   end
 end

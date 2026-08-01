@@ -1,7 +1,7 @@
-require "ffi"
-require_relative "../runtime_dependencies"
-require_relative "../audio_format"
-require_relative "metadata_helper"
+require 'ffi'
+require_relative '../runtime_dependencies'
+require_relative '../audio_format'
+require_relative 'metadata_helper'
 
 module RubyPlayer
   module Backends
@@ -15,35 +15,35 @@ module RubyPlayer
       # them blocking: true lets ExtractorPool's worker threads run them
       # concurrently across cores during scanning instead of serializing on the GVL.
       attach_function :openmpt_module_create_from_memory2,
-                      [:pointer, :size_t, :pointer, :pointer, :pointer, :pointer,
-                       :pointer, :pointer, :pointer], :pointer, blocking: true
+                      %i[pointer size_t pointer pointer pointer pointer
+                         pointer pointer pointer], :pointer, blocking: true
       attach_function :openmpt_module_destroy, [:pointer], :void
       attach_function :openmpt_module_read_interleaved_float_stereo,
-                      [:pointer, :int32, :size_t, :pointer], :size_t, blocking: true
+                      %i[pointer int32 size_t pointer], :size_t, blocking: true
       attach_function :openmpt_module_get_duration_seconds, [:pointer], :double, blocking: true
-      attach_function :openmpt_module_set_position_seconds, [:pointer, :double], :double
+      attach_function :openmpt_module_set_position_seconds, %i[pointer double], :double
       attach_function :openmpt_module_get_position_seconds, [:pointer], :double
-      attach_function :openmpt_module_get_metadata, [:pointer, :string], :pointer, blocking: true
+      attach_function :openmpt_module_get_metadata, %i[pointer string], :pointer, blocking: true
       attach_function :openmpt_free_string, [:pointer], :void
     end
 
     class Openmpt
       class Error < StandardError; end
 
-      def name = "openmpt"
+      def name = 'openmpt'
 
       def track_count(_path) = 1 # tracker modules are single-song
 
       def metadata(path, _subtune_index)
         with_mod(path) do |mod|
           {
-            title: MetadataHelper.presence(read_meta(mod, "title")) || File.basename(path, ".*"),
+            title: MetadataHelper.presence(read_meta(mod, 'title')) || File.basename(path, '.*'),
             album: nil,
-            artist: MetadataHelper.presence(read_meta(mod, "artist")),
-            composer: MetadataHelper.presence(read_meta(mod, "artist")),
+            artist: MetadataHelper.presence(read_meta(mod, 'artist')),
+            composer: MetadataHelper.presence(read_meta(mod, 'artist')),
             track_number: nil,
             duration_ms: (OpenmptLib.openmpt_module_get_duration_seconds(mod) * 1000).round,
-            format: MetadataHelper.format_extension(path),
+            format: MetadataHelper.format_extension(path)
           }
         end
       end
@@ -74,6 +74,7 @@ module RubyPlayer
           end
           n = OpenmptLib.openmpt_module_read_interleaved_float_stereo(@mod, @sample_rate, frames, @buf)
           return nil if n.zero? # end of module
+
           @buf.read_bytes(n * AudioFormat::BYTES_PER_FRAME)
         end
 
@@ -110,6 +111,7 @@ module RubyPlayer
           ptr, data.bytesize, nil, nil, nil, nil, nil, nil, nil
         )
         raise Error, "libopenmpt could not load #{path}" if mod.null?
+
         mod
       end
 
@@ -123,11 +125,11 @@ module RubyPlayer
       def read_meta(mod, key)
         ptr = OpenmptLib.openmpt_module_get_metadata(mod, key)
         return nil if ptr.null?
-        str = ptr.read_string.dup.force_encoding("UTF-8")
+
+        str = ptr.read_string.dup.force_encoding('UTF-8')
         OpenmptLib.openmpt_free_string(ptr)
         str
       end
-
     end
   end
 end

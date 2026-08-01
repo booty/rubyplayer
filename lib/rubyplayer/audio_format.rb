@@ -8,7 +8,7 @@ module RubyPlayer
     BYTES_PER_SAMPLE = BITS_PER_SAMPLE / 8
     BYTES_PER_FRAME = CHANNELS * BYTES_PER_SAMPLE
     GME_INT16_SCALE = 32_768.0
-    SOX_RAW_ARGS = ["-e", "floating-point", "-b", BITS_PER_SAMPLE.to_s,
-                    "-c", CHANNELS.to_s].freeze
+    SOX_RAW_ARGS = ['-e', 'floating-point', '-b', BITS_PER_SAMPLE.to_s,
+                    '-c', CHANNELS.to_s].freeze
   end
 end

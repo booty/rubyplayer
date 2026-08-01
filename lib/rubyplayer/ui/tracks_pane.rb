@@ -1,4 +1,4 @@
-require "time"
+require 'time'
 
 module RubyPlayer
   module UI
@@ -18,17 +18,17 @@ module RubyPlayer
         @group_by_album = false
         @sort = nil
         @playlist_sort = :recency
-        @filter = ""
+        @filter = ''
         @view_states = {}
         @page_size = ScrollableList::PAGE_SIZE_FALLBACK
         update_config(config)
       end
 
       def update_config(config)
-        @star_glyph = config["glyphs", "star"]
-        @grouped_formatter = config["ui", "format_track_grouped"]
-        @flat_formatter = config["ui", "format_track_ungrouped"]
-        @history_limit = config["library", "history_limit"]
+        @star_glyph = config['glyphs', 'star']
+        @grouped_formatter = config['ui', 'format_track_grouped']
+        @flat_formatter = config['ui', 'format_track_ungrouped']
+        @history_limit = config['library', 'history_limit']
         invalidate_rows!
       end
 
@@ -36,11 +36,11 @@ module RubyPlayer
         save_view_state if @mode
         @mode =
           case library_row.kind
-          when :folder then [:folder, library_row.folder["id"]]
-          when :playlist then [:playlist, library_row.playlist["id"]]
+          when :folder then [:folder, library_row.folder['id']]
+          when :playlist then [:playlist, library_row.playlist['id']]
           else library_row.kind
           end
-        @breadcrumb = breadcrumb || library_row.folder&.fetch("name", nil)
+        @breadcrumb = breadcrumb || library_row.folder&.fetch('name', nil)
         # @group_by_album/@sort are the user's preference and are shared across
         # views (folder/history/favorites/queue) -- they are NOT reset here.
         # Resetting them on entering :queue used to destroy a folder's sort as
@@ -48,16 +48,16 @@ module RubyPlayer
         # display_rows force the queue to render flat/unsorted regardless of
         # these flags (see below), so the stored preference survives the trip.
         state = @view_states.fetch(@mode, {})
-        @filter = state.fetch(:filter, "")
+        @filter = state.fetch(:filter, '')
         load_tracks
         restore_view_state(state)
       end
 
       def title(max_width: nil)
         label = if @mode.is_a?(Array)
-                  ["Tracks", @breadcrumb].compact.join(" · ")
+                  ['Tracks', @breadcrumb].compact.join(' · ')
                 else
-                  Views.label(@mode) || "Tracks"
+                  Views.label(@mode) || 'Tracks'
                 end
         text = "#{label} · #{filtered_tracks.size}"
         return text unless max_width && text.size > max_width
@@ -82,7 +82,7 @@ module RubyPlayer
         restore_selection(identity, 0)
       end
 
-      def clear_filter = self.filter = ""
+      def clear_filter = self.filter = ''
 
       def load_tracks
         # Focus reuses this pane's navigation and rendering shell, but its rows
@@ -112,13 +112,14 @@ module RubyPlayer
         # visible effect -- swallow them instead of confusing the user.
         if %i[queue focus].include?(@mode) &&
            %i[toggle_group sort_title sort_number sort_artist sort_year].include?(action)
-          noun = @mode == :queue ? "Queue order" : "Focus sounds"
+          noun = @mode == :queue ? 'Queue order' : 'Focus sounds'
           return [:disabled, "#{noun} cannot be sorted or grouped"]
         end
         if playlist_tracks_view? &&
            %i[toggle_group sort_title sort_number sort_artist sort_year].include?(action)
-          return [:disabled, "Playlist order is fixed — ctrl+arrows move tracks"]
+          return [:disabled, 'Playlist order is fixed — ctrl+arrows move tracks']
         end
+
         if @mode == :playlists
           case action
           when :sort_title
@@ -127,7 +128,7 @@ module RubyPlayer
             clamp_selection
             return true
           when :toggle_group, :sort_number, :sort_artist, :sort_year
-            return [:disabled, "Playlists sort by name/recency — Y toggles"]
+            return [:disabled, 'Playlists sort by name/recency — Y toggles']
           end
         end
         case action
@@ -214,8 +215,10 @@ module RubyPlayer
         h.times do |i|
           row = rows[@scroll + i] or break
           selected = (@scroll + i) == @selection
-          bg = selected ? (active ? theme[:selection_bg] : theme[:surface_alt]) : nil
-          screen.put(y + i, x, " " * content_w, bg: bg) if selected
+          bg = if selected
+                 active ? theme[:selection_bg] : theme[:surface_alt]
+               end
+          screen.put(y + i, x, ' ' * content_w, bg: bg) if selected
           if row[:type] == :header
             screen.put(y + i, x, header_line(row[:text], content_w), fg: theme[:info], bg: bg, bold: true)
           elsif row[:type] == :empty
@@ -224,8 +227,10 @@ module RubyPlayer
             render_track_row(screen, row, x, y + i, content_w, selected: selected, bg: bg, theme: theme)
           end
         end
+        return unless scrollbar
+
         draw_scrollbar(screen, x: x + w - 1, y: y, h: h, total: rows.size,
-                       theme: theme) if scrollbar
+                               theme: theme)
       end
 
       private
@@ -249,18 +254,19 @@ module RubyPlayer
         # break row-index == playlist-position, which move/remove rely on.
         return flat_rows if playlist_tracks_view?
         return flat_rows unless @group_by_album
+
         grouped_rows
       end
 
       def empty_message
-        return "No matches — press / to edit filter" unless @filter.empty? || @tracks.empty?
+        return 'No matches — press / to edit filter' unless @filter.empty? || @tracks.empty?
 
         case @mode
-        when :queue then "Queue empty — press N to add selected tracks"
-        when :playlists then "No playlists yet — press L on a track to create one"
-        when :history then "No playback history yet"
-        when :favorites then "No favorites yet — press 1–6 while a track plays"
-        else "No tracks in this view"
+        when :queue then 'Queue empty — press N to add selected tracks'
+        when :playlists then 'No playlists yet — press L on a track to create one'
+        when :history then 'No playback history yet'
+        when :favorites then 'No favorites yet — press 1–6 while a track plays'
+        else 'No tracks in this view'
         end
       end
 
@@ -277,8 +283,8 @@ module RubyPlayer
           fg = selected ? theme[:selection_text] : resolve_color(seg[:fg] || :text, theme)
           segment_bg = selected ? theme[:selection_bg] : resolve_color(seg[:bg], theme)
           screen.put(y, col, chunk, fg: fg, bg: segment_bg || bg,
-                     bold: selected || seg[:bold], italic: seg[:italic],
-                     underline: seg[:underline], dim: seg[:dim])
+                                    bold: selected || seg[:bold], italic: seg[:italic],
+                                    underline: seg[:underline], dim: seg[:dim])
           col += chunk.size
           remaining -= chunk.size
         end
@@ -312,7 +318,7 @@ module RubyPlayer
           count = "  (#{p['track_count']})"
           used = "  #{relative_time(p['updated_at'])}"
           { type: :playlist, text: "#{p['name']}#{count}#{used}",
-            segments: [{ text: p["name"], bold: true },
+            segments: [{ text: p['name'], bold: true },
                        { text: count, fg: :text_muted },
                        { text: used, fg: :text_muted }],
             playlist: p }
@@ -321,7 +327,7 @@ module RubyPlayer
 
       def relative_time(iso)
         seconds = Time.now.utc - Time.parse(iso)
-        return "just now" if seconds < 60
+        return 'just now' if seconds < 60
         return "#{(seconds / 60).to_i}m ago" if seconds < 3600
         return "#{(seconds / 3600).to_i}h ago" if seconds < 86_400
 
@@ -393,7 +399,7 @@ module RubyPlayer
           values = if @mode == :focus
                      [item.title]
                    elsif @mode == :playlists
-                     [item["name"]]
+                     [item['name']]
                    else
                      [item.title, item.artist, item.album, item.composer,
                       item.physical_path, item.archive_entry]
@@ -407,7 +413,7 @@ module RubyPlayer
         case row&.dig(:type)
         when :track then [:track, row[:track].id]
         when :focus then [:focus, row[:focus_sound].id]
-        when :playlist then [:playlist, row[:playlist]["id"]]
+        when :playlist then [:playlist, row[:playlist]['id']]
         end
       end
 
@@ -429,7 +435,7 @@ module RubyPlayer
           case identity&.first
           when :track then row[:type] == :track && row[:track].id == identity[1]
           when :focus then row[:type] == :focus && row[:focus_sound].id == identity[1]
-          when :playlist then row[:type] == :playlist && row[:playlist]["id"] == identity[1]
+          when :playlist then row[:type] == :playlist && row[:playlist]['id'] == identity[1]
           end
         end
         @selection = match || fallback
@@ -451,11 +457,10 @@ module RubyPlayer
         rows = display_rows
         @selection = @selection.clamp(0, [rows.size - 1, 0].max)
         # never rest on a header
-        if rows[@selection] && rows[@selection][:type] == :header
-          @selection += 1 if @selection + 1 < rows.size
-        end
-      end
+        return unless rows[@selection] && rows[@selection][:type] == :header
 
+        @selection += 1 if @selection + 1 < rows.size
+      end
     end
   end
 end

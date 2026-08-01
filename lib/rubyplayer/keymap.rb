@@ -5,49 +5,49 @@ module RubyPlayer
   # terminals reliably (spec §9).
   class Keymap
     DEFAULTS = {
-      "global" => {
-        "tab" => "cycle_pane",
-        "space" => "toggle_play",
-        "enter" => "play_now",
-        "q" => "enqueue_front",
-        "n" => "enqueue_end",
-        "p" => "select_queue",
-        "u" => "undo",
-        "ctrl_r" => "redo",
-        "s" => "toggle_skip_disliked",
-        "a" => "add_path",
-        "/" => "filter_tracks",
-        "0" => "rate_0", "1" => "rate_1", "2" => "rate_2", "3" => "rate_3",
-        "4" => "rate_4", "5" => "rate_5", "6" => "rate_6",
-        "ctrl_c" => "quit",
-        ">" => "next_track", "[" => "seek_back", "]" => "seek_forward",
-        "x" => "remove_from_queue",
-        "ctrl_x" => "purge_visible_missing",
-        "?" => "show_help",
-        "t" => "show_theme_picker",
+      'global' => {
+        'tab' => 'cycle_pane',
+        'space' => 'toggle_play',
+        'enter' => 'play_now',
+        'q' => 'enqueue_front',
+        'n' => 'enqueue_end',
+        'p' => 'select_queue',
+        'u' => 'undo',
+        'ctrl_r' => 'redo',
+        's' => 'toggle_skip_disliked',
+        'a' => 'add_path',
+        '/' => 'filter_tracks',
+        '0' => 'rate_0', '1' => 'rate_1', '2' => 'rate_2', '3' => 'rate_3',
+        '4' => 'rate_4', '5' => 'rate_5', '6' => 'rate_6',
+        'ctrl_c' => 'quit',
+        '>' => 'next_track', '[' => 'seek_back', ']' => 'seek_forward',
+        'x' => 'remove_from_queue',
+        'ctrl_x' => 'purge_visible_missing',
+        '?' => 'show_help',
+        't' => 'show_theme_picker',
         # "v" for "view": cycles album-art placement (off/inset/pane/corner).
-        "v" => "cycle_art_mode",
-        "o" => "show_now_playing",
+        'v' => 'cycle_art_mode',
+        'o' => 'show_now_playing',
         # "l" for "list": opens the add-to-playlist modal on the highlighted track.
-        "l" => "add_to_playlist",
+        'l' => 'add_to_playlist'
       },
       # Page navigation gets three spellings per direction: pgup/pgdn for
       # full-size keyboards, shift+arrows for keyboards without those keys,
       # and ctrl_u/ctrl_d for vim habits.
-      "library" => {
-        "up" => "nav_up", "down" => "nav_down",
-        "pgup" => "nav_page_up", "pgdn" => "nav_page_down",
-        "shift_up" => "nav_page_up", "shift_down" => "nav_page_down",
-        "ctrl_u" => "nav_page_up", "ctrl_d" => "nav_page_down",
-        "left" => "collapse", "right" => "expand",
+      'library' => {
+        'up' => 'nav_up', 'down' => 'nav_down',
+        'pgup' => 'nav_page_up', 'pgdn' => 'nav_page_down',
+        'shift_up' => 'nav_page_up', 'shift_down' => 'nav_page_down',
+        'ctrl_u' => 'nav_page_up', 'ctrl_d' => 'nav_page_down',
+        'left' => 'collapse', 'right' => 'expand',
         # Overrides the global "x" => remove_from_queue binding while the
         # Library pane is focused (pane-local bindings win, see #action_for).
-        "x" => "remove_library_item",
+        'x' => 'remove_library_item',
         # Playlist management lives pane-local: c/r only make sense on a
         # playlist child row, and keeping them out of "global" leaves the
         # letters free for future tracks-pane bindings.
-        "c" => "duplicate_playlist",
-        "r" => "rename_playlist",
+        'c' => 'duplicate_playlist',
+        'r' => 'rename_playlist'
       },
       # Matching is case-insensitive (see #action_for), so "g" here also
       # matches "G" from the terminal. sort_number/sort_artist/sort_title use
@@ -56,21 +56,21 @@ module RubyPlayer
       # case-folding would otherwise make the pane-local sort binding shadow
       # them (and, for "t", defeat "T opens the theme picker from anywhere")
       # whenever Tracks is focused.
-      "tracks" => {
-        "up" => "nav_up", "down" => "nav_down",
-        "pgup" => "nav_page_up", "pgdn" => "nav_page_down",
-        "shift_up" => "nav_page_up", "shift_down" => "nav_page_down",
-        "ctrl_u" => "nav_page_up", "ctrl_d" => "nav_page_down",
-        "g" => "toggle_group",
-        "y" => "sort_title", "#" => "sort_number", "@" => "sort_artist",
+      'tracks' => {
+        'up' => 'nav_up', 'down' => 'nav_down',
+        'pgup' => 'nav_page_up', 'pgdn' => 'nav_page_down',
+        'shift_up' => 'nav_page_up', 'shift_down' => 'nav_page_down',
+        'ctrl_u' => 'nav_page_up', 'ctrl_d' => 'nav_page_down',
+        'g' => 'toggle_group',
+        'y' => 'sort_title', '#' => 'sort_number', '@' => 'sort_artist',
         # "e" (yEar): "y" was already claimed by sort_title for the same
         # collision reasons documented above.
-        "e" => "sort_year",
-        "i" => "show_track_info",
+        'e' => 'sort_year',
+        'i' => 'show_track_info',
         # Reorder is ctrl+arrows (not letters): it repeats rapidly when held,
         # and arrow keys already mean "vertical movement" here.
-        "ctrl_up" => "move_entry_up", "ctrl_down" => "move_entry_down",
-      },
+        'ctrl_up' => 'move_entry_up', 'ctrl_down' => 'move_entry_down'
+      }
     }.freeze
 
     def initialize(config_keymap = {})
@@ -88,7 +88,7 @@ module RubyPlayer
       key = key.downcase
       # Pane-local bindings win over global; fall back to global when the
       # pane has no entry for this key at all.
-      action = @map[pane.to_s]&.[](key) || @map["global"][key]
+      action = @map[pane.to_s]&.[](key) || @map['global'][key]
       action&.to_sym
     end
 
@@ -97,7 +97,7 @@ module RubyPlayer
       seen = {}
       # Pane-local entries first (for hotkey-line ordering), then global,
       # deduped by key so a pane override doesn't also show its global twin.
-      (local.to_a + @map["global"].to_a).filter_map do |key, action|
+      (local.to_a + @map['global'].to_a).filter_map do |key, action|
         next if seen[key]
 
         seen[key] = true

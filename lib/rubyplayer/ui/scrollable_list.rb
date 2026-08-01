@@ -26,7 +26,7 @@ module RubyPlayer
         thumb_size = [h * h / total, 1].max
         thumb_start = @scroll * (h - thumb_size) / [total - h, 1].max
         h.times do |offset|
-          glyph = offset.between?(thumb_start, thumb_start + thumb_size - 1) ? "█" : "│"
+          glyph = offset.between?(thumb_start, thumb_start + thumb_size - 1) ? '█' : '│'
           screen.put(y + offset, x, glyph, fg: theme[:text_muted])
         end
       end

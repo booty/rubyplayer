@@ -40,6 +40,7 @@ module RubyPlayer
 
     def remove_at(index)
       return nil if index.negative? || index >= @items.size
+
       snapshot!
       removed = @items.delete_at(index)
       changed!
@@ -52,8 +53,10 @@ module RubyPlayer
     # no-op cascade doesn't pollute the undo stack.
     def remove_track_ids(ids)
       return if ids.empty?
+
       kept = @items.reject { |t| ids.include?(t.id) }
       return if kept.size == @items.size
+
       snapshot!
       @items = kept
       changed!
@@ -70,6 +73,7 @@ module RubyPlayer
 
     def undo
       return false if @undo_stack.empty?
+
       @redo_stack.push(@items.dup)
       @items = @undo_stack.pop
       changed!
@@ -78,6 +82,7 @@ module RubyPlayer
 
     def redo
       return false if @redo_stack.empty?
+
       @undo_stack.push(@items.dup)
       @items = @redo_stack.pop
       changed!

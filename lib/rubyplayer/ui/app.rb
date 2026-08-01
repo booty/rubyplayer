@@ -1,10 +1,10 @@
-require "io/console"
-require "shellwords"
-require "tty-screen"
-require_relative "../../rubyplayer"
-require_relative "../duration_formatter"
-require_relative "../audio_output"
-require_relative "../playback_engine"
+require 'io/console'
+require 'shellwords'
+require 'tty-screen'
+require_relative '../../rubyplayer'
+require_relative '../duration_formatter'
+require_relative '../audio_output'
+require_relative '../playback_engine'
 
 module RubyPlayer
   module UI
@@ -26,35 +26,35 @@ module RubyPlayer
         @io_out = io_out
         @config = ConfigStore.new(path: config_path || RubyPlayer.config_path)
         @config_error = @config.startup_error
-        @db = Database.new(path: data_path || File.join(RubyPlayer.data_dir, "library.sqlite3"),
-                           backup_retention: @config["library", "backup_retention"])
+        @db = Database.new(path: data_path || File.join(RubyPlayer.data_dir, 'library.sqlite3'),
+                           backup_retention: @config['library', 'backup_retention'])
         @library = Library.new(@db)
-        @registry = Backends::Registry.new(@config["backends"])
+        @registry = Backends::Registry.new(@config['backends'])
         @bus = EventBus.new
-        @audio = AudioOutput.new(sample_rate: @config["audio", "sample_rate"],
-                                 ring_buffer_ms: @config["audio", "ring_buffer_ms"],
+        @audio = AudioOutput.new(sample_rate: @config['audio', 'sample_rate'],
+                                 ring_buffer_ms: @config['audio', 'ring_buffer_ms'],
                                  null_backend: null_audio)
-        @archive_cache = ArchiveCache.new(root: @config["library", "archive_cache_dir"],
-                                          tar: @config["library", "archive_tool"])
+        @archive_cache = ArchiveCache.new(root: @config['library', 'archive_cache_dir'],
+                                          tar: @config['library', 'archive_tool'])
         @focus_player = focus_player || FocusPlayer.new
         @engine = PlaybackEngine.new(
-          queue: PlayQueue.new(undo_depth: @config["library", "undo_depth"]),
+          queue: PlayQueue.new(undo_depth: @config['library', 'undo_depth']),
           registry: @registry, audio: @audio, library: @library,
           event_bus: @bus, config: @config, archive_cache: @archive_cache,
           focus_player: @focus_player
         )
         @scanner = Scanner.new(library: @library, registry: @registry)
         @pool = ExtractorPool.new(library: @library, registry: @registry,
-                                  thread_count: @config["scanner", "thread_count"],
+                                  thread_count: @config['scanner', 'thread_count'],
                                   event_bus: @bus, archive_cache: @archive_cache)
-        @keymap = Keymap.new(@config["keymap"])
-        glyphs = @config["glyphs"]
+        @keymap = Keymap.new(@config['keymap'])
+        glyphs = @config['glyphs']
         @library_pane = LibraryPane.new(library: @library, glyphs: glyphs)
         @tracks_pane = TracksPane.new(library: @library, config: @config,
                                       queue_source: -> { @engine.queue_items },
                                       focus_source: -> { FocusSounds::ALL })
         @playback_line = PlaybackLine.new(glyphs: glyphs)
-        @status_line = StatusLine.new(seconds: @config["ui", "status_message_seconds"])
+        @status_line = StatusLine.new(seconds: @config['ui', 'status_message_seconds'])
         @hotkey_line = HotkeyLine.new(keymap: @keymap)
         rows, cols = TTY::Screen.size
         @screen = Screen.new(out: io_out, rows: rows, cols: cols)
@@ -72,10 +72,10 @@ module RubyPlayer
         @theme_picker = false
         @theme_picker_index = 0
         @theme_id_before_preview = nil
-        set_theme!(@config["ui", "theme"])
-        @artwork = Artwork.new(names: @config["ui", "art_filenames"])
+        set_theme!(@config['ui', 'theme'])
+        @artwork = Artwork.new(names: @config['ui', 'art_filenames'])
         @art_supported = ItermImage.supported?(env)
-        @art_mode = normalize_art_mode(@config["ui", "art_mode"])
+        @art_mode = normalize_art_mode(@config['ui', 'art_mode'])
         @art_bytes = nil
         @art_region = nil
         @art_dirty = false
@@ -85,8 +85,8 @@ module RubyPlayer
         # changed. Start dirty so the first pass paints the initial frame.
         @needs_render = true
         @message_was_active = false
-        @frame_interval = 1.0 / @config["ui", "frame_fps"]
-        @idle_poll = @config["ui", "idle_poll_seconds"]
+        @frame_interval = 1.0 / @config['ui', 'frame_fps']
+        @idle_poll = @config['ui', 'idle_poll_seconds']
         @engine.start
         @library_pane.rebuild!
         show_selected_tracks
@@ -109,7 +109,7 @@ module RubyPlayer
 
       def run
         setup_terminal
-        trap("SIGWINCH") { @resized = true }
+        trap('SIGWINCH') { @resized = true }
         scan_paths(@library.root_paths + @argv)
         until @quit
           ready = IO.select([$stdin, @bus.reader], nil, nil, select_timeout)
@@ -124,18 +124,18 @@ module RubyPlayer
         shutdown
       end
 
-    def shutdown
-      first_error = nil
-      # Shutdown is best-effort across independent resources. Focus process
-      # failure must not leave decoder thread, native audio, or SQLite open;
-      # preserve the first error so callers still learn cleanup was incomplete.
-      [-> { @engine.shutdown }, -> { @audio.close }, -> { @db.close }].each do |cleanup|
-        cleanup.call
-      rescue StandardError => e
-        first_error ||= e
+      def shutdown
+        first_error = nil
+        # Shutdown is best-effort across independent resources. Focus process
+        # failure must not leave decoder thread, native audio, or SQLite open;
+        # preserve the first error so callers still learn cleanup was incomplete.
+        [-> { @engine.shutdown }, -> { @audio.close }, -> { @db.close }].each do |cleanup|
+          cleanup.call
+        rescue StandardError => e
+          first_error ||= e
+        end
+        raise first_error if first_error
       end
-      raise first_error if first_error
-    end
 
       # ---- input ----
 
@@ -167,6 +167,7 @@ module RubyPlayer
         return handle_paste(key.text) if key.is_a?(KeyDecoder::Paste)
         return handle_filter_mode_key(key) if @filter_buffer
         return handle_input_mode_key(key) if @input_buffer
+
         action = @keymap.action_for(key, pane: @active_pane)
         dispatch(action) if action
       end
@@ -177,18 +178,18 @@ module RubyPlayer
       # active before the picker was opened.
       def handle_theme_picker_key(key)
         case key
-        when "up" then move_theme_preview(-1)
-        when "down" then move_theme_preview(1)
-        when "enter"
+        when 'up' then move_theme_preview(-1)
+        when 'down' then move_theme_preview(1)
+        when 'enter'
           begin
             @config.persist_theme(@theme_id)
             @theme_picker = false
-          rescue ConfigError => error
-            set_theme!(@config["ui", "theme"])
+          rescue ConfigError => e
+            set_theme!(@config['ui', 'theme'])
             @theme_picker = false
-            @config_error = error
+            @config_error = e
           end
-        when "escape", "t"
+        when 'escape', 't'
           set_theme!(@theme_id_before_preview)
           @theme_picker = false
         end
@@ -220,8 +221,8 @@ module RubyPlayer
       # input for the add-path prompt (see handle_input_mode_key).
       def handle_confirm_key(key)
         case key
-        when "y", "enter" then confirm_delete
-        when "n", "escape" then @pending_delete = nil
+        when 'y', 'enter' then confirm_delete
+        when 'n', 'escape' then @pending_delete = nil
         end
       end
 
@@ -231,8 +232,8 @@ module RubyPlayer
 
       def handle_missing_purge_key(key)
         case key
-        when "y", "enter" then confirm_missing_purge
-        when "n", "escape" then @pending_missing_purge = nil
+        when 'y', 'enter' then confirm_missing_purge
+        when 'n', 'escape' then @pending_missing_purge = nil
         end
       end
 
@@ -243,22 +244,22 @@ module RubyPlayer
       # ("up", "f5"), so the length check is what keeps them out of the text.
       def edit_line(buffer, key)
         case key
-        when "backspace" then buffer[0..-2]
-        when "space" then buffer + " "
+        when 'backspace' then buffer[0..-2]
+        when 'space' then buffer + ' '
         else key.length == 1 ? buffer + key : nil
         end
       end
 
       def handle_input_mode_key(key)
         case key
-        when "enter"
+        when 'enter'
           path = @input_buffer.strip
           @input_buffer = nil
           unless path.empty?
             @status_line.set_message("Scanning #{path}...")
             scan_paths([File.expand_path(path)])
           end
-        when "escape" then @input_buffer = nil
+        when 'escape' then @input_buffer = nil
         else
           edited = edit_line(@input_buffer, key)
           @input_buffer = edited if edited
@@ -278,15 +279,15 @@ module RubyPlayer
         @status_line.set_message("Scanning #{paths.join(', ')}...")
         scan_paths(paths)
       rescue ArgumentError
-        @status_line.set_message("Could not read dropped path")
+        @status_line.set_message('Could not read dropped path')
       end
 
       def handle_filter_mode_key(key)
         case key
-        when "enter"
+        when 'enter'
           @filter_buffer = nil
           @filter_before_edit = nil
-        when "escape"
+        when 'escape'
           @tracks_pane.filter = @filter_before_edit
           @filter_buffer = nil
           @filter_before_edit = nil
@@ -311,7 +312,7 @@ module RubyPlayer
         when :enqueue_end then enqueue(:end)
         when :select_queue then select_queue
         when :undo
-          @status_line.set_message("Queue restored (u:undo ctrl_r:redo)") if @engine.undo
+          @status_line.set_message('Queue restored (u:undo ctrl_r:redo)') if @engine.undo
           select_queue
         when :redo
           @engine.redo
@@ -319,14 +320,14 @@ module RubyPlayer
         when :toggle_skip_disliked
           on = @engine.toggle_skip_disliked
           @status_line.set_message("Skip disliked tracks: #{on ? 'ON' : 'OFF'}")
-        when :add_path then @input_buffer = ""
+        when :add_path then @input_buffer = ''
         when :filter_tracks
           @active_pane = :tracks
           @filter_before_edit = @tracks_pane.filter
           @filter_buffer = @tracks_pane.filter.dup
         when :next_track
           @engine.skip
-          @status_line.set_message("Skipped")
+          @status_line.set_message('Skipped')
         when :seek_forward then seek_by(1)
         when :seek_back then seek_by(-1)
         when :remove_from_queue
@@ -356,7 +357,8 @@ module RubyPlayer
       # clamped at 0 so repeated presses near the start don't go negative.
       def seek_by(direction)
         return unless @engine.state[:track]
-        seek_ms = @config["ui", "seek_seconds"] * 1000
+
+        seek_ms = @config['ui', 'seek_seconds'] * 1000
         target = @engine.state[:position_ms] + (direction * seek_ms)
         @engine.seek([target, 0].max)
       end
@@ -368,7 +370,7 @@ module RubyPlayer
       # "queue index" when that's actually what's on screen.
       def remove_from_queue
         if @library_pane.selected&.kind != :queue
-          @status_line.set_message("Select a track in the Playback Queue to remove")
+          @status_line.set_message('Select a track in the Playback Queue to remove')
           return
         end
         selected = @tracks_pane.selected_queue_track
@@ -376,11 +378,11 @@ module RubyPlayer
         # live queue identity so removing visible row cannot delete hidden row.
         index = @engine.queue_items.index { |track| track.equal?(selected) }
         if index.nil?
-          @status_line.set_message("Select a track in the Playback Queue to remove")
+          @status_line.set_message('Select a track in the Playback Queue to remove')
           return
         end
         @engine.remove_at(index)
-        @status_line.set_message("Removed from queue (u:undo)")
+        @status_line.set_message('Removed from queue (u:undo)')
       end
 
       # Only :folder rows are removable -- fixed smart/source rows are computed views, not library
@@ -392,7 +394,7 @@ module RubyPlayer
           return
         end
         if row&.kind != :folder
-          @status_line.set_message("Only library folders can be removed")
+          @status_line.set_message('Only library folders can be removed')
           return
         end
         @pending_delete = row.folder
@@ -400,13 +402,13 @@ module RubyPlayer
 
       def request_missing_purge
         unless @library_pane.selected&.kind == :missing
-          @status_line.set_message("Select Missing view to purge tracks")
+          @status_line.set_message('Select Missing view to purge tracks')
           return
         end
 
         ids = @tracks_pane.visible_tracks.map(&:id)
         if ids.empty?
-          @status_line.set_message("No visible missing tracks to purge")
+          @status_line.set_message('No visible missing tracks to purge')
           return
         end
 
@@ -431,7 +433,7 @@ module RubyPlayer
       def confirm_delete
         folder = @pending_delete
         @pending_delete = nil
-        track_ids = @library.remove_folder!(folder["id"])
+        track_ids = @library.remove_folder!(folder['id'])
         @engine.remove_track_ids(track_ids) unless track_ids.empty?
         @folder_stats = nil
         @library_pane.rebuild!
@@ -444,7 +446,7 @@ module RubyPlayer
       def request_show_track_info
         track = @tracks_pane.selected_track
         unless track
-          @status_line.set_message("Select a track to view info")
+          @status_line.set_message('Select a track to view info')
           return
         end
         @info_track = track
@@ -493,7 +495,7 @@ module RubyPlayer
 
       def request_show_now_playing
         unless @engine.state[:track]
-          @status_line.set_message("Nothing playing")
+          @status_line.set_message('Nothing playing')
           return
         end
         @show_now_playing = true
@@ -503,11 +505,11 @@ module RubyPlayer
         @art_mode = ART_MODES[(ART_MODES.index(@art_mode) + 1) % ART_MODES.size]
         begin
           @config.persist_art_mode(@art_mode)
-        rescue ConfigError => error
-          @config_error = error
+        rescue ConfigError => e
+          @config_error = e
         end
         message = "Album art: #{@art_mode}"
-        message += " (requires iTerm2)" if @art_mode != :off && !@art_supported
+        message += ' (requires iTerm2)' if @art_mode != :off && !@art_supported
         @status_line.set_message(message)
         invalidate_screen!
       end
@@ -534,7 +536,7 @@ module RubyPlayer
             nil
           end
           display = bytes && begin
-            @artwork.display_bytes(bytes, max_px: @config["ui", "art_display_max_px"])
+            @artwork.display_bytes(bytes, max_px: @config['ui', 'art_display_max_px'])
           rescue StandardError
             bytes
           end
@@ -543,7 +545,7 @@ module RubyPlayer
       end
 
       def set_art(bytes, accent: nil)
-        @art_accent = @config["ui", "art_accent"] ? accent : nil
+        @art_accent = @config['ui', 'art_accent'] ? accent : nil
         return if bytes == @art_bytes
 
         @art_bytes = bytes
@@ -592,7 +594,7 @@ module RubyPlayer
 
         @art_dirty = false
         @io_out.write(ItermImage.place(@art_bytes, row: region[:y], col: region[:x],
-                                       width: region[:w], height: region[:h]))
+                                                   width: region[:w], height: region[:h]))
       end
 
       def route_to_pane(action)
@@ -613,11 +615,12 @@ module RubyPlayer
         # into PlayQueue would break duration, advance, history, and persistence
         # assumptions throughout PlaybackEngine.
         if selected_focus_sound
-          @status_line.set_message("Focus sounds cannot be queued")
+          @status_line.set_message('Focus sounds cannot be queued')
           return
         end
         tracks = selected_tracks
         return if tracks.empty?
+
         @engine.stop_focus
         case where
         when :now then @engine.enqueue_now(tracks)
@@ -631,6 +634,7 @@ module RubyPlayer
         if (playlist = @active_pane == :tracks && @tracks_pane.selected_playlist)
           return jump_to_playlist(playlist)
         end
+
         sound = selected_focus_sound
         return play_focus(sound) if sound
 
@@ -639,9 +643,9 @@ module RubyPlayer
 
       def request_add_to_playlist
         track = @active_pane == :tracks && @tracks_pane.selected_track
-        return @status_line.set_message("Select a track to add to a playlist") unless track
+        return @status_line.set_message('Select a track to add to a playlist') unless track
 
-        @playlist_modal = { track: track, filter: "", selection: 0, confirm: nil, error: nil }
+        @playlist_modal = { track: track, filter: '', selection: 0, confirm: nil, error: nil }
       end
 
       # Recent direct-picks first, then the alphabetical list narrowed by the
@@ -650,9 +654,9 @@ module RubyPlayer
       def playlist_modal_rows
         filter = @playlist_modal[:filter].strip
         needle = filter.downcase
-        recent = @library.playlists(sort: :recency).first(@config["ui", "playlist_recent_count"])
+        recent = @library.playlists(sort: :recency).first(@config['ui', 'playlist_recent_count'])
         all = @library.playlists(sort: :alpha)
-        all = all.select { |p| p["name"].downcase.include?(needle) } unless needle.empty?
+        all = all.select { |p| p['name'].downcase.include?(needle) } unless needle.empty?
         rows = recent.map { |p| { kind: :playlist, playlist: p, recent: true } }
         rows += all.map { |p| { kind: :playlist, playlist: p } }
         rows << { kind: :create } unless filter.empty?
@@ -665,26 +669,26 @@ module RubyPlayer
         modal = @playlist_modal
         if (playlist = modal[:confirm])
           case key
-          when "y", "enter"
+          when 'y', 'enter'
             @playlist_modal = nil
             add_track_to_playlist(playlist, modal[:track])
-          when "n", "escape" then modal[:confirm] = nil
+          when 'n', 'escape' then modal[:confirm] = nil
           end
           return
         end
 
         rows = playlist_modal_rows
         case key
-        when "escape" then @playlist_modal = nil
-        when "up" then modal[:selection] = (modal[:selection] - 1).clamp(0, [rows.size - 1, 0].max)
-        when "down" then modal[:selection] = (modal[:selection] + 1).clamp(0, [rows.size - 1, 0].max)
-        when "enter"
+        when 'escape' then @playlist_modal = nil
+        when 'up' then modal[:selection] = (modal[:selection] - 1).clamp(0, [rows.size - 1, 0].max)
+        when 'down' then modal[:selection] = (modal[:selection] + 1).clamp(0, [rows.size - 1, 0].max)
+        when 'enter'
           row = rows[modal[:selection]]
           return unless row
 
           if row[:kind] == :create
             create_playlist_and_add(modal[:filter].strip, modal[:track])
-          elsif @library.playlist_contains?(row[:playlist]["id"], modal[:track].id)
+          elsif @library.playlist_contains?(row[:playlist]['id'], modal[:track].id)
             modal[:confirm] = row[:playlist]
           else
             @playlist_modal = nil
@@ -702,7 +706,7 @@ module RubyPlayer
       end
 
       def add_track_to_playlist(playlist, track)
-        @library.add_to_playlist(playlist["id"], track.id)
+        @library.add_to_playlist(playlist['id'], track.id)
         @library_pane.rebuild!
         @tracks_pane.reload!
         @status_line.set_message("Added to \"#{playlist['name']}\"")
@@ -727,9 +731,9 @@ module RubyPlayer
       # names no playlist, so it only earns a hint.
       def request_playlist_name(op)
         row = @library_pane.selected
-        return @status_line.set_message("Select a playlist first") unless row&.kind == :playlist
+        return @status_line.set_message('Select a playlist first') unless row&.kind == :playlist
 
-        buffer = op == :duplicate ? "#{row.playlist['name']} copy" : row.playlist["name"].dup
+        buffer = op == :duplicate ? "#{row.playlist['name']} copy" : row.playlist['name'].dup
         @name_prompt = { op: op, playlist: row.playlist, buffer: buffer, error: nil }
       end
 
@@ -738,17 +742,17 @@ module RubyPlayer
 
         prompt = @name_prompt
         case key
-        when "escape" then @name_prompt = nil
-        when "enter"
+        when 'escape' then @name_prompt = nil
+        when 'enter'
           name = prompt[:buffer].strip
-          return prompt[:error] = "Name cannot be blank" if name.empty?
+          return prompt[:error] = 'Name cannot be blank' if name.empty?
 
           begin
             if prompt[:op] == :rename
-              @library.rename_playlist(prompt[:playlist]["id"], name)
+              @library.rename_playlist(prompt[:playlist]['id'], name)
               @status_line.set_message("Renamed to \"#{name}\"")
             else
-              @library.duplicate_playlist(prompt[:playlist]["id"], name)
+              @library.duplicate_playlist(prompt[:playlist]['id'], name)
               @status_line.set_message("Duplicated as \"#{name}\"")
             end
             @name_prompt = nil
@@ -768,14 +772,14 @@ module RubyPlayer
 
       def handle_playlist_delete_key(key)
         case key
-        when "y", "enter"
+        when 'y', 'enter'
           playlist = @pending_playlist_delete
           @pending_playlist_delete = nil
-          @library.delete_playlist(playlist["id"])
+          @library.delete_playlist(playlist['id'])
           @library_pane.rebuild!
           show_selected_tracks
           @status_line.set_message("Deleted playlist \"#{playlist['name']}\"")
-        when "n", "escape" then @pending_playlist_delete = nil
+        when 'n', 'escape' then @pending_playlist_delete = nil
         end
       end
 
@@ -783,18 +787,18 @@ module RubyPlayer
       # playing it — the list is a navigation surface; playback starts from
       # the sidebar child or from inside the playlist.
       def jump_to_playlist(playlist)
-        @library_pane.select_playlist(playlist["id"])
+        @library_pane.select_playlist(playlist['id'])
         show_selected_tracks
         @active_pane = :tracks
       end
 
       def move_playlist_entry(delta)
         id = @tracks_pane.playlist_id
-        return @status_line.set_message("Open a playlist to reorder tracks") unless id
+        return @status_line.set_message('Open a playlist to reorder tracks') unless id
         # Filtered rows hide neighbors: the visible index the user sees no
         # longer matches the playlist's visible position, so a move would hit
         # the wrong entry. Refuse instead of guessing.
-        return @status_line.set_message("Clear the filter before reordering") unless @tracks_pane.filter.empty?
+        return @status_line.set_message('Clear the filter before reordering') unless @tracks_pane.filter.empty?
 
         index = @tracks_pane.selected_track_index
         return unless index
@@ -811,7 +815,7 @@ module RubyPlayer
       def remove_playlist_entry
         id = @tracks_pane.playlist_id
         return unless id
-        return @status_line.set_message("Clear the filter before removing") unless @tracks_pane.filter.empty?
+        return @status_line.set_message('Clear the filter before removing') unless @tracks_pane.filter.empty?
 
         index = @tracks_pane.selected_track_index
         return unless index
@@ -821,7 +825,7 @@ module RubyPlayer
 
         @tracks_pane.reload!
         @library_pane.rebuild!
-        @status_line.set_message("Removed from playlist")
+        @status_line.set_message('Removed from playlist')
       end
 
       def play_focus(sound)
@@ -848,10 +852,10 @@ module RubyPlayer
         else
           row = @library_pane.selected
           if row&.kind == :folder
-            @library.tracks_under(row.folder["id"])
+            @library.tracks_under(row.folder['id'])
           elsif row&.kind == :playlist
             # Visible entries only: hidden-missing tracks can't play anyway.
-            @library.playlist_tracks(row.playlist["id"])
+            @library.playlist_tracks(row.playlist['id'])
           else
             # Views.query returns [] for queue/history/focus (nil query in the
             # table), preserving the rule that enqueueing those sidebar rows
@@ -864,11 +868,11 @@ module RubyPlayer
       def rate_current(rating)
         track = @engine.state[:track]
         unless track
-          @status_line.set_message("Play a library track before rating")
+          @status_line.set_message('Play a library track before rating')
           return
         end
         @library.set_rating(track.id, rating)
-        @status_line.set_message(rating ? "Rated #{rating}/6" : "Rating cleared")
+        @status_line.set_message(rating ? "Rated #{rating}/6" : 'Rating cleared')
         @tracks_pane.reload!
       end
 
@@ -896,9 +900,7 @@ module RubyPlayer
             # Compare against the *current* track: the decoder may have
             # advanced past the track this fetch was for; stale art is
             # dropped and the newer track's own fetch will land later.
-            if payload[:track_id] == @engine.state[:track]&.id
-              set_art(payload[:bytes], accent: payload[:accent])
-            end
+            set_art(payload[:bytes], accent: payload[:accent]) if payload[:track_id] == @engine.state[:track]&.id
           when :playback_state
             set_art(nil) unless payload[:playing]
           when :scan_complete
@@ -930,26 +932,27 @@ module RubyPlayer
         now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         @last_config_check ||= now
         return if now - @last_config_check < 1.0
+
         @last_config_check = now
         begin
           return unless @config.reload_if_changed
-        rescue ConfigError => error
-          @config_error = error
+        rescue ConfigError => e
+          @config_error = e
           @needs_render = true # the error modal must appear without a keypress
           return
         end
         @config_error = nil
         @needs_render = true
-        @keymap = Keymap.new(@config["keymap"])
+        @keymap = Keymap.new(@config['keymap'])
         @hotkey_line = HotkeyLine.new(keymap: @keymap)
-        @frame_interval = 1.0 / @config["ui", "frame_fps"]
-        @idle_poll = @config["ui", "idle_poll_seconds"]
+        @frame_interval = 1.0 / @config['ui', 'frame_fps']
+        @idle_poll = @config['ui', 'idle_poll_seconds']
         @tracks_pane.update_config(@config)
         # Don't clobber an in-progress interactive preview with whatever's
         # still on disk -- the picker itself is the source of truth for
         # @theme_id until it's closed.
-        set_theme!(@config["ui", "theme"]) unless @theme_picker
-        @status_line.set_message("Config reloaded")
+        set_theme!(@config['ui', 'theme']) unless @theme_picker
+        @status_line.set_message('Config reloaded')
       end
 
       # ---- rendering ----
@@ -1008,7 +1011,7 @@ module RubyPlayer
         content_h = rows - 4 # playback + status + 2-row hotkey hint
         render_panes(cols, content_h)
         @playback_line.render(@screen, row: rows - 4, w: cols,
-                              state: @engine.state, levels: @engine.levels, theme: @theme)
+                                       state: @engine.state, levels: @engine.levels, theme: @theme)
         if @filter_buffer
           @screen.put(rows - 3, 0, "Filter: #{@filter_buffer}_"[0, cols], fg: @theme[:accent])
         elsif @input_buffer
@@ -1020,8 +1023,8 @@ module RubyPlayer
           # rebuild after a library change (refresh_panes, delete/purge).
           @folder_stats ||= @library.folder_stats
           @status_line.render(@screen, row: rows - 3, w: cols,
-                              default: "#{@folder_stats[:tracks]} tracks in #{@folder_stats[:folders]} folders",
-                              theme: @theme)
+                                       default: "#{@folder_stats[:tracks]} tracks in #{@folder_stats[:folders]} folders",
+                                       theme: @theme)
         end
         @hotkey_line.render(@screen, row: rows - 2, w: cols, h: 2, pane: @active_pane, theme: @theme)
         render_now_playing_modal if @show_now_playing
@@ -1046,30 +1049,30 @@ module RubyPlayer
         # without starving the single pane.
         if cols <= SINGLE_PANE_MAX_WIDTH
           if @active_pane == :library
-            draw_box(0, 0, cols, content_h, active: true, title: "Library")
+            draw_box(0, 0, cols, content_h, active: true, title: 'Library')
             @library_pane.render(@screen, x: 1, y: 1, w: cols - 2, h: content_h - 2,
-                                 active: true, theme: @theme)
+                                          active: true, theme: @theme)
           else
             title = @tracks_pane.title(max_width: cols - 6)
             draw_box(0, 0, cols, content_h, active: true, title: title)
             @tracks_pane.render(@screen, x: 1, y: 1, w: cols - 2, h: content_h - 2,
-                                active: true, theme: @theme)
+                                         active: true, theme: @theme)
           end
           return
         end
 
         art_cols = @art_mode == :pane ? art_pane_cols(cols) : 0
         usable = cols - art_cols
-        lib_w = usable * @config["ui", "library_pane_percent"] / 100
+        lib_w = usable * @config['ui', 'library_pane_percent'] / 100
         tracks_w = usable - lib_w
         inset_h = @art_mode == :inset ? art_inset_rows(lib_w, content_h) : 0
-        draw_box(0, 0, lib_w, content_h, active: @active_pane == :library, title: "Library")
+        draw_box(0, 0, lib_w, content_h, active: @active_pane == :library, title: 'Library')
         draw_box(lib_w, 0, tracks_w, content_h, active: @active_pane == :tracks,
-                 title: @tracks_pane.title(max_width: tracks_w - 6))
+                                                title: @tracks_pane.title(max_width: tracks_w - 6))
         @library_pane.render(@screen, x: 1, y: 1, w: lib_w - 2, h: content_h - 2 - inset_h,
-                             active: @active_pane == :library, theme: @theme)
+                                      active: @active_pane == :library, theme: @theme)
         @tracks_pane.render(@screen, x: lib_w + 1, y: 1, w: tracks_w - 2,
-                            h: content_h - 2, active: @active_pane == :tracks, theme: @theme)
+                                     h: content_h - 2, active: @active_pane == :tracks, theme: @theme)
         if inset_h.positive?
           @art_region = { x: 1, y: content_h - 1 - inset_h, w: lib_w - 2, h: inset_h }
         elsif art_cols.positive?
@@ -1084,22 +1087,22 @@ module RubyPlayer
       # spans about half as many rows as columns — that ratio drives every
       # region height below.
       def art_inset_rows(lib_w, content_h)
-        rows = [(lib_w - 2) / 2, @config["ui", "art_inset_max_rows"],
+        rows = [(lib_w - 2) / 2, @config['ui', 'art_inset_max_rows'],
                 (content_h - 2) / 2].min # leave at least half the pane for the list
-        rows >= @config["ui", "art_min_rows"] ? rows : 0
+        rows >= @config['ui', 'art_min_rows'] ? rows : 0
       end
 
       # 0 when the remaining width couldn't hold two usable panes — the mode
       # stays selected but degrades to no art rather than crushing the lists.
       def art_pane_cols(cols)
-        width = @config["ui", "art_pane_width"]
+        width = @config['ui', 'art_pane_width']
         cols - width > SINGLE_PANE_MAX_WIDTH ? width : 0
       end
 
       def render_art_pane(x, w, content_h)
-        draw_box(x, 0, w, content_h, active: false, title: "Now Playing")
+        draw_box(x, 0, w, content_h, active: false, title: 'Now Playing')
         img_h = [(w - 2) / 2, content_h - 6].min # keep room for metadata lines
-        @art_region = { x: x + 1, y: 1, w: w - 2, h: img_h } if img_h >= @config["ui", "art_min_rows"]
+        @art_region = { x: x + 1, y: 1, w: w - 2, h: img_h } if img_h >= @config['ui', 'art_min_rows']
 
         track = @engine.state[:track]
         return unless track
@@ -1116,7 +1119,7 @@ module RubyPlayer
       end
 
       def place_art_corner(cols, content_h)
-        h = @config["ui", "art_corner_rows"]
+        h = @config['ui', 'art_corner_rows']
         w = h * 2
         return if h + 2 >= content_h || w + 4 >= cols
 
@@ -1128,7 +1131,7 @@ module RubyPlayer
         # color — any per-frame theme variation here would damage this
         # region and re-emit the image (same flood class as the resize
         # storm).
-        h.times { |i| @screen.put(y + i, x, " " * w, bg: @base_theme[:surface]) }
+        h.times { |i| @screen.put(y + i, x, ' ' * w, bg: @base_theme[:surface]) }
         @art_region = { x: x, y: y, w: w, h: h }
       end
 
@@ -1143,11 +1146,11 @@ module RubyPlayer
         return @show_now_playing = false unless track
 
         img_h = [[(@screen.cols - 8) / 2, @screen.rows - 12].min,
-                 @config["ui", "art_min_rows"]].max
+                 @config['ui', 'art_min_rows']].max
         w = [(img_h * 2) + 4, @screen.cols - 2].min
         lines = [track.title, track.album, track.artist].reject { |t| t.to_s.empty? }
-        render_modal(title: "Now Playing", w: w, h: img_h + lines.size + 5,
-                     hint: "[o/esc/enter] Close") do |x, y|
+        render_modal(title: 'Now Playing', w: w, h: img_h + lines.size + 5,
+                     hint: '[o/esc/enter] Close') do |x, y|
           @art_region = { x: x + 2, y: y + 1, w: w - 4, h: img_h }
           lines.each_with_index do |text, i|
             @screen.put(y + 1 + img_h + i, x + 2, text[0, w - 4],
@@ -1170,9 +1173,9 @@ module RubyPlayer
 
         if animating?
           BrailleMeter.render(@screen, @engine.levels, x: region[:x], y: region[:y],
-                              w: region[:w], h: region[:h], fg: @theme[:success])
+                                                       w: region[:w], h: region[:h], fg: @theme[:success])
         else
-          text = @art_supported ? "no artwork" : "art requires iTerm2"
+          text = @art_supported ? 'no artwork' : 'art requires iTerm2'
           row = region[:y] + region[:h] / 2
           col = region[:x] + [(region[:w] - text.size) / 2, 0].max
           @screen.put(row, col, text[0, region[:w]], fg: @theme[:text_muted])
@@ -1195,7 +1198,7 @@ module RubyPlayer
       def render_modal(title:, w:, h:, hint: nil, hint_bg: nil)
         x = [(@screen.cols - w) / 2, 0].max
         y = [(@screen.rows - h) / 2, 0].max
-        (1...(h - 1)).each { |i| @screen.put(y + i, x + 1, " " * (w - 2), bg: @theme[:surface]) }
+        (1...(h - 1)).each { |i| @screen.put(y + i, x + 1, ' ' * (w - 2), bg: @theme[:surface]) }
         draw_box(x, y, w, h, active: true, title: title)
         yield x, y if block_given?
         @screen.put(y + h - 2, x + 2, hint[0, w - 4], fg: @theme[:text_muted], bg: hint_bg) if hint
@@ -1205,9 +1208,9 @@ module RubyPlayer
         modal = @playlist_modal
         if (playlist = modal[:confirm])
           message = "Already in \"#{playlist['name']}\". Add again?"
-          prompt = "[y] Add duplicate    [n/esc] Back"
+          prompt = '[y] Add duplicate    [n/esc] Back'
           w = [message.size, prompt.size].max + 4
-          render_modal(title: "Add to Playlist", w: w, h: 5) do |x, y|
+          render_modal(title: 'Add to Playlist', w: w, h: 5) do |x, y|
             @screen.put(y + 2, x + 2, message[0, w - 4], fg: @theme[:accent], bold: true)
             @screen.put(y + 3, x + 2, prompt[0, w - 4], fg: @theme[:primary], bold: true)
           end
@@ -1222,20 +1225,20 @@ module RubyPlayer
             "#{row[:recent] ? '* ' : '  '}#{row[:playlist]['name']} (#{row[:playlist]['track_count']})"
           end
         end
-        labels = ["(no playlists — type a name)"] if labels.empty?
+        labels = ['(no playlists — type a name)'] if labels.empty?
         labels = labels.first([@screen.rows - 9, 1].max) # tiny terminals: keep chrome visible
         filter_line = "Filter/name: #{modal[:filter]}_"
-        hint = "[enter] Add  [esc] Cancel"
+        hint = '[enter] Add  [esc] Cancel'
         w = [(labels.map(&:size) + [filter_line.size, hint.size,
-                                    (modal[:error] || "").size]).max + 6, @screen.cols - 2].min
+                                    (modal[:error] || '').size]).max + 6, @screen.cols - 2].min
         h = labels.size + (modal[:error] ? 6 : 5)
-        render_modal(title: "Add to Playlist", w: w, h: h, hint: hint) do |x, y|
+        render_modal(title: 'Add to Playlist', w: w, h: h, hint: hint) do |x, y|
           @screen.put(y + 1, x + 2, filter_line[0, w - 4], fg: @theme[:accent])
           labels.each_with_index do |label, i|
             selected = !rows.empty? && i == modal[:selection]
             bg = selected ? @theme[:selection_bg] : nil
             fg = selected ? @theme[:selection_text] : @theme[:text]
-            @screen.put(y + 2 + i, x + 1, " " * (w - 2), bg: bg) if selected
+            @screen.put(y + 2 + i, x + 1, ' ' * (w - 2), bg: bg) if selected
             @screen.put(y + 2 + i, x + 2, label[0, w - 4], fg: fg, bg: bg, bold: selected)
           end
           @screen.put(y + h - 3, x + 2, modal[:error][0, w - 4], fg: @theme[:error]) if modal[:error]
@@ -1244,10 +1247,10 @@ module RubyPlayer
 
       def render_name_prompt_modal
         prompt = @name_prompt
-        title = prompt[:op] == :rename ? "Rename Playlist" : "Duplicate Playlist"
+        title = prompt[:op] == :rename ? 'Rename Playlist' : 'Duplicate Playlist'
         line = "Name: #{prompt[:buffer]}_"
-        hint = "[enter] Save  [esc] Cancel"
-        w = [[line.size, hint.size, (prompt[:error] || "").size].max + 6, @screen.cols - 2].min
+        hint = '[enter] Save  [esc] Cancel'
+        w = [[line.size, hint.size, (prompt[:error] || '').size].max + 6, @screen.cols - 2].min
         render_modal(title: title, w: w, h: 6, hint: hint) do |x, y|
           @screen.put(y + 2, x + 2, line[0, w - 4], fg: @theme[:accent], bold: true)
           @screen.put(y + 3, x + 2, prompt[:error][0, w - 4], fg: @theme[:error]) if prompt[:error]
@@ -1256,9 +1259,9 @@ module RubyPlayer
 
       def render_playlist_delete_modal
         message = "Delete playlist \"#{@pending_playlist_delete['name']}\"?"
-        prompt = "[y] Delete    [n/esc] Cancel"
+        prompt = '[y] Delete    [n/esc] Cancel'
         w = [message.size, prompt.size].max + 4
-        render_modal(title: "Confirm Delete", w: w, h: 5) do |x, y|
+        render_modal(title: 'Confirm Delete', w: w, h: 5) do |x, y|
           @screen.put(y + 2, x + 2, message[0, w - 4], fg: @theme[:accent], bold: true)
           @screen.put(y + 3, x + 2, prompt[0, w - 4], fg: @theme[:primary], bold: true)
         end
@@ -1267,10 +1270,10 @@ module RubyPlayer
       def render_confirm_modal
         folder = @pending_delete
         message = "Remove \"#{folder['name']}\" from library?"
-        hint = "Also removes its tracks from Favorites and the Playback Queue."
-        prompt = "[y] Yes    [n/esc] Cancel"
+        hint = 'Also removes its tracks from Favorites and the Playback Queue.'
+        prompt = '[y] Yes    [n/esc] Cancel'
         w = [message.size, hint.size, prompt.size].max + 4
-        render_modal(title: "Confirm Remove", w: w, h: 6) do |x, y|
+        render_modal(title: 'Confirm Remove', w: w, h: 6) do |x, y|
           @screen.put(y + 2, x + 2, message[0, w - 4], fg: @theme[:accent], bold: true)
           @screen.put(y + 3, x + 2, hint[0, w - 4], fg: @theme[:text_muted])
           @screen.put(y + 4, x + 2, prompt[0, w - 4], fg: @theme[:primary], bold: true)
@@ -1279,11 +1282,11 @@ module RubyPlayer
 
       def render_missing_purge_modal
         count = @pending_missing_purge[:count]
-        pronoun = count == 1 ? "its" : "their"
+        pronoun = count == 1 ? 'its' : 'their'
         message = "Permanently remove #{count} missing track#{'s' unless count == 1} and #{pronoun} history?"
-        prompt = "[y] Remove    [n/esc] Cancel"
+        prompt = '[y] Remove    [n/esc] Cancel'
         w = [message.size, prompt.size].max + 4
-        render_modal(title: "Confirm Purge", w: w, h: 5) do |x, y|
+        render_modal(title: 'Confirm Purge', w: w, h: 5) do |x, y|
           @screen.put(y + 2, x + 2, message[0, w - 4], fg: @theme[:accent], bold: true)
           @screen.put(y + 3, x + 2, prompt[0, w - 4], fg: @theme[:primary], bold: true)
         end
@@ -1296,34 +1299,37 @@ module RubyPlayer
       def render_info_modal
         t = @info_track
         stats = @library.play_stats(t.id)
-        rows = [["Title", t.title], ["Album", t.album]]
-        rows << ["Album artist", t.album_artist] unless t.album_artist.to_s.empty?
+        rows = [['Title', t.title], ['Album', t.album]]
+        rows << ['Album artist', t.album_artist] unless t.album_artist.to_s.empty?
         rows += [
-          ["Artist", t.artist],
-          ["Composer", t.composer], ["Track #", t.track_number],
-          ["Format", t.format], ["Backend", t.backend],
-          ["Length", fmt_length(t.duration_ms)],
-          ["Rating", t.rating ? "#{@config['glyphs', 'star']} x#{t.rating}" : "unrated"],
+          ['Artist', t.artist],
+          ['Composer', t.composer], ['Track #', t.track_number],
+          ['Format', t.format], ['Backend', t.backend],
+          ['Length', fmt_length(t.duration_ms)],
+          ['Rating', t.rating ? "#{@config['glyphs', 'star']} x#{t.rating}" : 'unrated']
         ]
-        rows << ["Year", t.year] if t.year
-        rows << ["Path", t.physical_path]
-        rows << ["Archive entry", t.archive_entry] unless t.archive_entry.to_s.empty?
-        rows << ["Subtune", t.subtune_index] if t.subtune_index.to_i.positive?
-        flags = [("missing" if t.missing == 1), ("errored" if t.errored == 1)].compact
-        rows << ["Status", flags.join(", ")] unless flags.empty?
-        rows << ["Played", stats[:count].zero? ? "never" :
-          "#{stats[:count]}x, #{fmt_length(stats[:total_played_ms])} total (last #{stats[:last_played_at]})"]
+        rows << ['Year', t.year] if t.year
+        rows << ['Path', t.physical_path]
+        rows << ['Archive entry', t.archive_entry] unless t.archive_entry.to_s.empty?
+        rows << ['Subtune', t.subtune_index] if t.subtune_index.to_i.positive?
+        flags = [('missing' if t.missing == 1), ('errored' if t.errored == 1)].compact
+        rows << ['Status', flags.join(', ')] unless flags.empty?
+        rows << ['Played', if stats[:count].zero?
+                             'never'
+                           else
+                             "#{stats[:count]}x, #{fmt_length(stats[:total_played_ms])} total (last #{stats[:last_played_at]})"
+                           end]
 
         extras = @library.track_metadata_for(t.id)
-        max_extras = @config["ui", "info_metadata_rows"]
+        max_extras = @config['ui', 'info_metadata_rows']
         extras.sort.first(max_extras).each do |key, value|
           rows << [key, value.to_s.lines.first.to_s.chomp]
         end
 
         lines = rows.map { |label, value| "#{label}: #{value.nil? || value.to_s.empty? ? '—' : value}" }
-        hint = "[i/esc/enter] Close"
+        hint = '[i/esc/enter] Close'
         w = [lines.map(&:size).max, hint.size].max + 4
-        render_modal(title: "Track Info", w: w, h: lines.size + 5, hint: hint) do |x, y|
+        render_modal(title: 'Track Info', w: w, h: lines.size + 5, hint: hint) do |x, y|
           lines.each_with_index { |line, i| @screen.put(y + 2 + i, x + 2, line[0, w - 4], fg: @theme[:primary]) }
         end
       end
@@ -1337,11 +1343,11 @@ module RubyPlayer
       def render_help_modal
         bindings = @keymap.bindings_for(@active_pane)
         lines = bindings.map do |key, action|
-          label = HotkeyLine::LABELS[action] || action.to_s.tr("_", " ")
+          label = HotkeyLine::LABELS[action] || action.to_s.tr('_', ' ')
           "#{key.upcase.ljust(6)} #{label}"
         end
         title = "Hotkeys (#{@active_pane})"
-        hint = "[?/esc/enter] Close"
+        hint = '[?/esc/enter] Close'
 
         # Two columns instead of one long list -- left column takes the
         # first (count/2 rounded up) entries, right column the rest, so an
@@ -1365,15 +1371,15 @@ module RubyPlayer
       # same theme's own selection colors -- the picker doubles as a swatch.
       def render_theme_picker_modal
         names = Theme::ALL_IDS.map { |id| Theme[id][:name] }
-        hint = "[up/down] Preview  [enter] Select  [esc] Cancel"
-        title = "Select Theme"
+        hint = '[up/down] Preview  [enter] Select  [esc] Cancel'
+        title = 'Select Theme'
         w = [names.map(&:size).max, hint.size, title.size].max + 6
         render_modal(title: title, w: w, h: names.size + 5, hint: hint) do |x, y|
           names.each_with_index do |name, i|
             selected = i == @theme_picker_index
             bg = selected ? @theme[:selection_bg] : nil
             fg = selected ? @theme[:selection_text] : @theme[:text]
-            @screen.put(y + 2 + i, x + 1, " " * (w - 2), bg: bg) if selected
+            @screen.put(y + 2 + i, x + 1, ' ' * (w - 2), bg: bg) if selected
             @screen.put(y + 2 + i, x + 2, name[0, w - 4], fg: fg, bg: bg, bold: selected)
           end
         end
@@ -1385,28 +1391,28 @@ module RubyPlayer
 
         inner_w = max_w - 4
         raw_lines = [
-          "Last known good configuration remains active.",
-          *@config_error.message.lines.map(&:chomp),
+          'Last known good configuration remains active.',
+          *@config_error.message.lines.map(&:chomp)
         ]
         lines = raw_lines.flat_map do |line|
-          line.empty? ? [""] : line.scan(/.{1,#{inner_w}}/)
+          line.empty? ? [''] : line.scan(/.{1,#{inner_w}}/)
         end
         max_lines = [@screen.rows - 5, 1].max
         lines = lines.first(max_lines)
-        hint = "[esc/enter] Keep last known good config"
+        hint = '[esc/enter] Keep last known good config'
         w = max_w
-        render_modal(title: "Configuration Error", w: w, h: lines.size + 4,
+        render_modal(title: 'Configuration Error', w: w, h: lines.size + 4,
                      hint: hint, hint_bg: @theme[:surface]) do |x, y|
           lines.each_with_index do |line, index|
             color = index.zero? ? @theme[:warning] : @theme[:error]
             @screen.put(y + 1 + index, x + 2, line[0, w - 4], fg: color,
-                        bg: @theme[:surface], bold: index.zero?)
+                                                              bg: @theme[:surface], bold: index.zero?)
           end
         end
       end
 
       def fmt_length(ms)
-        DurationFormatter.format(ms, unknown: "unknown")
+        DurationFormatter.format(ms, unknown: 'unknown')
       end
 
       def draw_box(x, y, w, h, active:, title:)
@@ -1445,7 +1451,7 @@ module RubyPlayer
         return false unless @last_resize_at
 
         now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-        now - @last_resize_at < @config["ui", "resize_settle_seconds"]
+        now - @last_resize_at < @config['ui', 'resize_settle_seconds']
       end
     end
   end
