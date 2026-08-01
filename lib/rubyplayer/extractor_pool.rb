@@ -54,33 +54,55 @@ module RubyPlayer
     def extract(item)
       stat = File.stat(item.path)
       return extract_archive(item, stat) if @registry.archive?(item.path)
-      backend = @registry.backend_for(item.path)
-      count = @registry.multitrack?(item.path) ? backend.track_count(item.path) : 1
+      extract_tracks(item.path, item.parent_folder_id, stat)
+    rescue StandardError
+      # Undecodable file: flag it, keep the pool alive.
+      upsert_error_track(item.path, item.parent_folder_id, stat)
+      false
+    end
+
+    def extract_tracks(real, folder_id, stat, archive_metadata: {})
+      backend = @registry.backend_for(real)
+      count = @registry.multitrack?(real) ? backend.track_count(real) : 1
+      physical_path = archive_metadata.fetch(:physical_path, real)
+      archive_entry = archive_metadata.fetch(:archive_entry, "")
+      virtual_path = archive_metadata.fetch(:virtual_path, real)
+      album_fallback = archive_metadata.fetch(:album_fallback) do
+        count > 1 ? File.basename(real, ".*") : File.basename(File.dirname(real))
+      end
+
       if count > 1
-        folder_id = @library.upsert_folder(parent_id: item.parent_folder_id,
-                                           name: File.basename(item.path),
-                                           path: item.path, kind: "multitrack",
-                                           mtime: stat.mtime.to_f, size: stat.size)
+        track_folder_id = @library.upsert_folder(parent_id: folder_id,
+                                                  name: File.basename(real),
+                                                  path: virtual_path, kind: "multitrack",
+                                                  mtime: stat.mtime.to_f, size: stat.size)
         count.times do |i|
-          upsert(item.path, folder_id, i, backend, backend.metadata(item.path, i), stat,
-                 album_fallback: File.basename(item.path, ".*"))
+          upsert(physical_path, track_folder_id, i, backend, backend.metadata(real, i), stat,
+                 archive_entry: archive_entry, album_fallback: album_fallback)
         end
       else
-        upsert(item.path, item.parent_folder_id, 0, backend,
-               backend.metadata(item.path, 0), stat,
-               album_fallback: File.basename(File.dirname(item.path)))
+        upsert(physical_path, folder_id, 0, backend, backend.metadata(real, 0), stat,
+               archive_entry: archive_entry, album_fallback: album_fallback)
       end
       true
     rescue StandardError
-      # Undecodable file: flag it, keep the pool alive.
+      # One undecodable file or archive entry must not sink the scan.
+      upsert_error_track(real, folder_id, stat, archive_metadata: archive_metadata)
+      false
+    end
+
+    def upsert_error_track(real, folder_id, stat, archive_metadata: {})
+      physical_path = archive_metadata.fetch(:physical_path, real)
+      archive_entry = archive_metadata.fetch(:archive_entry, "")
+      title_path = archive_entry.empty? ? real : archive_entry
+
       @library.upsert_track(
-        folder_id: item.parent_folder_id, physical_path: item.path,
-        backend: @registry.backend_name_for(item.path).to_s,
-        format: File.extname(item.path).delete_prefix(".").downcase,
-        title: File.basename(item.path), errored: 1,
+        folder_id: folder_id, physical_path: physical_path, archive_entry: archive_entry,
+        backend: @registry.backend_name_for(real).to_s,
+        format: File.extname(real).delete_prefix(".").downcase,
+        title: File.basename(title_path), errored: 1,
         file_mtime: stat&.mtime&.to_f, file_size: stat&.size
       )
-      false
     end
 
     def upsert(path, folder_id, subtune, backend, meta, stat, archive_entry: "",
@@ -136,35 +158,15 @@ module RubyPlayer
                                       kind: "archive")
           walk_extracted(@archive_cache.extract(real), id, archive_path, entry, stat)
         elsif @registry.supported?(real)
-          extract_entry(real, entry, virtual, folder_id, archive_path, stat)
+          extract_tracks(real, folder_id, stat,
+                         archive_metadata: {
+                           physical_path: archive_path,
+                           archive_entry: entry,
+                           virtual_path: virtual,
+                           album_fallback: File.basename(archive_path, ".*")
+                         })
         end
       end
-    end
-
-    def extract_entry(real, entry, virtual, folder_id, archive_path, stat)
-      backend = @registry.backend_for(real)
-      count = @registry.multitrack?(real) ? backend.track_count(real) : 1
-      if count > 1
-        sub_id = @library.upsert_folder(parent_id: folder_id, name: File.basename(real),
-                                        path: virtual, kind: "multitrack",
-                                        mtime: stat.mtime.to_f, size: stat.size)
-        count.times do |i|
-          upsert(archive_path, sub_id, i, backend, backend.metadata(real, i), stat,
-                 archive_entry: entry, album_fallback: File.basename(archive_path, ".*"))
-        end
-      else
-        upsert(archive_path, folder_id, 0, backend, backend.metadata(real, 0), stat,
-               archive_entry: entry, album_fallback: File.basename(archive_path, ".*"))
-      end
-    rescue StandardError
-      # One undecodable entry must not sink the whole archive.
-      @library.upsert_track(
-        folder_id: folder_id, physical_path: archive_path, archive_entry: entry,
-        backend: @registry.backend_name_for(real).to_s,
-        format: File.extname(real).delete_prefix(".").downcase,
-        title: File.basename(entry), errored: 1,
-        file_mtime: stat.mtime.to_f, file_size: stat.size
-      )
     end
   end
 end
