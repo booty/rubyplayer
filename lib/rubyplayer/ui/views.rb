@@ -19,23 +19,23 @@ module RubyPlayer
         queue: View.new(label: 'Playback Queue', glyph: 'play'),
         history: View.new(label: 'History', glyph: 'playlist'),
         favorites: View.new(label: 'Favorite Tracks', glyph: 'star',
-                            query: ->(library) { library.favorites }),
+                            query: lambda(&:favorites)),
         focus: View.new(label: 'Focus', glyph: 'focus'),
         recent: View.new(label: 'Recently Added', glyph: 'playlist',
-                         query: ->(library) { library.recently_added }),
+                         query: lambda(&:recently_added)),
         unrated: View.new(label: 'Unrated', glyph: 'playlist',
-                          query: ->(library) { library.unrated }),
+                          query: lambda(&:unrated)),
         missing: View.new(label: 'Missing', glyph: 'missing',
-                          query: ->(library) { library.missing_tracks }),
+                          query: lambda(&:missing_tracks)),
         failed: View.new(label: 'Failed to Scan', glyph: 'errored',
-                         query: ->(library) { library.failed_tracks }),
+                         query: lambda(&:failed_tracks)),
         most_played: View.new(label: 'Most Played', glyph: 'play',
-                              query: ->(library) { library.most_played }),
+                              query: lambda(&:most_played)),
         # nil query: the parent row is a container — enqueueing it wholesale
         # is a no-op (children carry the tracks), same rule as queue/history.
         playlists: View.new(label: 'Playlists', glyph: 'playlist'),
         all: View.new(label: 'All Songs', glyph: 'dir',
-                      query: ->(library) { library.all_tracks })
+                      query: lambda(&:all_tracks))
       }.freeze
 
       def self.query(kind, library)

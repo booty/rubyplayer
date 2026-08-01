@@ -66,7 +66,7 @@ class GmeBackendTest < Minitest::Test
     assert_equal 1024 * RubyPlayer::AudioFormat::BYTES_PER_FRAME, data.bytesize
     floats = data.unpack('e*')
     assert(floats.all? { |f| f >= -1.0 && f <= 1.0 })
-    refute(floats.all? { |f| f.zero? }, 'expected non-silent audio')
+    refute(floats.all?(&:zero?), 'expected non-silent audio')
     h.close
   end
 

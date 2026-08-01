@@ -139,12 +139,3 @@ Style/MultilineBlockChain:
 Style/SelectByKind:
   Exclude:
     - 'lib/rubyplayer/ui/tracks_pane.rb'
-
-# Offense count: 8
-# This cop supports unsafe autocorrection (--autocorrect-all).
-# Configuration parameters: AllowMethodsWithArguments, AllowedMethods, AllowedPatterns, AllowComments.
-# AllowedMethods: define_method
-Style/SymbolProc:
-  Exclude:
-    - 'lib/rubyplayer/ui/views.rb'
-    - 'test/gme_backend_test.rb'
