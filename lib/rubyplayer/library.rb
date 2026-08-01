@@ -58,12 +58,8 @@ module RubyPlayer
 
     def add_to_playlist(id, track_id)
       @db.write do |s|
-        unless s.get_first_value('SELECT 1 FROM playlists WHERE id = ?', [id])
-          raise PlaylistError, 'Playlist no longer exists'
-        end
-        unless s.get_first_value('SELECT 1 FROM tracks WHERE id = ?', [track_id])
-          raise PlaylistError, 'Track is no longer in the library'
-        end
+        raise PlaylistError, 'Playlist no longer exists' unless s.get_first_value('SELECT 1 FROM playlists WHERE id = ?', [id])
+        raise PlaylistError, 'Track is no longer in the library' unless s.get_first_value('SELECT 1 FROM tracks WHERE id = ?', [track_id])
 
         pos = s.get_first_value(
           'SELECT COALESCE(MAX(position) + 1, 0) FROM playlist_tracks WHERE playlist_id = ?', [id]

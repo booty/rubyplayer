@@ -156,24 +156,16 @@ module RubyPlayer
       end
 
       pane_percent = dig(data, 'ui.library_pane_percent')
-      unless pane_percent.is_a?(Integer) && pane_percent.between?(1, 99)
-        raise SettingError, 'ui.library_pane_percent must be an Integer from 1 to 99'
-      end
+      raise SettingError, 'ui.library_pane_percent must be an Integer from 1 to 99' unless pane_percent.is_a?(Integer) && pane_percent.between?(1, 99)
 
       scan_threads = dig(data, 'scanner.thread_count')
-      unless scan_threads.is_a?(Integer) && scan_threads >= 0
-        raise SettingError, 'scanner.thread_count must be a nonnegative Integer'
-      end
+      raise SettingError, 'scanner.thread_count must be a nonnegative Integer' unless scan_threads.is_a?(Integer) && scan_threads >= 0
 
       history_percent = dig(data, 'library.history_min_percent')
-      unless history_percent.is_a?(Integer) && history_percent.between?(0, 100)
-        raise SettingError, 'library.history_min_percent must be an Integer from 0 to 100'
-      end
+      raise SettingError, 'library.history_min_percent must be an Integer from 0 to 100' unless history_percent.is_a?(Integer) && history_percent.between?(0, 100)
 
       sample_rate = dig(data, 'audio.sample_rate')
-      unless sample_rate == 'auto' || (sample_rate.is_a?(Integer) && sample_rate.positive?)
-        raise SettingError, 'audio.sample_rate must be "auto" or a positive Integer'
-      end
+      raise SettingError, 'audio.sample_rate must be "auto" or a positive Integer' unless sample_rate == 'auto' || (sample_rate.is_a?(Integer) && sample_rate.positive?)
 
       theme = dig(data, 'ui.theme')
       raise SettingError, 'ui.theme must name a known theme' unless Theme::ALL_IDS.include?(theme.to_sym)

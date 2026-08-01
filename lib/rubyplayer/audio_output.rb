@@ -56,9 +56,7 @@ module RubyPlayer
       # Dividing a partial frame would round down the allocation while
       # put_bytes still copied every byte, allowing an out-of-bounds native
       # write. Reject malformed input before crossing the FFI boundary.
-      unless (frames_string.bytesize % AudioFormat::BYTES_PER_FRAME).zero?
-        raise ArgumentError, 'PCM data must contain complete stereo float32 frames'
-      end
+      raise ArgumentError, 'PCM data must contain complete stereo float32 frames' unless (frames_string.bytesize % AudioFormat::BYTES_PER_FRAME).zero?
 
       @write_mutex.synchronize do
         # Ruby owns lifecycle knowledge, so reject stale producer threads here

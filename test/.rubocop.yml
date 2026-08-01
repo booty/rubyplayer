@@ -1,8 +1,5 @@
 inherit_from: ../.rubocop.yml
 
-Performance/FixedSize:
-  Enabled: false
-
 Style/FrozenStringLiteralComment:
   Enabled: false
 
