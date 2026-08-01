@@ -18,6 +18,7 @@ class FfmpegBackendTest < Minitest::Test
                                  'date' => '1998-11-20', 'genre' => 'Rock',
                                  'album' => 'Hits', 'title' => 'Song')
       meta = RubyPlayer::Backends::Ffmpeg.new.metadata(path, 0)
+
       assert_equal 'Various Artists', meta[:album_artist]
       assert_equal 1998, meta[:year]
       assert_equal 'Rock', meta[:extra]['genre']
@@ -36,8 +37,9 @@ class FfmpegBackendTest < Minitest::Test
       path = tagged_fixture(dir, 'title' => long_title)
       meta = RubyPlayer::Backends::Ffmpeg.new.metadata(path, 0)
       limit = RubyPlayer::DEFAULTS['library']['metadata_value_limit']
+
       assert_operator meta[:title].bytesize, :<=, limit
-      assert meta[:title].valid_encoding?
+      assert_predicate meta[:title], :valid_encoding?
     end
   end
 
@@ -45,6 +47,7 @@ class FfmpegBackendTest < Minitest::Test
     Dir.mktmpdir do |dir|
       path = tagged_fixture(dir, 'date' => 'not a date', 'title' => 'Song')
       meta = RubyPlayer::Backends::Ffmpeg.new.metadata(path, 0)
+
       assert_nil meta[:year]
     end
   end
@@ -55,6 +58,7 @@ class FfmpegBackendTest < Minitest::Test
       path = tagged_fixture(dir, 'comment' => long, 'title' => 'Song')
       meta = RubyPlayer::Backends::Ffmpeg.new.metadata(path, 0)
       limit = RubyPlayer::DEFAULTS['library']['metadata_value_limit']
+
       assert_operator meta[:extra]['comment'].bytesize, :<=, limit
       # Scrubbing guarantee: every stored value is valid UTF-8 (mislabeled
       # ID3 encodings otherwise crash Ruby string ops far from the scan).

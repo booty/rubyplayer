@@ -40,6 +40,7 @@ class ArtworkTest < Minitest::Test
 
   def test_embedded_art_is_extracted_from_ffmpeg_tracks
     bytes = @artwork.for_track(track_for(embedded_art_mp3, backend: 'ffmpeg'))
+
     refute_nil bytes
     # JPEG magic: the extracted stream must be the attached image itself.
     assert_equal "\xFF\xD8".b, bytes.byteslice(0, 2)
@@ -53,6 +54,7 @@ class ArtworkTest < Minitest::Test
     FileUtils.cp(embedded_art_mp3, mp3)
 
     bytes = @artwork.for_track(track_for(mp3, backend: 'ffmpeg'))
+
     assert_equal "\xFF\xD8".b, bytes.byteslice(0, 2)
   end
 
@@ -85,6 +87,7 @@ class ArtworkTest < Minitest::Test
     File.write(zip, '')
 
     track = track_for(zip, archive_entry: 'inner/song.vgm')
+
     assert_equal 'ART', @artwork.for_track(track)
   end
 
@@ -120,8 +123,10 @@ class ArtworkTest < Minitest::Test
     end
 
     color = @artwork.average_color(File.binread(red_png))
+
     assert_match(/\A#[0-9a-f]{6}\z/, color)
     r, g, b = [color[1, 2], color[3, 2], color[5, 2]].map { |h| h.to_i(16) }
+
     assert_operator r, :>, 200
     assert_operator g, :<, 60
     assert_operator b, :<, 60
@@ -143,6 +148,7 @@ class ArtworkTest < Minitest::Test
 
     original = File.binread(big_png)
     scaled = @artwork.display_bytes(original, max_px: 480)
+
     refute_equal original, scaled
 
     probe = File.join(@tmp, 'scaled.png')
@@ -152,17 +158,20 @@ class ArtworkTest < Minitest::Test
       '-show_entries', 'stream=width,height', '-of', 'csv=p=0', probe
     )
     width, height = dims.strip.split(',').map(&:to_i)
+
     assert_operator width, :<=, 480
     assert_operator height, :<=, 480
   end
 
   def test_display_bytes_returns_small_images_unchanged
     small = File.binread(File.join(FIXTURES, 'warrior.jpg')) # 300px-ish
+
     assert_equal small, @artwork.display_bytes(small, max_px: 480)
   end
 
   def test_display_bytes_passes_garbage_through
     junk = 'not an image'.b
+
     assert_equal junk, @artwork.display_bytes(junk, max_px: 480)
   end
 

@@ -37,7 +37,7 @@ class AudioOutputTest < Minitest::Test
     out = RubyPlayer::AudioOutput.new(sample_rate: 48_000, native: native)
     frames = ([0.0] * 256 * 2).pack('e*')
 
-    writers = 2.times.map { Thread.new { out.write(frames) } }
+    writers = Array.new(2) { Thread.new { out.write(frames) } }
     writers.each(&:join)
 
     assert_equal 1, native.max_writers
@@ -77,7 +77,7 @@ class AudioOutputTest < Minitest::Test
       RbConfig.ruby, "-I#{File.expand_path('../lib', __dir__)}", '-e', script
     )
 
-    assert status.success?, stderr
+    assert_predicate status, :success?, stderr
   end
 
   # The C shim is a per-process singleton, so exercise the whole lifecycle
@@ -85,19 +85,23 @@ class AudioOutputTest < Minitest::Test
   def test_null_backend_end_to_end
     out = RubyPlayer::AudioOutput.new(sample_rate: 44_100, ring_buffer_ms: 200,
                                       null_backend: true)
+
     assert_equal 44_100, out.sample_rate
 
     silence = ([0.0] * (4096 * 2)).pack('e*')
     accepted = out.write(silence)
+
     assert_operator accepted, :>, 0
     assert_equal accepted, out.buffered_frames
 
     out.start
     sleep 0.3
+
     assert_operator out.frames_played, :>, 0 # null device consumes in real time
 
     out.paused = true
     out.flush
+
     assert_equal 0, out.buffered_frames
     out.stop
     out.close

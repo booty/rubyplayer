@@ -9,6 +9,7 @@ class MetadataHelperTest < Minitest::Test
 
   def test_presence_preserves_non_empty_strings
     value = 'Composer'
+
     assert_same value, RubyPlayer::Backends::MetadataHelper.presence(value)
   end
 

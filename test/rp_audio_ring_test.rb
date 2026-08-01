@@ -11,10 +11,12 @@ class RpAudioRingTest < Minitest::Test
       _stdout, stderr, compile = Open3.capture3(
         'clang', '-std=c11', "-I#{include_dir}", source, '-o', binary
       )
-      assert compile.success?, stderr
+
+      assert_predicate compile, :success?, stderr
 
       _stdout, stderr, run = Open3.capture3(binary)
-      assert run.success?, stderr
+
+      assert_predicate run, :success?, stderr
     end
   end
 end

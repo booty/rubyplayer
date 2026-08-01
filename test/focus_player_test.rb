@@ -44,10 +44,11 @@ class FocusPlayerTest < Minitest::Test
 
     expected = ['sox', '-q', '-n', '-t', 'raw', '-e', 'floating-point', '-b', '32',
                 '-c', '2', '-r', '48000', '-', *sound.sox_args]
+
     assert_equal expected, calls.first[0]
     assert_equal File::NULL, calls.first[1][:in]
     assert_equal File::NULL, calls.first[1][:err]
-    assert writer.closed?
+    assert_predicate writer, :closed?
     assert_predicate player, :playing?
   ensure
     player&.stop
@@ -165,7 +166,7 @@ class FocusPlayerTest < Minitest::Test
 
     assert_instance_of Errno::EACCES, error.cause
     assert_match(/unable to start sox/, error.message)
-    assert reader.closed?
-    assert writer.closed?
+    assert_predicate reader, :closed?
+    assert_predicate writer, :closed?
   end
 end

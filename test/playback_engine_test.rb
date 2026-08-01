@@ -119,6 +119,7 @@ class PlaybackEngineTest < Minitest::Test
     t2 = make_track('shantae.gbs', subtune: 1)
     @engine.enqueue_now([t1, t2])
     ev = wait_for_event(:track_started)
+
     assert_equal t1.id, ev[1][:track].id
     wait_until { @engine.state[:position_ms].positive? }
 
@@ -129,10 +130,12 @@ class PlaybackEngineTest < Minitest::Test
 
     @engine.skip
     ev = wait_for_event(:track_started)
+
     assert_equal t2.id, ev[1][:track].id
 
     @engine.skip # queue empty -> stops
     wait_until { !@engine.state[:playing] }
+
     assert_nil @engine.state[:track]
   end
 
@@ -210,6 +213,7 @@ class PlaybackEngineTest < Minitest::Test
     track = @lib.find_track(id)
     @engine.enqueue_now([track])
     wait_until { @engine.state[:playing] }
+
     assert_equal id, @engine.state[:track]&.id
     # must NOT be flagged errored (i.e. the engine resolved the entry to a
     # real extracted file instead of handing the .zip to a backend)
@@ -223,6 +227,7 @@ class PlaybackEngineTest < Minitest::Test
     wait_until { @engine.state[:position_ms] > 100 }
     @engine.skip
     wait_until { @lib.history(limit: 5).size == 1 }
+
     assert_equal t.id, @lib.history(limit: 5).first[:track].id
   end
 
@@ -233,6 +238,7 @@ class PlaybackEngineTest < Minitest::Test
     @engine.skip
     wait_for_event(:track_ended)
     wait_until { !@engine.state[:playing] }
+
     assert_empty @lib.history(limit: 5)
   end
 
@@ -241,11 +247,13 @@ class PlaybackEngineTest < Minitest::Test
     hated = make_track('shantae.gbs', subtune: 3)
     t3 = make_track('shantae.gbs', subtune: 4)
     @lib.set_rating(hated.id, 1)
+
     assert @engine.toggle_skip_disliked
     @engine.enqueue_now([t1, hated, t3])
     wait_for_event(:track_started)
     @engine.skip
     ev = wait_for_event(:track_started) # hated is skipped -> t3 starts
+
     assert_equal t3.id, ev[1][:track].id
   end
 
@@ -257,8 +265,10 @@ class PlaybackEngineTest < Minitest::Test
     good = make_track('shantae.gbs', subtune: 5)
     @engine.enqueue_now([@lib.find_track(id), good])
     ev = wait_for_event(:track_error)
+
     assert_equal id, ev[1][:track].id
     ev = wait_for_event(:track_started) # engine moved on
+
     assert_equal good.id, ev[1][:track].id
     assert_equal 1, @lib.find_track(id).errored
   end
@@ -283,11 +293,13 @@ class PlaybackEngineTest < Minitest::Test
     t2 = make_track('shantae.gbs', subtune: 10)
     @engine.enqueue_now([t1, t2])
     ev = wait_for_event(:track_started)
+
     assert_equal t1.id, ev[1][:track].id
 
     @engine.remove_track_ids([t1.id])
 
     ev = wait_for_event(:track_started)
+
     assert_equal t2.id, ev[1][:track].id
     refute_includes @engine.queue_items.map(&:id), t1.id
   end
@@ -309,6 +321,7 @@ class PlaybackEngineTest < Minitest::Test
 
     @engine.enqueue_now([@lib.find_track(boom_id), good])
     ev = wait_for_event(:track_error)
+
     assert_equal boom_id, ev[1][:track].id
     assert_equal 1, @lib.find_track(boom_id).errored
 
@@ -316,6 +329,7 @@ class PlaybackEngineTest < Minitest::Test
     # before this fix, the unhandled read error killed it and this would
     # time out.
     ev = wait_for_event(:track_started)
+
     assert_equal good.id, ev[1][:track].id
   end
 
@@ -332,6 +346,7 @@ class PlaybackEngineTest < Minitest::Test
     @engine.shutdown
 
     seconds = @bus.all.filter_map { |type, payload| payload[:position_ms] / 1000 if type == :position }
+
     refute_empty seconds
     assert_equal seconds.uniq, seconds,
                  "expected one :position event per displayed second, got #{seconds.inspect}"

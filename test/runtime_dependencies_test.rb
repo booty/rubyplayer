@@ -31,6 +31,7 @@ class RuntimeDependenciesTest < Minitest::Test
     assert_includes error.message, '- ffprobe'
     assert_includes error.message, 'brew install libgme sox ffmpeg'
     install_line = error.message.lines.find { |line| line.include?('brew install') }
+
     assert_equal 1, install_line.split.count('ffmpeg'),
                  'ffmpeg formula should appear once for ffmpeg and ffprobe'
   end

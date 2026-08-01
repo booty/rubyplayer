@@ -24,6 +24,7 @@ class TrackFormatterTest < Minitest::Test
     assert_equal '07 Flash Man 2:05 ★★★★', segments.map { |segment| segment[:text] }.join
     title = segments.find { |segment| segment[:text] == 'Flash Man' }
     stars = segments.find { |segment| segment[:text] == '★★★★' }
+
     assert title[:bold]
     assert title[:underline]
     assert stars[:dim]

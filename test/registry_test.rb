@@ -43,6 +43,7 @@ class RegistryTest < Minitest::Test
 
   def test_config_overrides
     reg = RubyPlayer::Backends::Registry.new({ 'vgm' => 'openmpt', '.weird' => 'gme' })
+
     assert_equal :openmpt, reg.backend_name_for('/x/a.vgm')
     assert_equal :gme, reg.backend_name_for('/x/a.weird')
   end
@@ -50,6 +51,7 @@ class RegistryTest < Minitest::Test
   def test_backend_for_returns_memoized_instance
     a = @reg.backend_for('/x/a.mod')
     b = @reg.backend_for('/x/b.xm')
+
     assert_same a, b
     assert_equal 'openmpt', a.name
   end

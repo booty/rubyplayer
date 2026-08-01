@@ -42,16 +42,20 @@ class LibraryPaneTest < Minitest::Test
     assert_equal :focus, row.kind
     screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 10, cols: 40)
     @pane.render(screen, x: 0, y: 0, w: 40, h: 10, active: true, theme: RubyPlayer::Theme::DEFAULT)
+
     assert_includes screen.flush, 'Focus'
   end
 
   def test_expand_and_collapse
     11.times { @pane.handle_action(:nav_down) } # select Music after fixed views and All Songs
+
     assert_equal :folder, @pane.selected.kind
     @pane.handle_action(:expand)
+
     assert_equal(%w[Music Sega], @pane.rows.select { |r| r.kind == :folder }.map { |r| r.folder['name'] })
     assert_equal 2, @pane.rows.last.depth
     @pane.handle_action(:collapse)
+
     assert_equal 12, @pane.rows.size
   end
 
@@ -62,9 +66,11 @@ class LibraryPaneTest < Minitest::Test
     assert_equal(['Music'], @pane.rows.select { |row| row.kind == :folder }.map { |row| row.folder['name'] })
 
     @pane.handle_action(:collapse)
+
     assert_empty(@pane.rows.select { |row| row.kind == :folder })
 
     @pane.handle_action(:expand)
+
     assert_equal(['Music'], @pane.rows.select { |row| row.kind == :folder }.map { |row| row.folder['name'] })
   end
 
@@ -77,6 +83,7 @@ class LibraryPaneTest < Minitest::Test
     @pane.handle_action(:expand)
 
     folders = @pane.rows.select { |row| row.kind == :folder }
+
     assert_equal(%w[Music Sega], folders.map { |row| row.folder['name'] })
     assert_equal [1, 2], folders.map(&:depth)
   end
@@ -88,6 +95,7 @@ class LibraryPaneTest < Minitest::Test
     screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 11, cols: 40)
     @pane.render(screen, x: 0, y: 0, w: 40, h: 11, active: true,
                          theme: RubyPlayer::Theme::DEFAULT)
+
     assert_includes screen.flush, 'All Songs'
   end
 
@@ -102,8 +110,10 @@ class LibraryPaneTest < Minitest::Test
 
   def test_nav_clamps
     @pane.handle_action(:nav_up)
+
     assert_equal 0, @pane.selection
     15.times { @pane.handle_action(:nav_down) }
+
     assert_equal @pane.rows.size - 1, @pane.selection
   end
 
@@ -120,21 +130,27 @@ class LibraryPaneTest < Minitest::Test
     @pane.render(screen, x: 0, y: 0, w: 20, h: 5, active: true, theme: RubyPlayer::Theme::DEFAULT)
 
     @pane.handle_action(:nav_page_down)
+
     assert_equal 5, @pane.selection
     @pane.handle_action(:nav_page_down)
+
     assert_equal 10, @pane.selection
     @pane.handle_action(:nav_page_up)
+
     assert_equal 5, @pane.selection
     # clamps at both ends
     5.times { @pane.handle_action(:nav_page_down) }
+
     assert_equal @pane.rows.size - 1, @pane.selection
     5.times { @pane.handle_action(:nav_page_up) }
+
     assert_equal 0, @pane.selection
   end
 
   def test_select_queue_jumps_home
     3.times { @pane.handle_action(:nav_down) }
     @pane.handle_action(:select_queue)
+
     assert_equal :queue, @pane.selected.kind
   end
 
@@ -142,6 +158,7 @@ class LibraryPaneTest < Minitest::Test
     screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 12, cols: 40)
     @pane.render(screen, x: 0, y: 0, w: 40, h: 12, active: true, theme: RubyPlayer::Theme::DEFAULT)
     out = screen.flush
+
     assert_includes out, 'Playback Queue'
     assert_includes out, 'Music'
     assert_includes out, '(1)'
@@ -151,12 +168,14 @@ class LibraryPaneTest < Minitest::Test
     short = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 12, cols: 20)
     @pane.render(short, x: 0, y: 0, w: 20, h: 12, active: true,
                         theme: RubyPlayer::Theme::DEFAULT)
+
     refute_includes short.instance_variable_get(:@back).map { |row| row[19].ch }, '█'
 
     overflowing = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 2, cols: 20)
     @pane.render(overflowing, x: 0, y: 0, w: 20, h: 2, active: true,
                               theme: RubyPlayer::Theme::DEFAULT)
     edge = overflowing.instance_variable_get(:@back).map { |row| row[19].ch }
+
     assert_includes edge, '█'
     assert_includes edge, '│'
   end
@@ -169,11 +188,13 @@ class LibraryPaneTest < Minitest::Test
     row_kinds = kinds
     playlists_at = row_kinds.index(:playlists)
     all_at = row_kinds.index(:all)
+
     refute_nil playlists_at
     # Children (recency order) directly beneath the parent, before All Songs.
     assert_equal %i[playlist playlist], row_kinds[(playlists_at + 1), 2]
     assert_operator playlists_at, :<, all_at
     child = @pane.rows[playlists_at + 1]
+
     assert_equal 1, child.depth
     assert_equal 'Chill', child.playlist['name']
     assert_equal 'Playlists / Chill', @pane.breadcrumb_for(child)
@@ -184,8 +205,10 @@ class LibraryPaneTest < Minitest::Test
     @pane.rebuild!
     @pane.instance_variable_set(:@selection, kinds.index(:playlists))
     @pane.handle_action(:collapse)
+
     refute_includes kinds, :playlist
     @pane.handle_action(:expand)
+
     assert_includes kinds, :playlist
   end
 
@@ -194,6 +217,7 @@ class LibraryPaneTest < Minitest::Test
     @pane.rebuild!
     @pane.instance_variable_set(:@selection, kinds.index(:playlists))
     @pane.handle_action(:collapse)
+
     assert @pane.select_playlist(id)
     assert_equal :playlist, @pane.selected.kind
     assert_equal id, @pane.selected.playlist['id']

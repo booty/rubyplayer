@@ -16,6 +16,7 @@ class AppPlaybackQueueTest < Minitest::Test
   def test_navigate_and_enqueue_folder
     select_library_kind(:folder)
     @app.handle_key('n') # enqueue_end the whole folder
+
     assert_operator @app.engine.queue_items.size, :>=, 2
   end
 
@@ -35,9 +36,11 @@ class AppPlaybackQueueTest < Minitest::Test
     select_library_kind(:folder)
     @app.handle_key('right')            # expand (harmless if leaf) then...
     @app.handle_key('tab')              # focus the Tracks pane
+
     assert_equal :tracks, @app.active_pane
     refute_nil @app.tracks_pane.selected_track, 'tracks pane should have a selected track'
     @app.handle_key('enter')            # play now
+
     refute_empty @app.engine.queue_items
     @app.engine.queue_items.each do |item|
       assert_instance_of RubyPlayer::Track, item,
@@ -50,9 +53,11 @@ class AppPlaybackQueueTest < Minitest::Test
     @app.handle_key('n')
     before = @app.engine.queue_items.size
     @app.handle_key('u')
+
     assert_equal 0, @app.engine.queue_items.size
     assert_equal :queue, @app.library_pane.selected.kind
     @app.handle_key('ctrl_r')
+
     assert_equal before, @app.engine.queue_items.size
   end
 
@@ -122,10 +127,12 @@ class AppPlaybackQueueTest < Minitest::Test
 
     @app.handle_key('q')
     @app.render
+
     assert_equal before, @app.engine.queue_items
     assert_includes @app.instance_variable_get(:@io_out).string, 'Focus sounds cannot be queued'
 
     @app.handle_key('n')
+
     assert_equal before, @app.engine.queue_items
   end
 
@@ -136,12 +143,14 @@ class AppPlaybackQueueTest < Minitest::Test
       @app.engine.state[:track]
     end
     before_size = @app.engine.queue_items.size
+
     assert_operator before_size, :>=, 2
 
     @app.handle_key('>')                # next_track
     wait_until(timeout: 2, interval: 0.01, failure_message: 'timed out waiting for condition') do
       @app.engine.queue_items.size < before_size
     end
+
     assert_equal before_size - 1, @app.engine.queue_items.size
   end
 
@@ -149,6 +158,7 @@ class AppPlaybackQueueTest < Minitest::Test
     select_library_kind(:folder)
     @app.handle_key('n')                # enqueue_end (not playing, so no auto-skip semantics)
     before_size = @app.engine.queue_items.size
+
     assert_operator before_size, :>=, 2
 
     @app.handle_key('p')                # select_queue: show the Playback Queue in tracks pane
@@ -156,6 +166,7 @@ class AppPlaybackQueueTest < Minitest::Test
     @app.handle_key('down')             # move selection onto the 2nd queue row
 
     @app.handle_key('x')                # remove_from_queue
+
     assert_equal before_size - 1, @app.engine.queue_items.size
   end
 
@@ -179,6 +190,7 @@ class AppPlaybackQueueTest < Minitest::Test
 
     @app.handle_key('tab')              # tracks pane is showing the folder, not the queue
     @app.handle_key('x')
+
     assert_equal before_size, @app.engine.queue_items.size
   end
 
@@ -205,10 +217,12 @@ class AppPlaybackQueueTest < Minitest::Test
 
     @app.handle_key('p')   # select_queue
     queue_titles = @app.tracks_pane.display_rows.map { |r| r[:track].title }
+
     assert_equal %w[Charlie Alpha Bravo], queue_titles
 
     @app.handle_key('tab') # refocus tracks pane; still showing the queue
     @app.handle_key('Y')   # must be a no-op while viewing the queue
+
     assert_equal(%w[Charlie Alpha Bravo], @app.tracks_pane.display_rows.map { |r| r[:track].title })
 
     @app.handle_key('down') # select queue row 1 ("Alpha")

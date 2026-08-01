@@ -3,6 +3,7 @@ require 'test_helper'
 class KeymapTest < Minitest::Test
   def test_global_defaults
     k = RubyPlayer::Keymap.new
+
     assert_equal :toggle_play, k.action_for('space', pane: :library)
     assert_equal :cycle_pane, k.action_for('tab', pane: :tracks)
     assert_equal :play_now, k.action_for('enter', pane: :tracks)
@@ -16,6 +17,7 @@ class KeymapTest < Minitest::Test
 
   def test_pane_local_beats_global_and_matching_is_case_insensitive
     k = RubyPlayer::Keymap.new
+
     assert_equal :toggle_group, k.action_for('g', pane: :tracks) # pane-local
     assert_equal :toggle_group, k.action_for('G', pane: :tracks) # same key, either case
     assert_nil k.action_for('g', pane: :library) # group toggle doesn't exist in library pane
@@ -52,6 +54,7 @@ class KeymapTest < Minitest::Test
   def test_config_overrides
     k = RubyPlayer::Keymap.new({ 'global' => { 'x' => 'quit' },
                                  'tracks' => { 'z' => 'toggle_group' } })
+
     assert_equal :quit, k.action_for('x', pane: :tracks) # global override, no tracks-local "x"
     assert_equal :toggle_group, k.action_for('z', pane: :tracks)
     assert_nil k.action_for('z', pane: :library)
@@ -64,11 +67,13 @@ class KeymapTest < Minitest::Test
   def test_bindings_for_lists_pane_then_global
     k = RubyPlayer::Keymap.new
     keys = k.bindings_for(:tracks).map(&:first)
-    assert keys.index('g') < keys.index('space'), 'pane-local keys come first'
+
+    assert_operator keys.index('g'), :<, keys.index('space'), 'pane-local keys come first'
   end
 
   def test_config_override_keys_are_case_folded
     k = RubyPlayer::Keymap.new({ 'global' => { 'Z' => 'quit' } })
+
     assert_equal :quit, k.action_for('z', pane: :library)
     assert_equal :quit, k.action_for('Z', pane: :library)
   end
@@ -79,6 +84,7 @@ class KeymapTest < Minitest::Test
 
   def test_transport_defaults_are_global
     k = RubyPlayer::Keymap.new
+
     assert_equal :next_track, k.action_for('>', pane: :library)
     assert_equal :next_track, k.action_for('>', pane: :tracks)
     assert_equal :seek_back, k.action_for('[', pane: :library)
@@ -93,12 +99,14 @@ class KeymapTest < Minitest::Test
   # (the global default) it removes from the playback queue.
   def test_remove_key_is_pane_scoped
     k = RubyPlayer::Keymap.new
+
     assert_equal :remove_library_item, k.action_for('x', pane: :library)
     assert_equal :remove_from_queue, k.action_for('x', pane: :tracks)
   end
 
   def test_theme_picker_key_is_global_and_sort_title_moved_off_it
     k = RubyPlayer::Keymap.new
+
     assert_equal :show_theme_picker, k.action_for('t', pane: :library)
     assert_equal :show_theme_picker, k.action_for('T', pane: :tracks) # not shadowed by sort_title
     assert_equal :sort_title, k.action_for('y', pane: :tracks)
@@ -106,24 +114,28 @@ class KeymapTest < Minitest::Test
 
   def test_help_key_is_global
     k = RubyPlayer::Keymap.new
+
     assert_equal :show_help, k.action_for('?', pane: :library)
     assert_equal :show_help, k.action_for('?', pane: :tracks)
   end
 
   def test_show_track_info_key_is_tracks_scoped
     k = RubyPlayer::Keymap.new
+
     assert_equal :show_track_info, k.action_for('i', pane: :tracks)
     assert_nil k.action_for('i', pane: :library)
   end
 
   def test_sort_year_binding
     map = RubyPlayer::Keymap.new({})
+
     assert_equal :sort_year, map.action_for('e', pane: :tracks)
     assert_nil map.action_for('e', pane: :library)
   end
 
   def test_playlist_bindings
     map = RubyPlayer::Keymap.new({})
+
     assert_equal :add_to_playlist, map.action_for('l', pane: :tracks)
     assert_equal :add_to_playlist, map.action_for('l', pane: :library)
     assert_equal :duplicate_playlist, map.action_for('c', pane: :library)

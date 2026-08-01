@@ -87,6 +87,7 @@ class ConfigTest < Minitest::Test
     config = RubyPlayer::ConfigStore.new(path: @path, sample_path: @sample_path)
     updated = "RubyPlayer.configure { |config| config.eq.bands = 32 }\n"
     write_config updated
+
     assert config.reload_if_changed
     File.delete(@path)
 
@@ -111,7 +112,7 @@ class ConfigTest < Minitest::Test
       path: @path, sample_path: @sample_path, create_if_missing: false
     )
 
-    refute File.exist?(@path)
+    refute_path_exists @path
     assert_equal 16, config['eq', 'bands']
   end
 
@@ -276,6 +277,7 @@ class ConfigTest < Minitest::Test
     refute config.reload_if_changed
 
     write_config "RubyPlayer.configure { |config| config.eq.bands = 32 }\n"
+
     assert config.reload_if_changed
     assert_equal 32, config['eq', 'bands']
   end
@@ -283,6 +285,7 @@ class ConfigTest < Minitest::Test
   def test_reload_detects_same_size_rewrite
     write_config "RubyPlayer.configure { |config| config.eq.bands = 8 }\n"
     config = RubyPlayer::ConfigStore.new(path: @path)
+
     refute config.reload_if_changed
 
     write_config "RubyPlayer.configure { |config| config.eq.bands = 4 }\n"
@@ -303,6 +306,7 @@ class ConfigTest < Minitest::Test
     assert config.persist_theme(:amber_navy)
 
     source = File.read(@path)
+
     assert_includes source, '# keep this comment'
     assert_includes source, 'sample_rate = 48_000'
     assert_equal 1, source.scan('rubyplayer: managed theme begin').size
@@ -331,6 +335,7 @@ class ConfigTest < Minitest::Test
     assert config.persist_art_mode(:pane)
 
     source = File.read(@path)
+
     assert_equal 1, source.scan('rubyplayer: managed art_mode begin').size
     assert_match(/config\.ui\.art_mode = "pane"/, source)
     assert_equal 'pane', config['ui', 'art_mode']
@@ -362,6 +367,7 @@ class ConfigTest < Minitest::Test
     assert_equal 'basic_terminal', config['ui', 'theme'] # known block survives
     assert_equal 48_000, config['audio', 'sample_rate'] # user source survives
     source = File.read(@path)
+
     refute_includes source, 'pulse_mode'
     refute_includes File.read(config.previous_path), 'pulse_mode'
   end
@@ -384,6 +390,7 @@ class ConfigTest < Minitest::Test
     assert_equal 'ocean_mist', config['ui', 'theme']
     assert_equal 'corner', config['ui', 'art_mode']
     source = File.read(@path)
+
     assert_equal 1, source.scan('managed theme begin').size
     assert_equal 1, source.scan('managed art_mode begin').size
   end

@@ -58,27 +58,33 @@ class ExtractorPoolTest < Minitest::Test
   def test_full_scan_pipeline
     work = @scanner.reconcile(@music)
     result = @pool.process(work)
+
     assert_equal 3, result[:processed]
     assert_equal 1, result[:errored]
 
     # the mod became a single track with metadata
     mod = @db.read { |s| s.execute("SELECT * FROM tracks WHERE physical_path LIKE '%space-debris.mod'").first }
+
     assert_equal 'openmpt', mod['backend']
     assert_operator mod['duration_ms'], :>, 10_000
     refute_nil mod['file_mtime']
 
     # the nsf became a multitrack virtual folder with N subtune tracks
     nsf_folder = @db.read { |s| s.execute("SELECT * FROM folders WHERE kind = 'multitrack'").first }
+
     refute_nil nsf_folder
     subtunes = @db.read { |s| s.get_first_value('SELECT COUNT(*) FROM tracks WHERE folder_id = ?', [nsf_folder['id']]) }
+
     assert_operator subtunes, :>, 1
 
     # the corrupt file is flagged errored, not raised
     bad = @db.read { |s| s.execute("SELECT * FROM tracks WHERE physical_path LIKE '%corrupt.mod'").first }
+
     assert_equal 1, bad['errored']
 
     # counts were recomputed and the root is visible
     roots = @lib.roots
+
     assert_equal 1, roots.size
     assert_operator roots.first['track_count'], :>, 2
 
@@ -99,10 +105,12 @@ class ExtractorPoolTest < Minitest::Test
     archive_pool.process(@scanner.reconcile(@music))
 
     arc = @db.read { |s| s.execute("SELECT * FROM folders WHERE kind = 'archive'").first }
+
     refute_nil arc
     assert_equal zip, arc['path']
 
     rows = @db.read { |s| s.execute('SELECT * FROM tracks WHERE physical_path = ? ORDER BY archive_entry', [zip]) }
+
     assert_equal(['10 - Round Clear.vgm', '11 - Game Over.vgm', '17 - Puyo Puyo Bonus SE.vgm'],
                  rows.map { |r| r['archive_entry'] })
     assert_equal ['gme'], rows.map { |r| r['backend'] }.uniq
@@ -113,6 +121,7 @@ class ExtractorPoolTest < Minitest::Test
     assert_equal ['M.U.S.H.A.'], rows.map { |r| r['album'] }.uniq
     # entries inherit the archive's stat so the scanner's diff pass works
     stat = File.stat(zip)
+
     assert_equal [stat.mtime.to_f], rows.map { |r| r['file_mtime'] }.uniq
     # idempotency: rescan after extraction finds nothing to do
     assert_empty @scanner.reconcile(@music)
@@ -122,9 +131,11 @@ class ExtractorPoolTest < Minitest::Test
     FileUtils.cp(File.join(FIXTURES, 'phantasy.7z'), @music)
     FileUtils.cp(File.join(FIXTURES, 'phantasy.rar'), @music)
     result = archive_pool.process(@scanner.reconcile(@music))
+
     assert_equal 0, result[:errored] - 1 # corrupt.mod is the only error
     entries = @db.read { |s| s.execute("SELECT archive_entry FROM tracks WHERE archive_entry != ''") }
                  .map { |r| r['archive_entry'] }
+
     assert_includes entries, '01 - Phantasy.vgm' # from the 7z
     assert_includes entries, '04 - My Home.vgm'  # from the rar
   end
@@ -136,18 +147,22 @@ class ExtractorPoolTest < Minitest::Test
     archive_pool.process(@scanner.reconcile(@music))
 
     inner = @db.read { |s| s.execute('SELECT * FROM folders WHERE path = ?', ["#{nested}/musha.zip"]).first }
+
     refute_nil inner
     assert_equal 'archive', inner['kind']
 
     rows = @db.read { |s| s.execute('SELECT archive_entry FROM tracks WHERE physical_path = ?', [nested]) }
+
     assert_includes rows.map { |r| r['archive_entry'] }, 'musha.zip/10 - Round Clear.vgm'
   end
 
   def test_unreadable_archive_flags_errored_track
     File.write(File.join(@music, 'corrupt.zip'), 'not an archive')
     result = archive_pool.process(@scanner.reconcile(@music))
+
     assert_equal 2, result[:errored] # corrupt.mod + corrupt.zip
     bad = @db.read { |s| s.execute("SELECT * FROM tracks WHERE physical_path LIKE '%corrupt.zip'").first }
+
     assert_equal 1, bad['errored']
   end
 
@@ -157,6 +172,7 @@ class ExtractorPoolTest < Minitest::Test
     bus.define_singleton_method(:publish) { |type, **payload| events << [type, payload] }
     pool = RubyPlayer::ExtractorPool.new(library: @lib, registry: @reg, thread_count: 2, event_bus: bus)
     pool.process(@scanner.reconcile(@music))
+
     assert_equal(3, events.count { |t, _| t == :scan_progress })
     assert_equal(1, events.count { |t, _| t == :scan_complete })
   end
@@ -204,6 +220,7 @@ class ExtractorPoolTest < Minitest::Test
     pool.process(work)
 
     rows = @db.read { |s| s.execute('SELECT * FROM tracks WHERE physical_path = ? ORDER BY subtune_index', [path]) }
+
     assert_equal 2, rows.size
     assert_equal(%w[game game], rows.map { |r| r['album'] })
   end
@@ -237,6 +254,7 @@ class ExtractorPoolTest < Minitest::Test
     pool.process(work)
 
     track_id = track_row(path)['id']
+
     assert_equal({ 'genre' => 'VGM' }, @lib.track_metadata_for(track_id))
   end
 
@@ -251,6 +269,7 @@ class ExtractorPoolTest < Minitest::Test
     pool.process(work)
 
     track_id = track_row(path)['id']
+
     assert_empty @lib.track_metadata_for(track_id)
   end
 
@@ -270,6 +289,7 @@ class ExtractorPoolTest < Minitest::Test
     work = [RubyPlayer::WorkItem.new(path: path, parent_folder_id: root_folder_id, status: :new)]
     pool.process(work)
     track_id = track_row(path)['id']
+
     assert_equal({ 'genre' => 'VGM' }, @lib.track_metadata_for(track_id))
 
     # rescan: file was retagged to drop all extra tags
@@ -298,6 +318,7 @@ class ExtractorPoolTest < Minitest::Test
     work = [RubyPlayer::WorkItem.new(path: path, parent_folder_id: root_folder_id, status: :new)]
     pool.process(work)
     track_id = track_row(path)['id']
+
     assert_equal({ 'genre' => 'VGM' }, @lib.track_metadata_for(track_id))
 
     # rescan with a backend that has no :extra key at all
@@ -326,6 +347,7 @@ class ExtractorPoolTest < Minitest::Test
     pool.process(work)
 
     row = track_row(path)
+
     assert_equal 'V.A.', row['album_artist']
     assert_equal 2001, row['year']
   end

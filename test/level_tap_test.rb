@@ -11,6 +11,7 @@ class LevelTapTest < Minitest::Test
   def test_silence_is_all_zero
     tap = RubyPlayer::LevelTap.new(bands: 8, sample_rate: 48_000)
     tap.push(([0.0] * 2048).pack('e*'))
+
     assert(tap.levels.all? { |l| l < 0.01 })
   end
 
@@ -18,6 +19,7 @@ class LevelTapTest < Minitest::Test
     tap = RubyPlayer::LevelTap.new(bands: 8, sample_rate: 48_000)
     tap.push(sine(80, 48_000, 2048))
     levels = tap.levels
+
     assert_equal 8, levels.size
     assert(levels.all? { |l| l >= 0.0 && l <= 1.0 })
     assert_equal 0, levels.index(levels.max), '80Hz should peak in the lowest band'
@@ -27,6 +29,7 @@ class LevelTapTest < Minitest::Test
     tap = RubyPlayer::LevelTap.new(bands: 8, sample_rate: 48_000)
     tap.push(sine(8_000, 48_000, 2048))
     levels = tap.levels
+
     assert_operator levels.index(levels.max), :>=, 5
   end
 end

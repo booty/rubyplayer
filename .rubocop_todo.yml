@@ -111,9 +111,9 @@ Style/ComparableBetween:
 
 # Offense count: 1
 # This cop supports safe autocorrection (--autocorrect).
-Style/ComparableClamp:
-  Exclude:
-    - 'lib/rubyplayer/ui/app.rb'
+# Style/ComparableClamp:
+#   Exclude:
+#     - 'lib/rubyplayer/ui/app.rb'
 
 # Offense count: 1
 # This cop supports unsafe autocorrection (--autocorrect-all).

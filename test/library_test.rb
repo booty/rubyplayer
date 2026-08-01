@@ -25,6 +25,7 @@ class LibraryTest < Minitest::Test
 
   def test_upsert_folder_is_idempotent_on_path
     id2 = @lib.upsert_folder(parent_id: nil, name: 'Music', path: '/m', kind: 'dir')
+
     assert_equal @root, id2
   end
 
@@ -35,8 +36,10 @@ class LibraryTest < Minitest::Test
                             backend: 'gme', format: 'vgm', title: 'New Title',
                             album: 'A', artist: 'Ar', composer: 'C',
                             track_number: 1, duration_ms: 61_000)
+
     assert_equal id, id2
     t = @lib.find_track(id)
+
     assert_equal 'New Title', t.title
     assert_equal 5, t.rating
   end
@@ -44,6 +47,7 @@ class LibraryTest < Minitest::Test
   def test_subtunes_are_distinct_tracks
     a = add_track('/m/sega/multi.nsf', subtune: 0)
     b = add_track('/m/sega/multi.nsf', subtune: 1)
+
     refute_equal a, b
   end
 
@@ -52,6 +56,7 @@ class LibraryTest < Minitest::Test
     missing_id = add_track('/m/sega/gone.vgm')
     @lib.mark_missing(track_ids: [missing_id], folder_ids: [])
     tracks = @lib.tracks_under(@root)
+
     assert_equal ['/m/sega/a.vgm'], tracks.map(&:physical_path)
   end
 
@@ -72,6 +77,7 @@ class LibraryTest < Minitest::Test
     add_track('/m/sega/a.vgm')
     @lib.recompute_counts!
     roots = @lib.roots
+
     assert_equal 1, roots.size
     assert_equal 1, roots.first['track_count']
   end
@@ -79,6 +85,7 @@ class LibraryTest < Minitest::Test
   def test_favorites
     add_track('/m/sega/a.vgm', rating: 5)
     add_track('/m/sega/b.vgm', rating: 2)
+
     assert_equal ['/m/sega/a.vgm'], @lib.favorites.map(&:physical_path)
   end
 
@@ -140,6 +147,7 @@ class LibraryTest < Minitest::Test
     assert_nil @lib.find_track(missing_id)
     refute_nil @lib.find_track(healthy_id)
     history_ids = @db.read { |db| db.execute('SELECT track_id FROM playback_history').map { |row| row['track_id'] } }
+
     assert_equal [healthy_id], history_ids
   end
 
@@ -162,6 +170,7 @@ class LibraryTest < Minitest::Test
     @lib.record_history(track_id: id, started_at: '2026-07-04T00:00:00Z',
                         ended_at: '2026-07-04T00:01:00Z')
     h = @lib.history(limit: 10)
+
     assert_equal 1, h.size
     assert_equal id, h.first[:track].id
   end
@@ -194,6 +203,7 @@ class LibraryTest < Minitest::Test
 
   def test_play_stats_aggregates_count_total_and_last_played
     id = add_track('/m/sega/a.vgm')
+
     assert_equal({ count: 0, last_played_at: nil, total_played_ms: 0 }, @lib.play_stats(id))
 
     @lib.record_history(track_id: id, started_at: '2026-07-01T00:00:00Z', ended_at: '2026-07-01T00:01:00Z')
@@ -214,8 +224,10 @@ class LibraryTest < Minitest::Test
 
   def test_create_playlist_and_list
     id = @lib.create_playlist('Chill VGM')
+
     assert_kind_of Integer, id
     lists = @lib.playlists
+
     assert_equal(['Chill VGM'], lists.map { |p| p['name'] })
     assert_equal 0, lists.first['track_count']
   end
@@ -231,9 +243,11 @@ class LibraryTest < Minitest::Test
     # Adding a track bumps updated_at, so Alpha becomes most recent.
     t = add_track('/m/sega/a.vgm')
     @lib.add_to_playlist(a, t)
+
     assert_equal(%w[Alpha Beta], @lib.playlists(sort: :recency).map { |p| p['name'] })
     assert_equal(%w[Alpha Beta], @lib.playlists(sort: :alpha).map { |p| p['name'] })
     @lib.add_to_playlist(b, t)
+
     assert_equal(%w[Beta Alpha], @lib.playlists(sort: :recency).map { |p| p['name'] })
   end
 
@@ -242,14 +256,17 @@ class LibraryTest < Minitest::Test
     @lib.create_playlist('Taken')
     assert_raises(RubyPlayer::Library::PlaylistNameTaken) { @lib.rename_playlist(a, 'taken') }
     @lib.rename_playlist(a, 'New')
+
     assert_equal(%w[New Taken], @lib.playlists(sort: :alpha).map { |p| p['name'] })
   end
 
   def test_add_to_playlist_and_contains
     id = @lib.create_playlist('P')
     t = add_track('/m/sega/a.vgm')
+
     refute @lib.playlist_contains?(id, t)
     @lib.add_to_playlist(id, t)
+
     assert @lib.playlist_contains?(id, t)
     assert_equal 1, @lib.playlists.first['track_count']
   end
@@ -259,6 +276,7 @@ class LibraryTest < Minitest::Test
     t = add_track('/m/sega/a.vgm')
     @lib.add_to_playlist(id, t)
     @lib.add_to_playlist(id, t)
+
     assert_equal 2, @lib.playlists.first['track_count']
   end
 
@@ -285,9 +303,11 @@ class LibraryTest < Minitest::Test
     t = add_track('/m/sega/a.vgm')
     @lib.add_to_playlist(id, t)
     @lib.delete_playlist(id)
+
     assert_empty @lib.playlists
     # Entries must be gone too, or a future playlist reusing the id would inherit them.
     count = @db.read { |s| s.get_first_value('SELECT COUNT(*) FROM playlist_tracks') }
+
     assert_equal 0, count
   end
 
@@ -296,6 +316,7 @@ class LibraryTest < Minitest::Test
     t = add_track('/m/sega/a.vgm')
     @lib.add_to_playlist(id, t)
     @lib.mark_missing(track_ids: [t], folder_ids: [])
+
     assert_equal 0, @lib.playlists.first['track_count']
   end
 
@@ -308,8 +329,10 @@ class LibraryTest < Minitest::Test
 
   def test_playlist_tracks_in_position_order_hiding_missing
     id, ids = playlist_with_tracks(%w[a b c])
+
     assert_equal %w[a b c], @lib.playlist_tracks(id).map(&:title)
     @lib.mark_missing(track_ids: [ids[1]], folder_ids: [])
+
     assert_equal %w[a c], @lib.playlist_tracks(id).map(&:title)
   end
 
@@ -318,11 +341,13 @@ class LibraryTest < Minitest::Test
     @lib.mark_missing(track_ids: [ids[1]], folder_ids: [])
     # Rescan restoring the file clears missing (upsert_track sets missing=0).
     add_track('/m/sega/b.vgm', title: 'b')
+
     assert_equal %w[a b c], @lib.playlist_tracks(id).map(&:title)
   end
 
   def test_move_playlist_entry_swaps_visible_neighbors
     id, = playlist_with_tracks(%w[a b c])
+
     assert_equal 2, @lib.move_playlist_entry(id, 1, 1) # b down -> a c b
     assert_equal %w[a c b], @lib.playlist_tracks(id).map(&:title)
     assert_equal 0, @lib.move_playlist_entry(id, 1, -1) # c up -> c a b
@@ -334,14 +359,17 @@ class LibraryTest < Minitest::Test
     @lib.mark_missing(track_ids: [ids[1]], folder_ids: [])
     # Visible list is [a c]; moving a down must swap with c, not hidden b.
     @lib.move_playlist_entry(id, 0, 1)
+
     assert_equal %w[c a], @lib.playlist_tracks(id).map(&:title)
     # b restored: it kept its middle position, order is now c b a.
     add_track('/m/sega/b.vgm', title: 'b')
+
     assert_equal %w[c b a], @lib.playlist_tracks(id).map(&:title)
   end
 
   def test_move_playlist_entry_out_of_range_is_nil_noop
     id, = playlist_with_tracks(%w[a b])
+
     assert_nil @lib.move_playlist_entry(id, 0, -1)
     assert_nil @lib.move_playlist_entry(id, 1, 1)
     assert_equal %w[a b], @lib.playlist_tracks(id).map(&:title)
@@ -349,12 +377,14 @@ class LibraryTest < Minitest::Test
 
   def test_remove_playlist_entry_renumbers_contiguously
     id, ids = playlist_with_tracks(%w[a b c])
+
     assert_equal ids[1], @lib.remove_playlist_entry(id, 1)
     assert_equal %w[a c], @lib.playlist_tracks(id).map(&:title)
     positions = @db.read do |s|
       s.execute('SELECT position FROM playlist_tracks WHERE playlist_id = ? ORDER BY position',
                 [id]).map { |r| r['position'] }
     end
+
     assert_equal [0, 1], positions
   end
 
@@ -362,8 +392,10 @@ class LibraryTest < Minitest::Test
     id, ids = playlist_with_tracks(%w[a b])
     @lib.mark_missing(track_ids: [ids[0]], folder_ids: [])
     copy = @lib.duplicate_playlist(id, 'P copy')
+
     assert_equal %w[b], @lib.playlist_tracks(copy).map(&:title)
     add_track('/m/sega/a.vgm', title: 'a')
+
     assert_equal %w[a b], @lib.playlist_tracks(copy).map(&:title)
   end
 
@@ -371,8 +403,10 @@ class LibraryTest < Minitest::Test
     id, ids = playlist_with_tracks(%w[a b])
     @lib.mark_missing(track_ids: [ids[0]], folder_ids: [])
     @lib.purge_missing_tracks!([ids[0]])
+
     assert_equal %w[b], @lib.playlist_tracks(id).map(&:title)
     add_track('/m/sega/a.vgm', title: 'a') # restore file: entry must NOT come back
+
     assert_equal %w[b], @lib.playlist_tracks(id).map(&:title)
   end
 
@@ -384,6 +418,7 @@ class LibraryTest < Minitest::Test
                            artist: 'Ar', composer: nil, track_number: 1,
                            duration_ms: 1000, album_artist: 'Various', year: 1998)
     t = @lib.find_track(id)
+
     assert_equal 'Various', t.album_artist
     assert_equal 1998, t.year
   end
@@ -391,6 +426,7 @@ class LibraryTest < Minitest::Test
   def test_upsert_track_defaults_album_artist_and_year_to_nil
     id = add_track('/m/sega/plain.vgm')
     t = @lib.find_track(id)
+
     assert_nil t.album_artist
     assert_nil t.year
   end
@@ -398,11 +434,14 @@ class LibraryTest < Minitest::Test
   def test_replace_track_metadata_round_trip_and_replacement
     id = add_track('/m/sega/kv.vgm')
     @lib.replace_track_metadata(id, { 'genre' => 'VGM', 'comment' => 'rip' })
+
     assert_equal({ 'genre' => 'VGM', 'comment' => 'rip' }, @lib.track_metadata_for(id))
     # Replacement is total: stale keys from the previous scan must not linger.
     @lib.replace_track_metadata(id, { 'genre' => 'Chip' })
+
     assert_equal({ 'genre' => 'Chip' }, @lib.track_metadata_for(id))
     @lib.replace_track_metadata(id, {})
+
     assert_empty @lib.track_metadata_for(id)
   end
 

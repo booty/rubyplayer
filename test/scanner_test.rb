@@ -35,9 +35,11 @@ class ScannerTest < Minitest::Test
 
   def test_new_files_yield_new_work_items_and_folder_rows
     work = @scanner.reconcile(@music)
+
     assert_equal [[@nsf, :new], [@mod, :new]].sort, work.map { |w| [w.path, w.status] }.sort
     # dir rows exist for music/ and music/sega/ (query raw: track_count still 0)
     paths = @db.read { |s| s.execute('SELECT path, kind FROM folders').map { |r| [r['path'], r['kind']] } }
+
     assert_includes paths, [@music, 'dir']
     assert_includes paths, [File.join(@music, 'sega'), 'dir']
   end
@@ -48,6 +50,7 @@ class ScannerTest < Minitest::Test
     @lib.upsert_track(track_attrs(@mod, sega_id))
     music_id = @db.read { |s| s.get_first_value('SELECT id FROM folders WHERE path = ?', [@music]) }
     @lib.upsert_track(track_attrs(@nsf, music_id))
+
     assert_empty @scanner.reconcile(@music)
   end
 
@@ -58,6 +61,7 @@ class ScannerTest < Minitest::Test
     File.write(@mod, 'z' * 150) # size + mtime change
     work = @scanner.reconcile(@music)
     changed = work.find { |w| w.path == @mod }
+
     assert_equal :changed, changed.status
   end
 
@@ -68,6 +72,7 @@ class ScannerTest < Minitest::Test
     File.delete(@mod)
     @scanner.reconcile(@music)
     row = @db.read { |s| s.execute('SELECT missing FROM tracks WHERE id = ?', [id]).first }
+
     assert_equal 1, row['missing']
   end
 
@@ -81,6 +86,7 @@ class ScannerTest < Minitest::Test
     @lib.upsert_track(track_attrs(@nsf, music_id))
     @scanner.reconcile(@music)
     row = @db.read { |s| s.execute('SELECT missing FROM folders WHERE path = ?', [@nsf]).first }
+
     assert_equal 0, row['missing']
   end
 
@@ -109,12 +115,14 @@ class ScannerTest < Minitest::Test
   def test_new_archive_yields_new_work_item
     @zip = write_file('game.zip', 'PK' * 50)
     work = @scanner.reconcile(@music)
+
     assert_includes work.map { |w| [w.path, w.status] }, [@zip, :new]
   end
 
   def test_unchanged_archive_yields_no_work_and_keeps_inner_rows
     track_id, sub_id = archive_setup
     work = @scanner.reconcile(@music)
+
     refute_includes work.map(&:path), @zip
     assert_equal(0, @db.read { |s| s.get_first_value('SELECT missing FROM tracks WHERE id = ?', [track_id]) })
     assert_equal(0, @db.read { |s| s.get_first_value('SELECT missing FROM folders WHERE id = ?', [sub_id]) })
@@ -125,6 +133,7 @@ class ScannerTest < Minitest::Test
     File.write(@zip, 'PK' * 80) # size + mtime change
     work = @scanner.reconcile(@music)
     changed = work.find { |w| w.path == @zip }
+
     assert_equal :changed, changed.status
     # inner tracks flagged missing; the pool's re-extraction upsert restores
     # the ones still present in the new archive version
@@ -141,6 +150,7 @@ class ScannerTest < Minitest::Test
     stat = File.stat(zip)
     @lib.upsert_folder(parent_id: music_id, name: 'empty-ish.zip', path: zip,
                        kind: 'archive', mtime: stat.mtime.to_f, size: stat.size)
+
     refute_includes @scanner.reconcile(@music).map(&:path), zip
   end
 
@@ -148,12 +158,14 @@ class ScannerTest < Minitest::Test
     track_id, sub_id = archive_setup
     File.delete(@zip)
     @scanner.reconcile(@music)
+
     assert_equal(1, @db.read { |s| s.get_first_value('SELECT missing FROM tracks WHERE id = ?', [track_id]) })
     assert_equal(1, @db.read { |s| s.get_first_value('SELECT missing FROM folders WHERE id = ?', [sub_id]) })
   end
 
   def test_single_file_root
     work = @scanner.reconcile(@mod)
+
     assert_equal([[@mod, :new]], work.map { |w| [w.path, w.status] })
   end
 end

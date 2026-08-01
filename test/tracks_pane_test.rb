@@ -37,6 +37,7 @@ class TracksPaneTest < Minitest::Test
 
   def test_folder_view_lists_tracks
     @pane.show(@folder_row)
+
     assert_equal 3, titles.size
   end
 
@@ -45,6 +46,7 @@ class TracksPaneTest < Minitest::Test
 
     assert_equal 'Tracks · Music / Sega · 3', @pane.title
     @pane.filter = 'bravo'
+
     assert_equal 'Tracks · Music / Sega · 1', @pane.title
   end
 
@@ -85,8 +87,10 @@ class TracksPaneTest < Minitest::Test
 
     assert_equal %w[Bravo], titles
     @pane.filter = 'APPLE'
+
     assert_equal %w[Alpha Bravo], titles.sort
     @pane.filter = 'c.vgm'
+
     assert_equal %w[Charlie], titles
   end
 
@@ -136,6 +140,7 @@ class TracksPaneTest < Minitest::Test
     assert_equal selected_id, @pane.selected_track.id
 
     @pane.show(queue_row)
+
     assert_equal 'bravo', @pane.filter
   end
 
@@ -151,10 +156,13 @@ class TracksPaneTest < Minitest::Test
   def test_sorting
     @pane.show(@folder_row)
     @pane.handle_action(:sort_title)
+
     assert_equal %w[Alpha Bravo Charlie], titles
     @pane.handle_action(:sort_artist)
+
     assert_equal %w[X X Y].sort, @pane.display_rows.select { |r| r[:type] == :track }.map { |r| r[:track].artist }.sort
     @pane.handle_action(:sort_number)
+
     assert_equal [1, 1, 2].sort, @pane.display_rows.select { |r|
       r[:type] == :track
     }.map { |r| r[:track].track_number }.sort
@@ -165,6 +173,7 @@ class TracksPaneTest < Minitest::Test
     @pane.handle_action(:toggle_group)
     rows = @pane.display_rows
     headers = rows.select { |r| r[:type] == :header }.map { |r| r[:text] }
+
     assert_equal %w[Apple Zebra], headers
     assert_equal :header, rows.first[:type]
   end
@@ -175,6 +184,7 @@ class TracksPaneTest < Minitest::Test
     apple_rows = @pane.display_rows.select { |r| r[:type] == :track && r[:track].album == 'Apple' }
     x_row = apple_rows.find { |r| r[:track].artist == 'X' } # X is Apple's dominant artist
     y_row = apple_rows.find { |r| r[:track].artist == 'Y' }
+
     refute_includes x_row[:text], 'X'
     assert_includes y_row[:text], 'Y'
   end
@@ -185,6 +195,7 @@ class TracksPaneTest < Minitest::Test
     add('y1.vgm', title: 'Mid', album: 'Apple', artist: 'X', number: 1, year: 1991)
     @pane.show(@folder_row)
     @pane.handle_action(:sort_year)
+
     assert_equal %w[Bravo Alpha Charlie Mid New], titles
   end
 
@@ -204,6 +215,7 @@ class TracksPaneTest < Minitest::Test
     screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 10, cols: 40)
     @pane.render(screen, x: 0, y: 0, w: 40, h: 10, active: true, theme: RubyPlayer::Theme::DEFAULT)
     out = screen.flush
+
     assert_includes out, "--- Apple #{'-' * (40 - '--- Apple '.size)}"
     assert_includes out, "--- Zebra #{'-' * (40 - '--- Zebra '.size)}"
   end
@@ -216,6 +228,7 @@ class TracksPaneTest < Minitest::Test
                          theme: RubyPlayer::Theme::DEFAULT)
 
     edge = screen.instance_variable_get(:@back).map { |row| row[19].ch }
+
     assert_includes edge, '█'
     assert_includes edge, '│'
   end
@@ -271,6 +284,7 @@ class TracksPaneTest < Minitest::Test
       pane.render(screen, x: 0, y: 0, w: 40, h: 5, active: true, theme: theme)
 
       cell = screen.instance_variable_get(:@back)[0][0]
+
       assert_equal theme[:selection_text], cell.fg
       assert_equal theme[:selection_bg], cell.bg
       assert cell.italic
@@ -286,18 +300,22 @@ class TracksPaneTest < Minitest::Test
     @pane.render(screen, x: 0, y: 0, w: 40, h: 2, active: true, theme: RubyPlayer::Theme::DEFAULT)
 
     @pane.handle_action(:nav_page_down) # 1 + 2 = 3 = Zebra header -> nudged to 4
+
     assert_equal 4, @pane.selection
     assert_equal 'Charlie', @pane.selected_track.title
     @pane.handle_action(:nav_page_up) # 4 - 2 = 2 = Bravo
+
     assert_equal 'Bravo', @pane.selected_track.title
     # clamps: page up past the top must land on the first track, not header 0
     @pane.handle_action(:nav_page_up)
+
     assert_equal 'Alpha', @pane.selected_track.title
   end
 
   def test_selection_skips_headers
     @pane.show(@folder_row)
     @pane.handle_action(:toggle_group)
+
     assert_equal :track, @pane.display_rows[@pane.selection][:type]
     refute_nil @pane.selected_track
   end
@@ -308,6 +326,7 @@ class TracksPaneTest < Minitest::Test
                                 format: 'vgm', title: 'Queued'
                               ))]
     @pane.show(RubyPlayer::UI::LibraryPane::Row.new(kind: :queue, depth: 0))
+
     assert_equal %w[Queued], titles
   end
 
@@ -320,9 +339,11 @@ class TracksPaneTest < Minitest::Test
 
   def test_empty_history_and_favorites_render_contextual_guidance
     @pane.show(RubyPlayer::UI::LibraryPane::Row.new(kind: :history, depth: 0))
+
     assert_equal 'No playback history yet', @pane.display_rows.first[:text]
 
     @pane.show(RubyPlayer::UI::LibraryPane::Row.new(kind: :favorites, depth: 0))
+
     assert_equal 'No favorites yet — press 1–6 while a track plays',
                  @pane.display_rows.first[:text]
   end
@@ -351,10 +372,12 @@ class TracksPaneTest < Minitest::Test
 
   def test_queue_and_focus_sort_actions_return_disabled_reason
     @pane.show(RubyPlayer::UI::LibraryPane::Row.new(kind: :queue, depth: 0))
+
     assert_equal [:disabled, 'Queue order cannot be sorted or grouped'],
                  @pane.handle_action(:sort_title)
 
     @pane.show(RubyPlayer::UI::LibraryPane::Row.new(kind: :focus, depth: 0))
+
     assert_equal [:disabled, 'Focus sounds cannot be sorted or grouped'],
                  @pane.handle_action(:toggle_group)
   end
@@ -417,12 +440,14 @@ class TracksPaneTest < Minitest::Test
     @pane.handle_action(:sort_title)
     @pane.handle_action(:sort_number)
     @pane.handle_action(:sort_artist)
+
     assert_equal %w[Charlie Alpha Bravo], titles
 
     # (c) selected_track_index must be the real queue position of the
     # selected row (not just "some index") -- that's the value App passes
     # straight to engine.remove_at.
     @pane.handle_action(:nav_down) # move onto queue row 1
+
     assert_equal 1, @pane.selected_track_index
     assert_equal 'Alpha', @pane.selected_track.title
   end
@@ -438,6 +463,7 @@ class TracksPaneTest < Minitest::Test
 
     @pane.show(@folder_row)
     @pane.handle_action(:sort_title)
+
     assert_equal %w[Alpha Bravo Charlie], titles
 
     @pane.show(RubyPlayer::UI::LibraryPane::Row.new(kind: :queue, depth: 0))
@@ -463,6 +489,7 @@ class TracksPaneTest < Minitest::Test
         end
       RUBY
       @pane.update_config(RubyPlayer::ConfigStore.new(path: path))
+
       assert_includes @pane.display_rows.first[:text], '<<'
       assert_equal :accent, @pane.display_rows.first[:segments].first[:fg]
     end
@@ -475,6 +502,7 @@ class TracksPaneTest < Minitest::Test
   # which the rest of the suite (fresh pane per assertion) cannot catch.
   def test_display_rows_are_memoized_between_mutations
     @pane.show(@folder_row)
+
     assert_same @pane.display_rows, @pane.display_rows
   end
 
@@ -482,8 +510,10 @@ class TracksPaneTest < Minitest::Test
     @pane.show(@folder_row)
     @pane.display_rows
     @pane.filter = 'bravo'
+
     assert_equal %w[Bravo], titles
     @pane.clear_filter
+
     assert_equal 3, titles.size
   end
 
@@ -492,6 +522,7 @@ class TracksPaneTest < Minitest::Test
     @pane.display_rows
     add('d.vgm', title: 'Delta', album: 'Apple', artist: 'Y', number: 3)
     @pane.reload!
+
     assert_includes titles, 'Delta'
   end
 
@@ -499,8 +530,10 @@ class TracksPaneTest < Minitest::Test
     @pane.show(@folder_row)
     @pane.display_rows
     @pane.handle_action(:toggle_group)
+
     assert(@pane.display_rows.any? { |row| row[:type] == :header })
     @pane.handle_action(:sort_title)
+
     assert_equal %w[Alpha Bravo Charlie], titles
   end
 
@@ -517,6 +550,7 @@ class TracksPaneTest < Minitest::Test
         end
       RUBY
       @pane.update_config(RubyPlayer::ConfigStore.new(path: path))
+
       assert_includes @pane.display_rows.first[:text], '!!'
     end
   end
@@ -542,6 +576,7 @@ class TracksPaneTest < Minitest::Test
     @lib.add_to_playlist(id, track_id('b.vgm'))
     @lib.add_to_playlist(id, track_id('a.vgm'))
     @pane.show(playlist_row(id))
+
     assert_equal %w[Bravo Alpha], titles
     assert_equal id, @pane.playlist_id
   end
@@ -554,9 +589,11 @@ class TracksPaneTest < Minitest::Test
     @lib.add_to_playlist(id, track_id('a.vgm'))
     @pane.show(playlist_row(id))
     outcome = @pane.handle_action(:sort_title)
+
     assert_equal :disabled, outcome[0]
     assert_equal %w[Bravo Alpha], titles
     outcome = @pane.handle_action(:toggle_group)
+
     assert_equal :disabled, outcome[0]
   end
 
@@ -566,6 +603,7 @@ class TracksPaneTest < Minitest::Test
     @lib.add_to_playlist(id, track_id('b.vgm'))
     @lib.add_to_playlist(id, track_id('a.vgm'))
     @pane.show(playlist_row(id))
+
     assert_equal %w[Bravo Alpha], titles
   end
 
@@ -575,6 +613,7 @@ class TracksPaneTest < Minitest::Test
     @lib.rename_playlist(beta, 'Beta') # unambiguous recency bump
     @pane.show(playlists_row)
     rows = @pane.display_rows
+
     assert(rows.all? { |r| r[:type] == :playlist })
     assert_equal 'Beta', rows.first[:playlist]['name'] # recency default
     assert_equal beta, @pane.selected_playlist['id']
@@ -587,10 +626,13 @@ class TracksPaneTest < Minitest::Test
     @lib.rename_playlist(beta, 'Beta') # unambiguous recency bump
     @pane.show(playlists_row)
     names = -> { @pane.display_rows.map { |r| r[:playlist]['name'] } }
+
     assert_equal %w[Beta Alpha], names.call
     @pane.handle_action(:sort_title)
+
     assert_equal %w[Alpha Beta], names.call
     @pane.handle_action(:sort_title)
+
     assert_equal %w[Beta Alpha], names.call
   end
 
@@ -599,6 +641,7 @@ class TracksPaneTest < Minitest::Test
     @lib.create_playlist('Chill')
     @pane.show(playlists_row)
     @pane.filter = 'batt'
+
     assert_equal(['Battle Themes'], @pane.display_rows.map { |r| r[:playlist]['name'] })
   end
 end

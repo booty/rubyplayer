@@ -12,6 +12,7 @@ class ScreenTest < Minitest::Test
     s.clear_back
     s.put(1, 2, 'hello')
     out = s.flush
+
     assert_includes out, 'hello'
     assert_includes out, "\e[2;3H" # row 1, col 2 -> ANSI is 1-based
   end
@@ -22,6 +23,7 @@ class ScreenTest < Minitest::Test
     s.flush
     s.clear_back
     s.put(0, 0, 'x')
+
     assert_equal '', s.flush
   end
 
@@ -32,6 +34,7 @@ class ScreenTest < Minitest::Test
     s.clear_back
     s.put(0, 0, 'aaaaaaaaab') # one changed cell
     out = s.flush
+
     assert_includes out, "\e[1;10H"
     refute_includes out.delete_prefix("\e[1;10H"), 'a' * 3, 'should not repaint unchanged run'
   end
@@ -41,6 +44,7 @@ class ScreenTest < Minitest::Test
     s.put(0, 0, 'R', fg: '#ff0000')
     s.put(0, 1, 'G', fg: :bright_green, bold: true)
     out = s.flush
+
     assert_includes out, '38;2;255;0;0'
     assert_includes out, "\e[0;1;92m" # bold + bright_green as one SGR
   end
@@ -52,6 +56,7 @@ class ScreenTest < Minitest::Test
 
     assert_includes output, "\e[0;2;4m"
     cell = s.instance_variable_get(:@front)[0][0]
+
     assert cell.underline
     assert cell.dim
   end
@@ -61,6 +66,7 @@ class ScreenTest < Minitest::Test
     s.put(0, 3, 'abcdef') # clips at col 5
     s.put(9, 0, 'nope')   # row out of range: ignored
     out = s.flush
+
     assert_includes out, 'ab'
     refute_includes out, 'c'
     refute_includes out, 'nope'
@@ -72,6 +78,7 @@ class ScreenTest < Minitest::Test
     s.flush
     s.resize(5, 20)
     s.put(0, 0, 'hi')
+
     assert_includes s.flush, 'hi'
   end
 

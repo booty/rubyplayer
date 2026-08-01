@@ -1,4 +1,4 @@
-inherit_from: .rubocop_todo.yml
+#inherit_from: .rubocop_todo.yml
 
 # The behavior of RuboCop can be controlled via the .rubocop.yml
 # configuration file. It makes it possible to enable/disable
@@ -13,6 +13,8 @@ inherit_from: .rubocop_todo.yml
 
 plugins:
   - rubocop-rake
+  - rubocop-minitest
+  - rubocop-performance
 
 AllCops:
   NewCops: enable

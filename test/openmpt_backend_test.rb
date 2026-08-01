@@ -12,6 +12,7 @@ class OpenmptBackendTest < Minitest::Test
 
   def test_metadata_shape
     meta = @mpt.metadata(File.join(FIXTURES, 'space-debris.mod'), 0)
+
     assert_kind_of String, meta[:title]
     refute_empty meta[:title]
     assert_equal 'mod', meta[:format]
@@ -24,6 +25,7 @@ class OpenmptBackendTest < Minitest::Test
     # title may or may not be set: the contract is "title is never nil/empty".
     %w[deadlock.xm leynos-2nd-pm.s3m].each do |f|
       meta = @mpt.metadata(File.join(FIXTURES, f), 0)
+
       refute_nil meta[:title]
       refute_empty meta[:title]
     end
@@ -32,14 +34,17 @@ class OpenmptBackendTest < Minitest::Test
   def test_decode_produces_bounded_float_pcm
     h = @mpt.open(File.join(FIXTURES, 'deadlock.xm'), 0, sample_rate: 48_000)
     data = h.read(1024)
+
     assert_equal 1024 * RubyPlayer::AudioFormat::BYTES_PER_FRAME, data.bytesize
     floats = data.unpack('e*')
+
     assert(floats.all? { |f| f >= -1.0 && f <= 1.0 })
     h.close
   end
 
   def test_seek_and_position
     h = @mpt.open(File.join(FIXTURES, 'space-debris.mod'), 0, sample_rate: 48_000)
+
     assert h.seek(10_000)
     assert_in_delta 10_000, h.position_ms, 1_000
     h.close

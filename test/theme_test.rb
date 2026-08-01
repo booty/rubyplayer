@@ -14,6 +14,7 @@ class ThemeTest < Minitest::Test
 
   def test_every_theme_defines_the_full_semantic_palette
     required_keys = RubyPlayer::Theme::DEFAULT.keys
+
     RubyPlayer::Theme::ALL.each do |id, theme|
       assert_equal required_keys.sort_by(&:to_s), theme.keys.sort_by(&:to_s),
                    "#{id} is missing or has extra semantic keys"
@@ -27,6 +28,7 @@ class ThemeTest < Minitest::Test
     end
     color_keys.each do |k|
       value = RubyPlayer::Theme::DEFAULT[k]
+
       assert(value.nil? || value.is_a?(Symbol), "Default##{k} should be nil or an ANSI symbol")
     end
   end

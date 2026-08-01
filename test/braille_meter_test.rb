@@ -13,23 +13,27 @@ class BrailleMeterTest < Minitest::Test
 
   def test_silence_renders_blank_braille
     grid = render([0.0] * 8)
-    assert(grid.flatten.all? { |ch| ch == BLANK })
+
+    assert(grid.flatten.all?(BLANK))
   end
 
   def test_full_levels_fill_every_cell
     grid = render([1.0] * 8)
-    assert(grid.flatten.all? { |ch| ch == FULL })
+
+    assert(grid.flatten.all?(FULL))
   end
 
   def test_half_level_fills_bottom_half_only
     grid = render([0.5] * 8)
-    assert(grid[0].all? { |ch| ch == BLANK }, 'top row must stay empty at 50%')
-    assert(grid[1].all? { |ch| ch == FULL }, 'bottom row must be solid at 50%')
+
+    assert(grid[0].all?(BLANK), 'top row must stay empty at 50%')
+    assert(grid[1].all?(FULL), 'bottom row must be solid at 50%')
   end
 
   def test_bands_map_left_to_right
     # First band silent, last band loud: leftmost cell empty, rightmost full.
     grid = render([0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0])
+
     assert_equal BLANK, grid[1][0]
     assert_equal FULL, grid[1][3]
   end

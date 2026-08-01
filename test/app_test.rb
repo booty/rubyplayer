@@ -7,6 +7,7 @@ class AppTest < Minitest::Test
   def test_scan_populates_library_and_panes
     rows = @app.library_pane.rows
     folder = rows.find { |row| row.kind == :folder }
+
     assert_operator folder.folder['track_count'], :>=, 2
   end
 
@@ -22,14 +23,17 @@ class AppTest < Minitest::Test
   def test_tab_cycles_active_pane
     assert_equal :library, @app.active_pane
     @app.handle_key('tab')
+
     assert_equal :tracks, @app.active_pane
   end
 
   def test_add_path_mode_collects_input
     @app.handle_key('a')
     'xy'.each_char { |c| @app.handle_key(c) }
+
     assert_equal 'xy', @app.input_buffer
     @app.handle_key('escape')
+
     assert_nil @app.input_buffer
   end
 
@@ -59,6 +63,7 @@ class AppTest < Minitest::Test
     assert_equal 'space', @app.filter_buffer
     assert_equal(['space_debris'], @app.tracks_pane.display_rows.map { |row| row[:track].title })
     @app.handle_key('enter')
+
     assert_nil @app.filter_buffer
     assert_equal 'space', @app.tracks_pane.filter
   end
@@ -89,12 +94,14 @@ class AppTest < Minitest::Test
 
   def test_quit_key
     @app.handle_key('ctrl_c')
-    assert @app.quit?
+
+    assert_predicate @app, :quit?
   end
 
   def test_remove_library_item_key_prompts_confirmation_without_removing
     select_library_kind(:folder)
     @app.handle_key('x')
+
     refute_nil @app.pending_delete
     assert_equal 'music', @app.pending_delete['name']
     refute_empty(@app.library_pane.rows.select { |r| r.kind == :folder })
@@ -102,6 +109,7 @@ class AppTest < Minitest::Test
 
   def test_remove_library_item_is_a_noop_on_special_rows
     @app.handle_key('x') # selection starts on the Playback Queue row
+
     assert_nil @app.pending_delete
   end
 
@@ -153,6 +161,7 @@ class AppTest < Minitest::Test
     @app.handle_key('y')
 
     library = @app.instance_variable_get(:@library)
+
     assert_nil library.find_track(missing.first.id)
     refute_nil library.find_track(missing.last.id)
     refute_includes @app.engine.queue_items.map(&:id), missing.first.id
@@ -163,6 +172,7 @@ class AppTest < Minitest::Test
     select_library_kind(:folder)
     @app.handle_key('x')
     @app.handle_key('y')
+
     assert_nil @app.pending_delete
     assert_empty(@app.library_pane.rows.select { |r| r.kind == :folder })
   end
@@ -171,6 +181,7 @@ class AppTest < Minitest::Test
     select_library_kind(:folder)
     @app.handle_key('x')
     @app.handle_key('escape')
+
     assert_nil @app.pending_delete
     refute_empty(@app.library_pane.rows.select { |r| r.kind == :folder })
   end
@@ -178,6 +189,7 @@ class AppTest < Minitest::Test
   def test_confirm_cascades_the_delete_into_a_queued_folder
     select_library_kind(:folder)
     @app.handle_key('n') # enqueue_end the whole folder (not playing)
+
     assert_operator @app.engine.queue_items.size, :>=, 2
 
     @app.handle_key('x')
@@ -205,11 +217,13 @@ class AppTest < Minitest::Test
     select_library_kind(:folder)
     @app.handle_key('tab') # focus the Tracks pane
     @app.handle_key('i')
+
     assert_instance_of RubyPlayer::Track, @app.info_track
   end
 
   def test_show_track_info_key_is_a_noop_in_the_library_pane
     @app.handle_key('i') # library pane active: "i" isn't bound there
+
     assert_nil @app.info_track
   end
 
@@ -246,13 +260,16 @@ class AppTest < Minitest::Test
     @app.handle_key('tab')
     @app.handle_key('i')
     @app.handle_key('escape')
+
     assert_nil @app.info_track
   end
 
   def test_help_key_opens_and_escape_closes_the_modal
     @app.handle_key('?')
+
     assert @app.show_help
     @app.handle_key('escape')
+
     refute @app.show_help
   end
 
@@ -260,6 +277,7 @@ class AppTest < Minitest::Test
     @app.handle_key('?')
     @app.render
     out = @app.instance_variable_get(:@io_out).string
+
     assert_includes out, 'Hotkeys (library)'
     assert_includes out, 'SPACE'
   end
@@ -273,21 +291,25 @@ class AppTest < Minitest::Test
     keymap = @app.instance_variable_get(:@keymap)
     bindings = keymap.bindings_for(:library)
     rows = (bindings.size / 2.0).ceil
+
     assert_operator bindings.size, :>, rows # otherwise there's no 2nd column to prove
 
     first_key = bindings.first.first.upcase
     second_col_key = bindings[rows].first.upcase
     row_with_first_key = back.map { |r| r.map(&:ch).join }.find { |line| line.include?(first_key) }
+
     refute_nil row_with_first_key
     assert_includes row_with_first_key, second_col_key
   end
 
   def test_refresh_panes_preserves_tracks_pane_cursor
     select_library_kind(:folder)
+
     assert_operator @app.tracks_pane.display_rows.size, :>=, 2
 
     @app.handle_key('tab')              # move focus to tracks pane
     @app.handle_key('down')             # move the tracks-pane cursor off 0
+
     assert_equal 1, @app.tracks_pane.selection
 
     @app.send(:refresh_panes)           # simulate a queue_changed/track_started/track_ended event
@@ -302,8 +324,10 @@ class AppTest < Minitest::Test
     pid = lib.create_playlist('P')
     lib.add_to_playlist(pid, tid)
     @app.library_pane.rebuild!
+
     assert @app.library_pane.select_playlist(pid)
     @app.instance_variable_set(:@active_pane, :library)
+
     assert_equal ['A'], @app.selected_tracks.map(&:title)
   end
 
@@ -316,6 +340,7 @@ class AppTest < Minitest::Test
     @app.send(:show_selected_tracks)
     @app.instance_variable_set(:@active_pane, :tracks)
     @app.handle_key('enter')
+
     assert_equal :playlist, pane.selected.kind
     assert_equal pid, pane.selected.playlist['id']
     assert_equal pid, @app.tracks_pane.playlist_id
@@ -328,6 +353,7 @@ class AppTest < Minitest::Test
     ids.each { |t| lib.add_to_playlist(pid, t) }
     open_playlist(pid)
     @app.handle_key('ctrl_down') # move A below B
+
     assert_equal %w[B A], lib.playlist_tracks(pid).map(&:title)
     # Selection follows the moved track (reload! restores by identity).
     assert_equal 'A', @app.tracks_pane.selected_track.title
@@ -340,6 +366,7 @@ class AppTest < Minitest::Test
     lib.add_to_playlist(pid, tid)
     open_playlist(pid)
     @app.handle_key('x')
+
     assert_empty lib.playlist_tracks(pid)
   end
 
@@ -351,6 +378,7 @@ class AppTest < Minitest::Test
     open_playlist(pid)
     @app.tracks_pane.filter = 'B'
     @app.handle_key('ctrl_down')
+
     assert_equal %w[A B], lib.playlist_tracks(pid).map(&:title)
   end
 
@@ -359,12 +387,15 @@ class AppTest < Minitest::Test
     tid = seed_playlist_tracks(%w[a]).first
     show_all_songs_in_tracks_pane
     @app.handle_key('l')
+
     refute_nil @app.playlist_modal
     selected = @app.tracks_pane.selected_track.id
     'Mix'.each_char { |ch| @app.handle_key(ch) }
     @app.handle_key('enter') # only row is "New playlist: Mix"
+
     assert_nil @app.playlist_modal
     lists = lib.playlists
+
     assert_equal(['Mix'], lists.map { |p| p['name'] })
     assert_equal [selected], lib.playlist_tracks(lists.first['id']).map(&:id)
     assert_kind_of Integer, tid
@@ -378,6 +409,7 @@ class AppTest < Minitest::Test
     selected = @app.tracks_pane.selected_track.id
     @app.handle_key('l')
     @app.handle_key('enter') # first row: recent "Mix"
+
     assert_nil @app.playlist_modal
     assert_equal [selected], lib.playlist_tracks(pid).map(&:id)
   end
@@ -391,11 +423,14 @@ class AppTest < Minitest::Test
     lib.add_to_playlist(pid, selected)
     @app.handle_key('l')
     @app.handle_key('enter')
+
     refute_nil @app.playlist_modal[:confirm] # already contains the track
     @app.handle_key('n')
+
     assert_nil @app.playlist_modal[:confirm] # back to the list
     @app.handle_key('enter')
     @app.handle_key('y')
+
     assert_nil @app.playlist_modal
     assert_equal [selected, selected], lib.playlist_tracks(pid).map(&:id)
   end
@@ -405,12 +440,14 @@ class AppTest < Minitest::Test
     show_all_songs_in_tracks_pane
     @app.handle_key('l')
     @app.handle_key('escape')
+
     assert_nil @app.playlist_modal
   end
 
   def test_l_without_selected_track_shows_message_not_modal
     @app.instance_variable_set(:@active_pane, :library)
     @app.handle_key('l')
+
     assert_nil @app.playlist_modal
   end
 
@@ -419,10 +456,12 @@ class AppTest < Minitest::Test
     pid = lib.create_playlist('Old')
     select_playlist_child(pid)
     @app.handle_key('r')
+
     refute_nil @app.name_prompt
     3.times { @app.handle_key('backspace') }
     'New'.each_char { |ch| @app.handle_key(ch) }
     @app.handle_key('enter')
+
     assert_nil @app.name_prompt
     assert_equal(['New'], lib.playlists.map { |p| p['name'] })
   end
@@ -436,6 +475,7 @@ class AppTest < Minitest::Test
     4.times { @app.handle_key('backspace') }
     'Taken'.each_char { |ch| @app.handle_key(ch) }
     @app.handle_key('enter')
+
     refute_nil @app.name_prompt
     refute_nil @app.name_prompt[:error]
   end
@@ -447,11 +487,14 @@ class AppTest < Minitest::Test
     lib.add_to_playlist(pid, tid)
     select_playlist_child(pid)
     @app.handle_key('c')
+
     assert_equal 'Mix copy', @app.name_prompt[:buffer]
     @app.handle_key('enter')
     names = lib.playlists(sort: :alpha).map { |p| p['name'] }
+
     assert_equal ['Mix', 'Mix copy'], names
     copy = lib.playlists(sort: :alpha).last
+
     assert_equal [tid], lib.playlist_tracks(copy['id']).map(&:id)
   end
 
@@ -460,8 +503,10 @@ class AppTest < Minitest::Test
     pid = lib.create_playlist('Doomed')
     select_playlist_child(pid)
     @app.handle_key('x')
+
     refute_nil @app.pending_playlist_delete
     @app.handle_key('y')
+
     assert_nil @app.pending_playlist_delete
     assert_empty lib.playlists
   end
@@ -472,6 +517,7 @@ class AppTest < Minitest::Test
     select_playlist_child(lib.playlists.first['id'])
     @app.handle_key('x')
     @app.handle_key('n')
+
     assert_nil @app.pending_playlist_delete
     assert_equal 1, lib.playlists.size
   end
@@ -481,6 +527,7 @@ class AppTest < Minitest::Test
     @app.library_pane.handle_action(:select_queue)
     @app.instance_variable_set(:@active_pane, :library)
     @app.handle_key('r')
+
     assert_nil @app.name_prompt
   end
 
@@ -498,6 +545,7 @@ class AppTest < Minitest::Test
     @app.instance_variable_set(:@info_track, track)
     @app.send(:render)
     text = back_buffer_text
+
     assert_includes text, 'Album artist: V.A.'
     assert_includes text, 'Year: 1998'
     assert_includes text, 'genre: Rock'
