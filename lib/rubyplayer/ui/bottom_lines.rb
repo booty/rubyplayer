@@ -1,3 +1,5 @@
+require_relative "../duration_formatter"
+
 module RubyPlayer
   module UI
     class PlaybackLine
@@ -38,9 +40,7 @@ module RubyPlayer
       end
 
       def fmt(ms)
-        return "?:??" unless ms
-        total = ms / 1000
-        format("%d:%02d", total / 60, total % 60)
+        DurationFormatter.format(ms, unknown: "?:??")
       end
     end
 

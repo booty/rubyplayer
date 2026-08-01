@@ -58,6 +58,19 @@ class TrackFormatterTest < Minitest::Test
     assert_empty RubyPlayer::TrackFormatter.render(formatter, track)
   end
 
+  def test_duration_coerces_numeric_strings_and_floats
+    context = RubyPlayer::TrackFormatter::Context.new(album_artist: nil, star_glyph: "★")
+
+    assert_equal "2:05", context.duration("125000").text
+    assert_equal "2:05", context.duration(125000.9).text
+  end
+
+  def test_duration_rejects_false
+    context = RubyPlayer::TrackFormatter::Context.new(album_artist: nil, star_glyph: "★")
+
+    assert_raises(TypeError) { context.duration(false) }
+  end
+
   def test_unknown_style_key_is_rejected
     error = assert_raises(RubyPlayer::ConfigError) do
       RubyPlayer::TrackFormatter.render(

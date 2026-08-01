@@ -14,6 +14,8 @@
 #include <string.h>
 
 #define RP_CHANNELS 2
+#define RP_MILLISECONDS_PER_SECOND 1000
+#define RP_MIN_RING_BUFFER_FRAMES 1024
 
 static ma_context g_ctx;
 static ma_device g_device;
@@ -67,8 +69,8 @@ int rp_init(unsigned int sample_rate, unsigned int buffer_ms, int use_null) {
         ma_context_uninit(&g_ctx);
         return -3;
     }
-    g_rb_capacity = (uint64_t)g_device.sampleRate * buffer_ms / 1000;
-    if (g_rb_capacity < 1024) g_rb_capacity = 1024;
+    g_rb_capacity = (uint64_t)g_device.sampleRate * buffer_ms / RP_MILLISECONDS_PER_SECOND;
+    if (g_rb_capacity < RP_MIN_RING_BUFFER_FRAMES) g_rb_capacity = RP_MIN_RING_BUFFER_FRAMES;
     g_rb = (float *)calloc((size_t)g_rb_capacity * RP_CHANNELS, sizeof(float));
     if (!g_rb) { ma_device_uninit(&g_device); ma_context_uninit(&g_ctx); return -4; }
     atomic_store(&g_read, 0);

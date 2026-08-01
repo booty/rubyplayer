@@ -264,7 +264,20 @@ class LibraryTest < Minitest::Test
 
   def test_add_to_playlist_raises_for_vanished_track
     id = @lib.create_playlist("P")
-    assert_raises(RubyPlayer::Library::PlaylistError) { @lib.add_to_playlist(id, 999_999) }
+    error = assert_raises(RubyPlayer::Library::PlaylistError) { @lib.add_to_playlist(id, 999_999) }
+    assert_equal "Track is no longer in the library", error.message
+  end
+
+  def test_add_to_playlist_raises_for_vanished_playlist
+    id = @lib.create_playlist("P")
+    @lib.delete_playlist(id)
+    track_id = add_track("/m/sega/a.vgm")
+
+    error = assert_raises(RubyPlayer::Library::PlaylistError) do
+      @lib.add_to_playlist(id, track_id)
+    end
+
+    assert_equal "Playlist no longer exists", error.message
   end
 
   def test_delete_playlist_is_hard_and_cascades_entries

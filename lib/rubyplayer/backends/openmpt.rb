@@ -1,5 +1,7 @@
 require "ffi"
 require_relative "../runtime_dependencies"
+require_relative "../audio_format"
+require_relative "metadata_helper"
 
 module RubyPlayer
   module Backends
@@ -35,13 +37,13 @@ module RubyPlayer
       def metadata(path, _subtune_index)
         with_mod(path) do |mod|
           {
-            title: presence(read_meta(mod, "title")) || File.basename(path, ".*"),
+            title: MetadataHelper.presence(read_meta(mod, "title")) || File.basename(path, ".*"),
             album: nil,
-            artist: presence(read_meta(mod, "artist")),
-            composer: presence(read_meta(mod, "artist")),
+            artist: MetadataHelper.presence(read_meta(mod, "artist")),
+            composer: MetadataHelper.presence(read_meta(mod, "artist")),
             track_number: nil,
             duration_ms: (OpenmptLib.openmpt_module_get_duration_seconds(mod) * 1000).round,
-            format: File.extname(path).delete_prefix(".").downcase,
+            format: MetadataHelper.format_extension(path),
           }
         end
       end
@@ -67,12 +69,12 @@ module RubyPlayer
           return nil if @mod.nil?
 
           if @buf.nil? || @buf_frames != frames
-            @buf = FFI::MemoryPointer.new(:float, frames * 2)
+            @buf = FFI::MemoryPointer.new(:float, frames * AudioFormat::CHANNELS)
             @buf_frames = frames
           end
           n = OpenmptLib.openmpt_module_read_interleaved_float_stereo(@mod, @sample_rate, frames, @buf)
           return nil if n.zero? # end of module
-          @buf.read_bytes(n * 2 * 4)
+          @buf.read_bytes(n * AudioFormat::BYTES_PER_FRAME)
         end
 
         # Not an endless method: needs the same use-after-close guard as #read,
@@ -126,7 +128,6 @@ module RubyPlayer
         str
       end
 
-      def presence(str) = str.nil? || str.empty? ? nil : str
     end
   end
 end

@@ -28,9 +28,13 @@ module RubyPlayer
   # while CoreAudio consumes it at a fixed real-time pace. Input format is
   # float32 interleaved stereo: left float, right float, repeat.
   class AudioOutput
+    DEFAULT_RING_BUFFER_MS = 500
+    private_constant :DEFAULT_RING_BUFFER_MS
+
     attr_reader :sample_rate
 
-    def initialize(sample_rate: "auto", ring_buffer_ms: 500, null_backend: false, native: RpAudio)
+    def initialize(sample_rate: "auto", ring_buffer_ms: DEFAULT_RING_BUFFER_MS,
+                   null_backend: false, native: RpAudio)
       @native = native
       # Normal track decoding and Focus playback use different Ruby threads,
       # but the C ring buffer has one producer and this object reuses one native

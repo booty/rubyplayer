@@ -1,23 +1,40 @@
+require_relative "audio_format"
+
 module RubyPlayer
   # EQ animation source: per-band magnitudes of the most recent audio, via the
   # Goertzel algorithm at log-spaced frequencies. push() runs on the decoder
   # thread; levels() on the UI thread — guarded by a mutex over a small window.
   class LevelTap
-    def initialize(bands: 16, sample_rate: 48_000, window: 512)
+    DEFAULT_BANDS = 16
+    DEFAULT_SAMPLE_RATE = 48_000
+    DEFAULT_WINDOW_SIZE = 512
+    LOW_FREQUENCY_HZ = 60.0
+    MAX_FREQUENCY_HZ = 12_000.0
+    NYQUIST_RATIO = 0.45
+    STEREO_CHANNELS = AudioFormat::CHANNELS
+    private_constant :DEFAULT_BANDS, :DEFAULT_SAMPLE_RATE, :DEFAULT_WINDOW_SIZE,
+                     :LOW_FREQUENCY_HZ, :MAX_FREQUENCY_HZ, :NYQUIST_RATIO,
+                     :STEREO_CHANNELS
+
+    def initialize(bands: DEFAULT_BANDS, sample_rate: DEFAULT_SAMPLE_RATE,
+                   window: DEFAULT_WINDOW_SIZE)
       @bands = bands
       @rate = sample_rate
       @window = window
       @mono = Array.new(window, 0.0)
       @mutex = Mutex.new
-      lo = 60.0
-      hi = [12_000.0, sample_rate * 0.45].min
+      lo = LOW_FREQUENCY_HZ
+      hi = [MAX_FREQUENCY_HZ, sample_rate * NYQUIST_RATIO].min
       step = (Math.log(hi) - Math.log(lo)) / (bands - 1)
       @freqs = Array.new(bands) { |i| Math.exp(Math.log(lo) + step * i) }
     end
 
     def push(frames_string)
       floats = frames_string.unpack("e*")
-      mono = Array.new(floats.size / 2) { |i| (floats[i * 2] + floats[i * 2 + 1]) * 0.5 }
+      mono = Array.new(floats.size / STEREO_CHANNELS) do |i|
+        offset = i * STEREO_CHANNELS
+        (floats[offset] + floats[offset + 1]) * 0.5
+      end
       @mutex.synchronize do
         @mono.concat(mono)
         excess = @mono.size - @window

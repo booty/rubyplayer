@@ -8,6 +8,15 @@ module RubyPlayer
   # event_bus.publish. The audio device is started once and runs for the life
   # of the engine; pause/underrun emit silence.
   class PlaybackEngine
+    THREAD_JOIN_TIMEOUT_SECONDS = 5
+    ACTIVE_COMMAND_POLL_TIMEOUT_SECONDS = 0
+    IDLE_COMMAND_POLL_TIMEOUT_SECONDS = 0.05
+    BUFFER_FULL_POLL_INTERVAL_SECONDS = 0.005
+    MILLISECONDS_PER_SECOND = 1000
+    private_constant :THREAD_JOIN_TIMEOUT_SECONDS, :ACTIVE_COMMAND_POLL_TIMEOUT_SECONDS,
+                     :IDLE_COMMAND_POLL_TIMEOUT_SECONDS, :BUFFER_FULL_POLL_INTERVAL_SECONDS,
+                     :MILLISECONDS_PER_SECOND
+
     def initialize(queue:, registry:, audio:, library:, event_bus:, config:, focus_player:,
                    archive_cache: nil)
       @queue = queue
@@ -20,7 +29,7 @@ module RubyPlayer
       @bus = event_bus
       @chunk_frames = config["audio", "decode_chunk_frames"]
       @history_min_pct = config["library", "history_min_percent"]
-      @history_min_unknown_ms = config["library", "history_min_seconds_unknown"] * 1000
+      @history_min_unknown_ms = config["library", "history_min_seconds_unknown"] * MILLISECONDS_PER_SECOND
       @level_tap = LevelTap.new(bands: config["eq", "bands"],
                                 sample_rate: audio.sample_rate)
       @commands = Thread::Queue.new
@@ -61,7 +70,7 @@ module RubyPlayer
         error = e
       ensure
         @commands << :stop
-        @thread.join(5)
+        @thread.join(THREAD_JOIN_TIMEOUT_SECONDS)
         @thread = nil
       end
       raise error if error
@@ -166,7 +175,7 @@ module RubyPlayer
     def position_ms
       return 0 unless @playing
       played = @audio.frames_played - @frames_base
-      @seek_offset_ms + (played * 1000 / @audio.sample_rate)
+      @seek_offset_ms + (played * MILLISECONDS_PER_SECOND / @audio.sample_rate)
     end
 
     # ---- decoder thread ----
@@ -179,7 +188,7 @@ module RubyPlayer
         # a busy-wait bug.
         cmd = begin
           active = @focus_sound || (@playing && !@paused)
-          @commands.pop(timeout: active ? 0 : 0.05)
+          @commands.pop(timeout: active ? ACTIVE_COMMAND_POLL_TIMEOUT_SECONDS : IDLE_COMMAND_POLL_TIMEOUT_SECONDS)
         rescue ThreadError
           nil
         end
@@ -257,7 +266,7 @@ module RubyPlayer
         written = @audio.write(@pending)
         consumed = written * AudioFormat::BYTES_PER_FRAME
         @pending = consumed < @pending.bytesize ? @pending.byteslice(consumed..) : nil
-        sleep 0.005 if @pending # buffer full: yield briefly, stay responsive
+        sleep BUFFER_FULL_POLL_INTERVAL_SECONDS if @pending # buffer full: yield briefly, stay responsive
         return
       end
 
@@ -268,7 +277,7 @@ module RubyPlayer
         elsif data.empty?
           # Nonblocking pipe has no bytes yet. Yield so SoX can run while command
           # queue remains responsive to replacement and shutdown requests.
-          sleep 0.005
+          sleep BUFFER_FULL_POLL_INTERVAL_SECONDS
         else
           @pending = data
         end
@@ -292,7 +301,7 @@ module RubyPlayer
     # reset on track start and seek so those repaint immediately.
     def publish_position
       pos = position_ms
-      second = pos / 1000
+      second = pos / MILLISECONDS_PER_SECOND
       return if second == @published_second
 
       @published_second = second

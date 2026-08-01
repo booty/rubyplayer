@@ -2,6 +2,7 @@ require "io/console"
 require "shellwords"
 require "tty-screen"
 require_relative "../../rubyplayer"
+require_relative "../duration_formatter"
 require_relative "../audio_output"
 require_relative "../playback_engine"
 
@@ -1405,9 +1406,7 @@ module RubyPlayer
       end
 
       def fmt_length(ms)
-        return "unknown" unless ms
-        total = ms / 1000
-        format("%d:%02d", total / 60, total % 60)
+        DurationFormatter.format(ms, unknown: "unknown")
       end
 
       def draw_box(x, y, w, h, active:, title:)

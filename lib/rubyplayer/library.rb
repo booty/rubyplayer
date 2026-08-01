@@ -2,6 +2,8 @@ require "time"
 
 module RubyPlayer
   class Library
+    MISSING_ID_BATCH_SIZE = 500
+
     def initialize(db)
       @db = db
     end
@@ -28,23 +30,23 @@ module RubyPlayer
     def create_playlist(name)
       # Microsecond precision: recency ordering must distinguish two edits in
       # the same second (whole-second timestamps made the sort a coin flip).
-      now = Time.now.utc.iso8601(6)
-      @db.write do |s|
-        s.execute("INSERT INTO playlists (name, created_at, updated_at) VALUES (?, ?, ?)",
-                  [name, now, now])
-        s.get_first_value("SELECT id FROM playlists WHERE name = ?", [name])
+      with_playlist_name_error(name) do
+        now = playlist_timestamp
+        @db.write do |s|
+          s.execute("INSERT INTO playlists (name, created_at, updated_at) VALUES (?, ?, ?)",
+                    [name, now, now])
+          s.get_first_value("SELECT id FROM playlists WHERE name = ?", [name])
+        end
       end
-    rescue SQLite3::ConstraintException
-      raise PlaylistNameTaken, "A playlist named \"#{name}\" already exists"
     end
 
     def rename_playlist(id, name)
-      @db.write do |s|
-        s.execute("UPDATE playlists SET name = ?, updated_at = ? WHERE id = ?",
-                  [name, Time.now.utc.iso8601(6), id])
+      with_playlist_name_error(name) do
+        @db.write do |s|
+          s.execute("UPDATE playlists SET name = ?, updated_at = ? WHERE id = ?",
+                    [name, playlist_timestamp, id])
+        end
       end
-    rescue SQLite3::ConstraintException
-      raise PlaylistNameTaken, "A playlist named \"#{name}\" already exists"
     end
 
     def delete_playlist(id)
@@ -53,17 +55,21 @@ module RubyPlayer
 
     def add_to_playlist(id, track_id)
       @db.write do |s|
+        unless s.get_first_value("SELECT 1 FROM playlists WHERE id = ?", [id])
+          raise PlaylistError, "Playlist no longer exists"
+        end
+        unless s.get_first_value("SELECT 1 FROM tracks WHERE id = ?", [track_id])
+          raise PlaylistError, "Track is no longer in the library"
+        end
+
         pos = s.get_first_value(
           "SELECT COALESCE(MAX(position) + 1, 0) FROM playlist_tracks WHERE playlist_id = ?", [id]
         )
         s.execute("INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?, ?, ?)",
                   [id, track_id, pos])
         s.execute("UPDATE playlists SET updated_at = ? WHERE id = ?",
-                  [Time.now.utc.iso8601(6), id])
+                  [playlist_timestamp, id])
       end
-    rescue SQLite3::ConstraintException
-      # FK failure: the track was hard-purged while the add modal was open.
-      raise PlaylistError, "Track is no longer in the library"
     end
 
     def playlist_contains?(id, track_id)
@@ -104,7 +110,7 @@ module RubyPlayer
         s.execute("UPDATE playlist_tracks SET position = -1 WHERE playlist_id = ? AND position = ?", [id, a])
         s.execute("UPDATE playlist_tracks SET position = ? WHERE playlist_id = ? AND position = ?", [a, id, b])
         s.execute("UPDATE playlist_tracks SET position = ? WHERE playlist_id = ? AND position = -1", [b, id])
-        s.execute("UPDATE playlists SET updated_at = ? WHERE id = ?", [Time.now.utc.iso8601(6), id])
+        s.execute("UPDATE playlists SET updated_at = ? WHERE id = ?", [playlist_timestamp, id])
         target
       end
     end
@@ -131,7 +137,7 @@ module RubyPlayer
           s.execute("UPDATE playlist_tracks SET position = ? WHERE playlist_id = ? AND position = ?",
                     [i, id, pos])
         end
-        s.execute("UPDATE playlists SET updated_at = ? WHERE id = ?", [Time.now.utc.iso8601(6), id])
+        s.execute("UPDATE playlists SET updated_at = ? WHERE id = ?", [playlist_timestamp, id])
         track_id
       end
     end
@@ -139,19 +145,19 @@ module RubyPlayer
     # Hidden-missing entries are copied too: they reappear in the copy when a
     # rescan restores the files, same as in the original.
     def duplicate_playlist(id, name)
-      now = Time.now.utc.iso8601(6)
-      @db.write do |s|
-        s.execute("INSERT INTO playlists (name, created_at, updated_at) VALUES (?, ?, ?)",
-                  [name, now, now])
-        new_id = s.get_first_value("SELECT id FROM playlists WHERE name = ?", [name])
-        s.execute(<<~SQL, [new_id, id])
-          INSERT INTO playlist_tracks (playlist_id, track_id, position)
-          SELECT ?, track_id, position FROM playlist_tracks WHERE playlist_id = ?
-        SQL
-        new_id
+      with_playlist_name_error(name) do
+        now = playlist_timestamp
+        @db.write do |s|
+          s.execute("INSERT INTO playlists (name, created_at, updated_at) VALUES (?, ?, ?)",
+                    [name, now, now])
+          new_id = s.get_first_value("SELECT id FROM playlists WHERE name = ?", [name])
+          s.execute(<<~SQL, [new_id, id])
+            INSERT INTO playlist_tracks (playlist_id, track_id, position)
+            SELECT ?, track_id, position FROM playlist_tracks WHERE playlist_id = ?
+          SQL
+          new_id
+        end
       end
-    rescue SQLite3::ConstraintException
-      raise PlaylistNameTaken, "A playlist named \"#{name}\" already exists"
     end
 
     def upsert_folder(parent_id:, name:, path:, kind:, mtime: nil, size: nil)
@@ -393,10 +399,10 @@ module RubyPlayer
     def mark_missing(track_ids:, folder_ids:)
       return if track_ids.empty? && folder_ids.empty?
       @db.write do |s|
-        track_ids.each_slice(500) do |ids|
+        track_ids.each_slice(MISSING_ID_BATCH_SIZE) do |ids|
           s.execute("UPDATE tracks SET missing = 1 WHERE id IN (#{ids.join(',')})")
         end
-        folder_ids.each_slice(500) do |ids|
+        folder_ids.each_slice(MISSING_ID_BATCH_SIZE) do |ids|
           s.execute("UPDATE folders SET missing = 1 WHERE id IN (#{ids.join(',')})")
         end
       end
@@ -459,6 +465,18 @@ module RubyPlayer
     end
 
     private
+
+    # Microsecond precision keeps playlist recency ordering deterministic for
+    # edits that happen within the same second.
+    def playlist_timestamp
+      Time.now.utc.iso8601(6)
+    end
+
+    def with_playlist_name_error(name)
+      yield
+    rescue SQLite3::ConstraintException
+      raise PlaylistNameTaken, "A playlist named \"#{name}\" already exists"
+    end
 
     def query_tracks(where_and_order)
       rows = @db.read { |s| s.execute("SELECT * FROM tracks WHERE #{where_and_order}") }

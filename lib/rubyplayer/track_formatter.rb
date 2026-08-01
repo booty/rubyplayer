@@ -1,3 +1,5 @@
+require_relative "duration_formatter"
+
 module RubyPlayer
   class TrackFormatter
     Fragment = Data.define(:text, :style)
@@ -34,8 +36,7 @@ module RubyPlayer
       def duration(milliseconds, **style)
         return nil if milliseconds.nil?
 
-        total = Integer(milliseconds) / 1000
-        text(format("%d:%02d", total / 60, total % 60), **style)
+        text(DurationFormatter.format(Integer(milliseconds)), **style)
       end
 
       def stars(rating, **style)

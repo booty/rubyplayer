@@ -1,5 +1,7 @@
 require "ffi"
 require_relative "../runtime_dependencies"
+require_relative "../audio_format"
+require_relative "metadata_helper"
 
 module RubyPlayer
   module Backends
@@ -56,13 +58,13 @@ module RubyPlayer
         with_emu(path, GmeLib::GME_INFO_ONLY) do |emu|
           with_info(emu, subtune_index) do |info|
             {
-              title: presence(info[:song]) || format("Track %02d", subtune_index + 1),
-              album: presence(info[:game]),
-              artist: presence(info[:author]),
-              composer: presence(info[:author]),
+              title: MetadataHelper.presence(info[:song]) || format("Track %02d", subtune_index + 1),
+              album: MetadataHelper.presence(info[:game]),
+              artist: MetadataHelper.presence(info[:author]),
+              composer: MetadataHelper.presence(info[:author]),
               track_number: subtune_index + 1,
               duration_ms: real_length(info),
-              format: File.extname(path).delete_prefix(".").downcase,
+              format: MetadataHelper.format_extension(path),
             }
           end
         end
@@ -100,14 +102,16 @@ module RubyPlayer
         # Returns packed float32 stereo, or nil once the track has ended.
         def read(frames)
           return nil if @emu.nil? || GmeLib.gme_track_ended(@emu) != 0
-          samples = frames * 2
+          samples = frames * AudioFormat::CHANNELS
           if @buf.nil? || @buf_samples != samples
             @buf = FFI::MemoryPointer.new(:short, samples)
             @buf_samples = samples
           end
           err = GmeLib.gme_play(@emu, samples, @buf)
           raise Error, err if err
-          @buf.read_bytes(samples * 2).unpack("s<*").map { |s| s / 32_768.0 }.pack("e*")
+          @buf.read_bytes(samples * 2).unpack("s<*").map do |s|
+            s / AudioFormat::GME_INT16_SCALE
+          end.pack("e*")
         end
 
         def seek(ms)
@@ -174,7 +178,6 @@ module RubyPlayer
         end
       end
 
-      def presence(str) = str.nil? || str.empty? ? nil : str
     end
   end
 end

@@ -7,6 +7,9 @@ module RubyPlayer
   class FocusPlayer
     class Error < StandardError; end
     READ_SIZE = 16 * 1024
+    TERMINATE_GRACE_PERIOD_SECONDS = 1
+    REAP_POLL_INTERVAL_SECONDS = 0.01
+    private_constant :TERMINATE_GRACE_PERIOD_SECONDS, :REAP_POLL_INTERVAL_SECONDS
 
     def initialize(spawn: Process.method(:spawn), kill: Process.method(:kill),
                    waitpid: Process.method(:waitpid),
@@ -131,9 +134,9 @@ module RubyPlayer
       @kill.call("TERM", pid)
       return if reaped?(pid)
 
-      deadline = @clock.call + 1
+      deadline = @clock.call + TERMINATE_GRACE_PERIOD_SECONDS
       until @clock.call >= deadline
-        @sleeper.call(0.01)
+        @sleeper.call(REAP_POLL_INTERVAL_SECONDS)
         return if reaped?(pid)
       end
 

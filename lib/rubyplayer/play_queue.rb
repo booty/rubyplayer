@@ -2,7 +2,10 @@ module RubyPlayer
   # The playback queue. Head of the list = currently playing track (when the
   # engine is playing). Named PlayQueue because ::Queue is Thread::Queue.
   class PlayQueue
-    def initialize(undo_depth: 10)
+    DEFAULT_UNDO_DEPTH = 10
+    private_constant :DEFAULT_UNDO_DEPTH
+
+    def initialize(undo_depth: DEFAULT_UNDO_DEPTH)
       @items = []
       @undo_depth = undo_depth
       @undo_stack = []

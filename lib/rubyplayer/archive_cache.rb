@@ -17,6 +17,8 @@ module RubyPlayer
     # Cache entries are keyed by path+mtime+size, so a re-downloaded or
     # edited archive naturally gets a fresh entry instead of stale contents.
     MARKER = ".complete"
+    DIGEST_LENGTH = 16
+    private_constant :DIGEST_LENGTH
 
     attr_reader :root
 
@@ -70,7 +72,7 @@ module RubyPlayer
 
     def cache_key(archive_path)
       stat = File.stat(archive_path)
-      digest = Digest::SHA1.hexdigest("#{archive_path}:#{stat.mtime.to_f}:#{stat.size}")[0, 16]
+      digest = Digest::SHA1.hexdigest("#{archive_path}:#{stat.mtime.to_f}:#{stat.size}")[0, DIGEST_LENGTH]
       # basename prefix keeps the cache dir human-debuggable
       "#{File.basename(archive_path)}-#{digest}"
     end

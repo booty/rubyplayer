@@ -18,6 +18,16 @@ class BottomLinesTest < Minitest::Test
     assert_includes out, glyphs["eq_chars"][-1] # full-level bar char present
   end
 
+  def test_playback_line_uses_unknown_duration_placeholder
+    line = RubyPlayer::UI::PlaybackLine.new(glyphs: glyphs)
+    unknown_track = RubyPlayer::Track.new(title: "Unknown", duration_ms: nil)
+    state = { track: unknown_track, playing: true, paused: false, position_ms: nil }
+
+    line.render(screen, row: 0, w: 60, state: state, levels: [], theme: theme)
+
+    assert_includes screen.flush, "?:??/?:??"
+  end
+
   def test_playback_line_shows_next_track_while_playing
     line = RubyPlayer::UI::PlaybackLine.new(glyphs: glyphs)
     next_track = RubyPlayer::Track.new(title: "Bubble Man")

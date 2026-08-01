@@ -5,6 +5,8 @@ require "time"
 module RubyPlayer
   class Database
     SCHEMA_VERSION = 3
+    DEFAULT_BACKUP_RETENTION = 10
+    private_constant :DEFAULT_BACKUP_RETENTION
 
     SCHEMA = <<~SQL
       CREATE TABLE folders (
@@ -81,7 +83,7 @@ module RubyPlayer
       CREATE INDEX idx_history_started ON playback_history(started_at);
     SQL
 
-    def initialize(path:, backup_retention: 10)
+    def initialize(path:, backup_retention: DEFAULT_BACKUP_RETENTION)
       @path = path
       @write_mutex = Mutex.new
       FileUtils.mkdir_p(File.dirname(path))

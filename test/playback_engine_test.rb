@@ -103,26 +103,14 @@ class PlaybackEngineTest < Minitest::Test
     @lib.find_track(id)
   end
 
-  def wait_for(timeout = 5)
-    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
-    until (r = yield)
-      now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-      flunk "timed out waiting" if now > deadline
-      sleep 0.02
-    end
-    r
-  end
-
   def wait_for_event(type, timeout = 5)
-    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
-    loop do
-      now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-      flunk "timed out waiting for #{type}" if now > deadline
+    wait_until(timeout: timeout, interval: 0.02,
+               failure_message: "timed out waiting for #{type}") do
       begin
         ev = @bus.events.pop(true)
-        return ev if ev[0] == type
+        ev if ev[0] == type
       rescue ThreadError
-        sleep 0.02
+        nil
       end
     end
   end
@@ -133,19 +121,19 @@ class PlaybackEngineTest < Minitest::Test
     @engine.enqueue_now([t1, t2])
     ev = wait_for_event(:track_started)
     assert_equal t1.id, ev[1][:track].id
-    wait_for { @engine.state[:position_ms].positive? }
+    wait_until { @engine.state[:position_ms].positive? }
 
     @engine.toggle_play # pause
-    wait_for { @engine.state[:paused] }
+    wait_until { @engine.state[:paused] }
     @engine.toggle_play # resume
-    wait_for { !@engine.state[:paused] }
+    wait_until { !@engine.state[:paused] }
 
     @engine.skip
     ev = wait_for_event(:track_started)
     assert_equal t2.id, ev[1][:track].id
 
     @engine.skip # queue empty -> stops
-    wait_for { !@engine.state[:playing] }
+    wait_until { !@engine.state[:playing] }
     assert_nil @engine.state[:track]
   end
 
@@ -156,7 +144,7 @@ class PlaybackEngineTest < Minitest::Test
     wait_for_event(:track_started)
 
     @engine.stop
-    wait_for { !@engine.state[:playing] }
+    wait_until { !@engine.state[:playing] }
 
     assert_equal [first.id, second.id], @engine.queue_items.map(&:id)
     assert_nil @engine.state[:track]
@@ -168,7 +156,7 @@ class PlaybackEngineTest < Minitest::Test
     sound = RubyPlayer::FocusSounds::ALL.first
 
     @engine.play_focus(sound)
-    wait_for { @focus_source.read_threads.any? }
+    wait_until { @focus_source.read_threads.any? }
 
     assert_equal [[sound, 44_100]], @focus_source.played
     assert @focus_source.read_threads.all? { |thread| thread.name == "decoder" }
@@ -222,7 +210,7 @@ class PlaybackEngineTest < Minitest::Test
                            title: "Round Clear", duration_ms: 2_000)
     track = @lib.find_track(id)
     @engine.enqueue_now([track])
-    wait_for { @engine.state[:playing] }
+    wait_until { @engine.state[:playing] }
     assert_equal id, @engine.state[:track]&.id
     # must NOT be flagged errored (i.e. the engine resolved the entry to a
     # real extracted file instead of handing the .zip to a backend)
@@ -233,9 +221,9 @@ class PlaybackEngineTest < Minitest::Test
     t = make_track("shantae.gbs", duration_ms: 1_000) # 5% = 50ms
     @engine.enqueue_now([t])
     wait_for_event(:track_started)
-    wait_for { @engine.state[:position_ms] > 100 }
+    wait_until { @engine.state[:position_ms] > 100 }
     @engine.skip
-    wait_for { @lib.history(limit: 5).size == 1 }
+    wait_until { @lib.history(limit: 5).size == 1 }
     assert_equal t.id, @lib.history(limit: 5).first[:track].id
   end
 
@@ -244,7 +232,8 @@ class PlaybackEngineTest < Minitest::Test
     @engine.enqueue_now([t])
     wait_for_event(:track_started)
     @engine.skip
-    sleep 0.2
+    wait_for_event(:track_ended)
+    wait_until { !@engine.state[:playing] }
     assert_empty @lib.history(limit: 5)
   end
 
@@ -283,7 +272,7 @@ class PlaybackEngineTest < Minitest::Test
 
     @engine.remove_track_ids([t2.id])
 
-    wait_for { @engine.queue_items.map(&:id) == [t1.id] }
+    wait_until { @engine.queue_items.map(&:id) == [t1.id] }
   end
 
   # Removing the currently-playing track can't just yank it out of the queue
@@ -340,7 +329,7 @@ class PlaybackEngineTest < Minitest::Test
     t = make_track("shantae.gbs", duration_ms: 60_000)
     @engine.enqueue_now([t])
     wait_for_event(:track_started)
-    wait_for { @engine.state[:position_ms] > 500 }
+    wait_until { @engine.state[:position_ms] > 500 }
     @engine.shutdown
 
     seconds = @bus.all.filter_map { |type, payload| payload[:position_ms] / 1000 if type == :position }

@@ -1,5 +1,7 @@
 require "json"
 require "open3"
+require_relative "../audio_format"
+require_relative "metadata_helper"
 
 module RubyPlayer
   module Backends
@@ -26,15 +28,15 @@ module RubyPlayer
         tags = merged_tags(format, stream)
 
         {
-          title: presence(tags["title"]) || File.basename(path, ".*"),
-          album: presence(tags["album"]),
-          artist: presence(tags["artist"]) || presence(tags["album_artist"]),
-          album_artist: presence(tags["album_artist"]),
-          composer: presence(tags["composer"]),
+          title: MetadataHelper.presence(tags["title"]) || File.basename(path, ".*"),
+          album: MetadataHelper.presence(tags["album"]),
+          artist: MetadataHelper.presence(tags["artist"]) || MetadataHelper.presence(tags["album_artist"]),
+          album_artist: MetadataHelper.presence(tags["album_artist"]),
+          composer: MetadataHelper.presence(tags["composer"]),
           track_number: parse_track_number(tags["track"]),
           year: parse_year(tags),
           duration_ms: duration_ms(format, stream),
-          format: File.extname(path).delete_prefix(".").downcase,
+          format: MetadataHelper.format_extension(path),
           extra: extra_tags(tags),
         }
       end
@@ -62,11 +64,12 @@ module RubyPlayer
         def read(frames)
           return nil if @closed || @stdout.nil? || @wait_thread.nil?
 
-          bytes_wanted = frames * 2 * 4
+          bytes_wanted = frames * AudioFormat::BYTES_PER_FRAME
           chunk = read_exactly(bytes_wanted)
           return nil if chunk.nil? || chunk.empty?
 
-          @position_ms += ((chunk.bytesize / 8.0) / @sample_rate * 1000).round
+          @position_ms += ((chunk.bytesize / AudioFormat::BYTES_PER_FRAME.to_f) /
+                           @sample_rate * 1000).round
           chunk
         end
 
@@ -107,7 +110,7 @@ module RubyPlayer
             "-vn",
             "-f", "f32le",
             "-acodec", "pcm_f32le",
-            "-ac", "2",
+            "-ac", AudioFormat::CHANNELS.to_s,
             "-ar", @sample_rate.to_s,
             "pipe:1",
           ]
@@ -220,7 +223,6 @@ module RubyPlayer
         value.to_s.split("/", 2).first.to_i
       end
 
-      def presence(str) = str.nil? || str.empty? ? nil : str
     end
   end
 end

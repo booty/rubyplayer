@@ -32,7 +32,7 @@ class OpenmptBackendTest < Minitest::Test
   def test_decode_produces_bounded_float_pcm
     h = @mpt.open(File.join(FIXTURES, "deadlock.xm"), 0, sample_rate: 48_000)
     data = h.read(1024)
-    assert_equal 1024 * 2 * 4, data.bytesize
+    assert_equal 1024 * RubyPlayer::AudioFormat::BYTES_PER_FRAME, data.bytesize
     floats = data.unpack("e*")
     assert(floats.all? { |f| f >= -1.0 && f <= 1.0 })
     h.close

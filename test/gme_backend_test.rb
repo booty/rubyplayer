@@ -63,7 +63,7 @@ class GmeBackendTest < Minitest::Test
   def test_decode_produces_bounded_float_pcm
     h = @gme.open(File.join(FIXTURES, "shantae.gbs"), 0, sample_rate: 44_100)
     data = h.read(1024)
-    assert_equal 1024 * 2 * 4, data.bytesize # frames * stereo * float32
+    assert_equal 1024 * RubyPlayer::AudioFormat::BYTES_PER_FRAME, data.bytesize
     floats = data.unpack("e*")
     assert(floats.all? { |f| f >= -1.0 && f <= 1.0 })
     refute(floats.all? { |f| f.zero? }, "expected non-silent audio")
