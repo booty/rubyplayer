@@ -7,6 +7,8 @@ module RubyPlayer
     class TracksPane
       include ScrollableList
 
+      SELECTABLE_ROW_TYPES = %i[track focus playlist].freeze
+
       attr_reader :selection, :filter
 
       def initialize(library:, config:, queue_source:, focus_source: -> { FocusSounds::ALL })
@@ -450,7 +452,7 @@ module RubyPlayer
         loop do
           i += delta
           return unless i.between?(0, rows.size - 1)
-          break if %i[track focus playlist].include?(rows[i][:type])
+          break if SELECTABLE_ROW_TYPES.include?(rows[i][:type])
         end
         @selection = i
       end

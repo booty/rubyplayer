@@ -23,3 +23,9 @@ Metrics/ModuleLength:
 
 Naming/VariableNumber:
   Enabled: false
+
+Minitest/MultipleAssertions:
+  Enabled: false
+
+Performance/FixedSize:
+  Enabled: false

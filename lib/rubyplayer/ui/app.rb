@@ -1147,8 +1147,8 @@ module RubyPlayer
         # Track ended while the modal was open: nothing to show anymore.
         return @show_now_playing = false unless track
 
-        img_h = [[(@screen.cols - 8) / 2, @screen.rows - 12].min,
-                 @config['ui', 'art_min_rows']].max
+        max_img_h = [(@screen.cols - 8) / 2, @screen.rows - 12].min
+        img_h = max_img_h.clamp(@config['ui', 'art_min_rows'], Float::INFINITY)
         w = [(img_h * 2) + 4, @screen.cols - 2].min
         lines = [track.title, track.album, track.artist].reject { |t| t.to_s.empty? }
         render_modal(title: 'Now Playing', w: w, h: img_h + lines.size + 5,
