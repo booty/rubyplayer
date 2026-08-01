@@ -25,3 +25,9 @@ Track or entire playlist can be played / enqueued just like other song views
 Hotkeys to:
 - Duplicate playlist (ask user for new playlist's name)
 - Delete playlist (ask for confirmation)
+- Remove selected track from playlist
+
+## Open Questions
+
+- Any other common functionality you'd recommend?
+- A view of playlist tracks has a lot in common with other tracklist views. Opportunity for perhaps a shared base class here?a
