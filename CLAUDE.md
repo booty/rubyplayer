@@ -29,8 +29,10 @@ always go through `mise exec`.
 - **Comments explain why, not what.** Surprising decisions get an inline
   comment at the decision site (see any file — the codebase is consistent
   about this).
-- **No hardcoded magic numbers.** Expose them in `DEFAULTS` in `config.rb`
-  with a sensible default.
+- **Magic values:** user-tunable settings belong in `DEFAULTS` in `config.rb`
+  with a sensible default. Internal algorithm and timing constants belong as
+  clearly named local/class constants near their use; do not force them into
+  user configuration.
 - Prose to the user may be caveman-terse (plugin-driven); code, comments,
   commit messages, and this kind of doc are always normal English.
 
@@ -82,11 +84,32 @@ always go through `mise exec`.
   backing up). Schema changes are cheap pre-1.0 — bump the version rather
   than writing migrations.
 - **PlaybackEngine `state[:track]`**, not `state[:current]` — easy test typo.
-- **No TOML writer dependency.** `ConfigStore#persist_theme` patches the
-  single `theme =` line in place to preserve user comments. Follow that
-  pattern for any future persisted setting.
+- **No TOML writer dependency.** `ConfigStore#persist_theme` and
+  `#persist_art_mode` persist settings through separate managed blocks via
+  `persist_managed`. Each update replaces only its setting's block, preserving
+  user code/comments and allowing theme and art-mode blocks to coexist. Future
+  persisted settings must use the same per-setting managed-block pattern.
 - **bsdtar over homebrew tools** for archives: ships with macOS, reads
   zip/7z/rar, and without `-P` refuses path-traversal entry names.
+
+## Current refactor seams
+
+- **`DurationFormatter`:** shared duration display formatter. Use it instead
+  of duplicating milliseconds-to-text conversions; callers choose unknown
+  fallback text with `unknown:`.
+- **`Backends::MetadataHelper`:** shared backend metadata normalization.
+  Use `presence` for optional tags and `format_extension` for normalized file
+  formats; keep backend-specific decoding in each backend.
+- **`AudioFormat`:** canonical PCM contract: little-endian float32,
+  interleaved stereo. Backends and focus player produce it; audio output and
+  native shim consume it. Use `CHANNELS`, `BYTES_PER_FRAME`, and related
+  constants instead of duplicating frame math.
+- **Shared async test helper:** `test/support/async_wait.rb` is included from
+  `test/test_helper.rb`. Use it for polling async state; do not add ad-hoc
+  sleeps that make tests flaky.
+- **Split `App` specs:** keep behavior tests in focused `app_*_test.rb` files
+  and reuse `TestSupport::AppTestSupport`; do not grow `test/app_test.rb` into
+  another catch-all.
 
 ## Testing conventions
 

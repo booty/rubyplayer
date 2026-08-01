@@ -14,7 +14,7 @@ A terminal (TUI) music player for retro game-music and tracker formats — chipt
 ```sh
 brew install libgme libopenmpt sox ffmpeg
 mise install
-bundle install
+mise exec -- bundle install
 ```
 
 ## Running
@@ -23,9 +23,9 @@ bundle install
 bin/rubyplayer [path ...]
 ```
 
-`rake compile` builds the native audio shim (`lib/rubyplayer/native/librp_audio.dylib`) automatically as a prerequisite of `rake test`; `bin/rubyplayer` expects it to already exist, so run `rake compile` (or `rake test`) at least once after a fresh checkout.
+`mise exec -- bundle exec rake compile` builds the native audio shim (`lib/rubyplayer/native/librp_audio.dylib`) automatically as a prerequisite of `mise exec -- bundle exec rake test`; `bin/rubyplayer` expects it to already exist, so run `mise exec -- bundle exec rake compile` (or `mise exec -- bundle exec rake test`) at least once after a fresh checkout.
 
-Startup checks every supported runtime dependency before taking over the terminal. Missing Homebrew packages are reported together with one `brew install ...` command. If only the bundled audio shim is missing, run `bundle exec rake compile`.
+Startup checks every supported runtime dependency before taking over the terminal. Missing Homebrew packages are reported together with one `brew install ...` command. If only the bundled audio shim is missing, run `mise exec -- bundle exec rake compile`.
 
 Any paths given on the command line are scanned into the library on startup, in addition to any roots already remembered from a previous run.
 
@@ -88,6 +88,7 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | `rubyplayer.rb` | Top-level module: version constant and the `require_relative` list that loads the rest of the library in dependency order. |
 | `config.rb` | Built-in defaults and `ConfigStore`: installs `examples/config.rb` when needed, transactionally loads executable `~/.config/rubyplayer/config.rb`, hot-reloads it, snapshots valid source to `config-previous.rb`, and restores that snapshot when primary source disappears. |
 | `config_dsl.rb` | Validated configuration DSL and evaluator. Builds settings before activation, rejects unknown names with suggestions, and wraps syntax/runtime/validation failures as `ConfigError`. |
+| `duration_formatter.rb` | Shared duration formatting helper used by track formatters, bottom lines, and app rendering. |
 | `database.rb` | `Database`: owns the SQLite connection (WAL mode, foreign keys on), the schema (`folders`, `tracks`, `track_metadata`, `playback_history`), and a single-writer-mutex `write`/multi-reader `read` API. Backs up the existing DB file on open and rebuilds from scratch if the schema version doesn't match. |
 | `track.rb` | `Track`: a keyword-init `Struct` mirroring a `tracks` row, with `Track.from_row` to build one from a SQLite result hash. This is the value object passed around the whole playback pipeline (queue, engine, UI panes). |
 | `library.rb` | `Library`: the query/mutation layer over `Database` — upserting folders/tracks during a scan, reading folders plus source/smart views (`favorites`, `history`, Recently Added, Unrated, Missing, Failed to Scan, Most Played), rating tracks, soft-deleting folder subtrees, user-defined playlists (CRUD, position-ordered entries with move/remove, duplicate), and the track_metadata KV sidecar (full tag sets stored at scan, read on demand). No SQL lives outside this file (and `database.rb`'s schema). |
@@ -108,6 +109,7 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | File | Purpose |
 |---|---|
 | `registry.rb` | `Backends::Registry`: maps file extensions to backend names (gme vs. openmpt) and lazily instantiates/caches the actual backend objects, so the extension-mapping logic can be tested without the native libraries installed. Also classifies archive containers (`.zip`/`.7z`/`.rar`), which are "supported" but have no backend of their own — the `ExtractorPool` unpacks them and dispatches each entry to its real backend. |
+| `metadata_helper.rb` | Shared backend metadata helpers for presence checks and normalized file extensions. |
 | `gme.rb` | `Backends::Gme`: FFI bindings to libgme, plus `Handle` (an open, playable track) and metadata extraction for chiptune formats. Converts libgme's 16-bit PCM output to the app's canonical float32 format. |
 | `openmpt.rb` | `Backends::Openmpt`: FFI bindings to libopenmpt, plus `Handle` and metadata extraction for tracker module formats. libopenmpt renders float natively, so no format conversion is needed. |
 
@@ -126,17 +128,17 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 
 | File | Purpose |
 |---|---|
-| `rp_audio.c` | A minimal playback shim over vendored miniaudio: owns a lock-free SPSC ring buffer of float32 interleaved stereo frames. The Ruby decoder thread is the producer (via `rp_write`, an FFI call with the GVL released); miniaudio's own native callback is the consumer and never touches Ruby. Compiled to `lib/rubyplayer/native/librp_audio.dylib` by `rake compile`. |
+| `rp_audio.c` | A minimal playback shim over vendored miniaudio: owns a lock-free SPSC ring buffer of float32 interleaved stereo frames. The Ruby decoder thread is the producer (via `rp_write`, an FFI call with the GVL released); miniaudio's own native callback is the consumer and never touches Ruby. Compiled to `lib/rubyplayer/native/librp_audio.dylib` by `mise exec -- bundle exec rake compile`. |
 | `miniaudio.h` | Vendored single-header [miniaudio](https://miniaudio.docs/) library — the actual cross-platform audio device backend. Not modified. |
 
 ### Other directories
 
 | Path | Purpose |
 |---|---|
-| `test/` | Minitest suite, one file per class above plus `test_helper.rb` (fixture path constant, requires). Run with `rake test`. |
+| `test/` | Minitest suite, one file per class above plus `test_helper.rb` (fixture path constant, requires); shared test support is split under `test/support/` (`AppTestSupport` and `AsyncWait`). Run with `mise exec -- bundle exec rake test`. |
 | `fixtures/` | Real sample files in every supported format, used by the test suite and for manual verification. |
 | `examples/config.rb` | Packaged executable-config starter. First run copies it to `~/.config/rubyplayer/config.rb`; settings remain commented so future built-in default changes still apply. |
-| `docs/superpowers/` | Design spec and implementation plan produced while building this project. |
+| `docs/superpowers/` | Historical design specs and plans; see [`docs/README.md`](docs/README.md) for current documentation guidance. |
 | `ideas.md` | Original freeform brainstorm this project's design was distilled from. |
 
 ## Configuration
@@ -205,11 +207,23 @@ restart.
 |---|---:|---|
 | `config.ui.library_pane_percent` | `33` | Library width, integer `1..99`. |
 | `config.ui.frame_fps` | `30` | Frame limit; positive integer. |
+| `config.ui.idle_poll_seconds` | `0.25` | Idle loop wake-up interval. |
 | `config.ui.status_message_seconds` | `5` | Status duration; positive integer. |
+| `config.ui.resize_settle_seconds` | `0.5` | Delay after resize before re-emitting art. |
 | `config.ui.seek_seconds` | `10` | Seek step; positive integer. |
 | `config.ui.format_track_grouped` | callable | Grouped-row formatter. |
 | `config.ui.format_track_ungrouped` | callable | Flat-row formatter. |
 | `config.ui.theme` | `"default"` | Id from `Theme::ALL_IDS`. |
+| `config.ui.art_mode` | `"off"` | Album-art placement: off, inset, pane, or corner. |
+| `config.ui.art_pane_width` | `30` | Dedicated album-art pane width. |
+| `config.ui.art_display_max_px` | `480` | Longest emitted album-art side in pixels. |
+| `config.ui.art_corner_rows` | `8` | Album-art corner height in rows. |
+| `config.ui.art_min_rows` | `3` | Minimum usable album-art height in rows. |
+| `config.ui.art_inset_max_rows` | `12` | Maximum inset album-art height in rows. |
+| `config.ui.art_filenames` | `Artwork::DEFAULT_NAMES` | Folder-art basenames tried before image fallback. |
+| `config.ui.art_accent` | `true` | Tint accent color toward current cover art. |
+| `config.ui.playlist_recent_count` | `3` | Recent playlists shown in add-to-playlist modal. |
+| `config.ui.info_metadata_rows` | `8` | Extra metadata rows shown in info modal. |
 | `config.audio.sample_rate` | `"auto"` | Device-native or positive integer Hz. |
 | `config.audio.ring_buffer_ms` | `500` | Audio buffer; positive integer ms. |
 | `config.audio.decode_chunk_frames` | `4096` | Decode chunk; positive integer frames. |
@@ -221,6 +235,7 @@ restart.
 | `config.library.undo_depth` | `10` | Queue undo/redo depth. |
 | `config.library.archive_cache_dir` | `~/.cache/rubyplayer/archives` | Extracted archive cache. |
 | `config.library.archive_tool` | `"bsdtar"` | Archive executable. |
+| `config.library.metadata_value_limit` | `8192` | Maximum bytes per stored metadata value. |
 | `config.eq.bands` | `16` | Analyzer band count. |
 | `config.eq.fps` | `30` | Analyzer update rate. |
 | `config.glyphs.dir` | folder glyph | Directory icon. |
@@ -258,8 +273,8 @@ conditionals safe inside `fmt.line`.
 Available `track` fields:
 
 `id`, `folder_id`, `physical_path`, `archive_entry`, `subtune_index`, `backend`,
-`format`, `title`, `album`, `artist`, `composer`, `track_number`, `duration_ms`,
-`rating`, `missing`, and `errored`.
+`format`, `title`, `album`, `album_artist`, `artist`, `composer`, `track_number`,
+`duration_ms`, `year`, `rating`, `missing`, and `errored`.
 
 Helpers:
 
