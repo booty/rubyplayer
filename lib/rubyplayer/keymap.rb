@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module RubyPlayer
   # Maps normalized key names (already translated from tty-reader key events by
   # the App, Task 20) to action symbols. Defaults below are vim-ish but

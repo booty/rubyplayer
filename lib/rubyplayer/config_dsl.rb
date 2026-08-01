@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require 'did_you_mean'
 require_relative 'theme'
 

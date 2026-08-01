@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require 'fileutils'
 require_relative 'config_dsl'
 require_relative 'artwork' # DEFAULTS references Artwork::DEFAULT_NAMES

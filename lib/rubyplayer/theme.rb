@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module RubyPlayer
   # Semantic color palettes for the TUI. Screen#put already accepts either a
   # named ANSI symbol or a "#rrggbb" truecolor string for fg/bg, so a theme

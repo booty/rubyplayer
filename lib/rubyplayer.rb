@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module RubyPlayer
   VERSION = '0.1.0'
 end

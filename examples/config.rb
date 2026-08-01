@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 # rubyplayer user configuration
 #
 # This file is executable Ruby. Only add code you trust.

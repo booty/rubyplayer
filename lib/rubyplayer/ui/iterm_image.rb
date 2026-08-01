@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module RubyPlayer
   module UI
     # iTerm2 inline-image escape (OSC 1337 File=). The terminal does all

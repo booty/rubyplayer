@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module RubyPlayer
   module Backends
     class Registry

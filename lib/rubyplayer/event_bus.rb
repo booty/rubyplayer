@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module RubyPlayer
   # Thread-safe event queue with a select()-able wakeup pipe (self-pipe trick).
   # Producers: scanner pool, playback engine. Consumer: the main UI loop.

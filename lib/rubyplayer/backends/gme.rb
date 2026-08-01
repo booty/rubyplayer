@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require 'ffi'
 require_relative '../runtime_dependencies'
 require_relative '../audio_format'

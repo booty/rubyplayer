@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require 'io/console'
 require 'shellwords'
 require 'tty-screen'

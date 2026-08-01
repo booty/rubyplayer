@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module RubyPlayer
   module UI
     # Scroll/selection mechanics shared by the list panes. LibraryPane and

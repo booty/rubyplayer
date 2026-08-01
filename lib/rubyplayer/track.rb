@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module RubyPlayer
   Track = Struct.new(:id, :folder_id, :physical_path, :archive_entry, :subtune_index,
                      :backend, :format, :title, :album, :artist, :composer,

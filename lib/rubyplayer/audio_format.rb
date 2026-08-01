@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module RubyPlayer
   # Canonical PCM contract shared by decoders, SoX, Ruby framing, and native
   # AudioOutput. Raw PCM carries no header, so every boundary must agree on

@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module RubyPlayer
   # Focus sounds are recipes rather than library Tracks: no file, duration, or
   # queue identity exists. Arguments are stored as an array (not a shell string)

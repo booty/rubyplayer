@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module RubyPlayer
   module UI
     # Spectrum meter drawn with braille characters: each cell is a 2x4 dot

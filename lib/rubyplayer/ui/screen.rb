@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module RubyPlayer
   module UI
     # Value equality (Struct#==) is what makes the front/back diff in Screen#flush

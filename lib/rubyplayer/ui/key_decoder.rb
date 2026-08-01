@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module RubyPlayer
   module UI
     # Normalizes raw terminal bytes into Keymap key-name strings.

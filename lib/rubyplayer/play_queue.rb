@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module RubyPlayer
   # The playback queue. Head of the list = currently playing track (when the
   # engine is playing). Named PlayQueue because ::Queue is Thread::Queue.

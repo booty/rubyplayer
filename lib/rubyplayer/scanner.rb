@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module RubyPlayer
   WorkItem = Struct.new(:path, :parent_folder_id, :status, keyword_init: true)
 
