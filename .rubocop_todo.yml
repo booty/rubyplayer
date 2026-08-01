@@ -115,12 +115,6 @@ Style/ComparableClamp:
   Exclude:
     - 'lib/rubyplayer/ui/app.rb'
 
-# Offense count: 2
-# This cop supports unsafe autocorrection (--autocorrect-all).
-Style/ConcatArrayLiterals:
-  Exclude:
-    - 'lib/rubyplayer/runtime_dependencies.rb'
-
 # Offense count: 1
 # This cop supports unsafe autocorrection (--autocorrect-all).
 # Configuration parameters: AllowedReceivers.

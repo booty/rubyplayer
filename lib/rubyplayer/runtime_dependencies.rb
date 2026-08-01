@@ -93,12 +93,12 @@ module RubyPlayer
 
       formulas = missing.filter_map(&:formula).uniq
       unless formulas.empty?
-        lines.concat(['', 'Install missing Homebrew packages:',
-                      "  brew install #{formulas.join(' ')}"])
+        lines.push('', 'Install missing Homebrew packages:',
+                   "  brew install #{formulas.join(' ')}")
       end
       if missing.any? { |spec| spec.name == 'native audio shim' }
-        lines.concat(['', "Build rubyplayer's native audio shim:",
-                      '  bundle exec rake compile'])
+        lines.push('', "Build rubyplayer's native audio shim:",
+                   '  bundle exec rake compile')
       end
       lines.join("\n")
     end
