@@ -227,17 +227,19 @@ module RubyPlayer
 
     # Recovery for any exception raised while a track is current (mid-decode
     # read failure, or an error surfacing from pause/seek/history/advance
-    # while a track was loaded). Mirrors open_and_play's rescue so a run of
-    # back-to-back bad tracks behaves identically regardless of whether the
-    # failure happened while opening or while already playing.
+    # while a track was loaded). The same path handles open failures below so
+    # back-to-back bad tracks behave identically in either phase.
     def handle_decode_error(e)
-      failing = @current
+      recover_from_track_error(@current, e)
+    end
+
+    def recover_from_track_error(track, error)
       close_handle
       # Reset before advancing so `state` never reports a track that's no
       # longer decoding as current/playing during the retry window.
       @mutex.synchronize { @current = nil; @playing = false }
-      @library.set_errored(failing.id) if failing&.id
-      safe_publish(:track_error, track: failing, message: e.message) if failing
+      @library.set_errored(track.id) if track&.id
+      safe_publish(:track_error, track: track, message: error.message) if track
       nxt = @mutex.synchronize { @queue.advance! }
       nxt ? open_and_play(nxt) : stop_playback
     end
@@ -342,14 +344,7 @@ module RubyPlayer
       safe_publish(:track_started, track: track)
       safe_publish(:playback_state, playing: true, paused: false)
     rescue StandardError => e
-      # Reset first: while retrying past several consecutive bad tracks,
-      # `state` must not keep reporting the previous (already-closed)
-      # attempt as current/playing.
-      @mutex.synchronize { @current = nil; @playing = false }
-      @library.set_errored(track.id) if track&.id
-      safe_publish(:track_error, track: track, message: e.message)
-      nxt = @mutex.synchronize { @queue.advance! }
-      nxt ? open_and_play(nxt) : stop_playback
+      recover_from_track_error(track, e)
     end
 
     # Applies the skip-rated-1 rule, advancing past disliked tracks.
