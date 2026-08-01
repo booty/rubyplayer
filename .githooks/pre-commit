@@ -1,0 +1,21 @@
+ #!/bin/bash
+set -eu
+
+files=()
+while IFS= read -r -d '' file; do
+  files+=("$file")
+done < <(
+  git diff --cached --name-only --diff-filter=ACMR -z -- '*.rb'
+)
+
+[ "${#files[@]}" -gt 0 ] || exit 0
+
+# Avoid accidentally formatting unstaged work.
+if ! git diff --quiet -- "${files[@]}"; then
+  echo "pre-commit: staged Ruby file also has unstaged changes." >&2
+  echo "Stage, stash, or commit those changes first." >&2
+  exit 1
+fi
+
+mise exec -- bundle exec rubocop -a -- "${files[@]}"
+git add -- "${files[@]}"
