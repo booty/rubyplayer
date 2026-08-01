@@ -29,7 +29,7 @@ module RubyPlayer
         # Views::ALL's insertion order is the sidebar order; :all is last so
         # the folder tree (its expanded children) renders directly beneath it.
         # Playlist children hang off :playlists the same way.
-        Views::ALL.keys.each do |kind|
+        Views::ALL.each_key do |kind|
           @rows << Row.new(kind: kind, depth: 0)
           next unless kind == :playlists && @expanded[:playlists]
 
