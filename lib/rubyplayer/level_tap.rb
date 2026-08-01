@@ -26,7 +26,7 @@ module RubyPlayer
       lo = LOW_FREQUENCY_HZ
       hi = [MAX_FREQUENCY_HZ, sample_rate * NYQUIST_RATIO].min
       step = (Math.log(hi) - Math.log(lo)) / (bands - 1)
-      @freqs = Array.new(bands) { |i| Math.exp(Math.log(lo) + step * i) }
+      @freqs = Array.new(bands) { |i| Math.exp(Math.log(lo) + (step * i)) }
     end
 
     def push(frames_string)
@@ -53,7 +53,7 @@ module RubyPlayer
         s1 = 0.0
         s2 = 0.0
         window.each do |x|
-          s0 = x + coeff * s1 - s2
+          s0 = x + (coeff * s1) - s2
           s2 = s1
           s1 = s0
         end

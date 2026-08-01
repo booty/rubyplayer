@@ -63,7 +63,7 @@ class AudioOutputTest < Minitest::Test
   end
 
   def test_native_write_after_free_returns_zero_instead_of_crashing
-    script = <<~'RUBY'
+    script = <<~RUBY
       require "ffi"
       require "rubyplayer/audio_output"
       native = RubyPlayer::RpAudio

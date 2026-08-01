@@ -7,6 +7,7 @@ module RubyPlayer
   module Backends
     module GmeLib
       extend FFI::Library
+
       ffi_lib RubyPlayer::RuntimeDependencies::GME_LIBRARY_CANDIDATES
 
       GME_INFO_ONLY = -1 # special sample_rate: open for metadata only

@@ -1176,7 +1176,7 @@ module RubyPlayer
                                                        w: region[:w], h: region[:h], fg: @theme[:success])
         else
           text = @art_supported ? 'no artwork' : 'art requires iTerm2'
-          row = region[:y] + region[:h] / 2
+          row = region[:y] + (region[:h] / 2)
           col = region[:x] + [(region[:w] - text.size) / 2, 0].max
           @screen.put(row, col, text[0, region[:w]], fg: @theme[:text_muted])
         end
@@ -1357,7 +1357,7 @@ module RubyPlayer
         col2 = lines.drop(rows)
         col_w = lines.map(&:size).max
         gap = 4
-        w = [col_w * 2 + gap, hint.size, title.size].max + 4
+        w = [(col_w * 2) + gap, hint.size, title.size].max + 4
         render_modal(title: title, w: w, h: rows + 5, hint: hint) do |x, y|
           rows.times do |i|
             @screen.put(y + 2 + i, x + 2, col1[i][0, col_w], fg: @theme[:primary]) if col1[i]

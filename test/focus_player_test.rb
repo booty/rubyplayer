@@ -118,7 +118,7 @@ class FocusPlayerTest < Minitest::Test
     times = [0.0, 0.0, 1.1]
     player = build_player(
       spawn: ->(*, **) { 42 }, kill: ->(*args) { killed << args },
-      waitpid: ->(*) { nil }, clock: -> { times.shift || 1.1 }
+      waitpid: ->(*) {}, clock: -> { times.shift || 1.1 }
     )
     player.play(RubyPlayer::FocusSounds::ALL.first, sample_rate: 48_000)
 

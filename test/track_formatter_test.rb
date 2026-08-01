@@ -2,10 +2,8 @@ require 'test_helper'
 
 class TrackFormatterTest < Minitest::Test
   def track(**overrides)
-    RubyPlayer::Track.new(**{
-      title: 'Flash Man', album: 'Mega Man 2', artist: 'Capcom',
-      track_number: 7, duration_ms: 125_000, rating: 4
-    }.merge(overrides))
+    RubyPlayer::Track.new(title: 'Flash Man', album: 'Mega Man 2', artist: 'Capcom',
+                          track_number: 7, duration_ms: 125_000, rating: 4, **overrides)
   end
 
   def test_helpers_render_styled_conditional_fragments

@@ -10,8 +10,11 @@ module RubyPlayer
 
     # Playlists are user curation, not disk state: the library's soft-delete
     # philosophy does not apply, so deletes are hard and cascade.
-    PlaylistError = Class.new(StandardError)
-    PlaylistNameTaken = Class.new(PlaylistError)
+    class PlaylistError < StandardError
+    end
+
+    class PlaylistNameTaken < PlaylistError
+    end
 
     def playlists(sort: :recency)
       order = sort == :alpha ? 'name COLLATE NOCASE' : 'updated_at DESC'

@@ -9,6 +9,7 @@ module RubyPlayer
   # reacquiring GVL per audio chunk adds coordination cost without concurrency.
   module RpAudio
     extend FFI::Library
+
     ffi_lib File.expand_path('native/librp_audio.dylib', __dir__)
     attach_function :rp_init, %i[uint uint int], :int
     attach_function :rp_sample_rate, [], :uint
