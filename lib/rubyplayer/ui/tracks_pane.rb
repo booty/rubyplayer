@@ -63,7 +63,12 @@ module RubyPlayer
                 else
                   Views.label(@mode) || 'Tracks'
                 end
-        text = "#{label} · #{filtered_tracks.size}"
+        count = filtered_tracks.size.to_s
+        if !@filter.strip.empty? && !%i[focus playlists].include?(@mode)
+          term = @filter.gsub("'") { "\\'" }
+          count = "#{filtered_tracks.size} of #{@tracks.size} (Filter: '#{term}')"
+        end
+        text = "#{label} · #{count}"
         return text unless max_width && text.size > max_width
         return text[-max_width, max_width] if max_width <= 1
 

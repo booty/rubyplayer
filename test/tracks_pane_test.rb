@@ -47,7 +47,7 @@ class TracksPaneTest < Minitest::Test
     assert_equal 'Tracks · Music / Sega · 3', @pane.title
     @pane.filter = 'bravo'
 
-    assert_equal 'Tracks · Music / Sega · 1', @pane.title
+    assert_equal "Tracks · Music / Sega · 1 of 3 (Filter: 'bravo')", @pane.title
   end
 
   def test_special_view_title_contains_name_and_count
@@ -78,6 +78,56 @@ class TracksPaneTest < Minitest::Test
     @pane.show(@folder_row, breadcrumb: 'A Very Long Root / Sega')
 
     assert_equal '…oot / Sega · 3', @pane.title(max_width: 15)
+  end
+
+  def test_filtered_title_shows_matching_and_total_counts_and_term
+    @pane.show(@folder_row)
+    @pane.filter = 'bravo'
+
+    assert_equal "Tracks · 1 of 3 (Filter: 'bravo')", @pane.title
+  end
+
+  def test_filtered_title_shows_zero_matches
+    @pane.show(@folder_row)
+    @pane.filter = 'missing'
+
+    assert_equal "Tracks · 0 of 3 (Filter: 'missing')", @pane.title
+  end
+
+  def test_clearing_filter_restores_compact_title
+    @pane.show(@folder_row)
+    @pane.filter = 'bravo'
+    @pane.clear_filter
+
+    assert_equal 'Tracks · 3', @pane.title
+  end
+
+  def test_filtered_title_escapes_apostrophes_in_term
+    @pane.show(@folder_row)
+    @pane.filter = "charlie's"
+
+    assert_equal "Tracks · 0 of 3 (Filter: 'charlie\\'s')", @pane.title
+  end
+
+  def test_filtered_title_preserves_max_width_truncation
+    @pane.show(@folder_row, breadcrumb: 'Music / Sega')
+    @pane.filter = 'bravo'
+
+    assert_equal '…Sega · 1 of 3 (Filter: \'bravo\')', @pane.title(max_width: 32)
+  end
+
+  def test_focus_title_keeps_existing_filter_count_format
+    @pane.show(RubyPlayer::UI::LibraryPane::Row.new(kind: :focus, depth: 0))
+    @pane.filter = 'dark'
+
+    assert_equal 'Focus · 1', @pane.title
+  end
+
+  def test_playlist_index_title_keeps_existing_filter_count_format
+    @pane.show(RubyPlayer::UI::LibraryPane::Row.new(kind: :playlists, depth: 0))
+    @pane.filter = 'missing'
+
+    assert_equal 'Playlists · 0', @pane.title
   end
 
   def test_filter_matches_track_metadata_case_insensitively
