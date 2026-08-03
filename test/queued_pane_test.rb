@@ -92,11 +92,63 @@ class QueuedPaneTest < Minitest::Test
     ], texts(4)
   end
 
+  def test_exactly_fitting_upcoming_rows_do_not_add_overflow_row
+    @upcoming = [
+      track(1, title: 'One', duration_ms: 60_000),
+      track(2, title: 'Two', duration_ms: 60_000)
+    ]
+    @pane.reload!
+
+    overflow = texts(5).any? { |text| text.start_with?('+ ') }
+
+    refute overflow
+  end
+
   def test_empty_sections_have_contextual_messages
     assert_equal [
       'Upcoming (0/0:00)', 'Queue empty',
       'Previously', 'No playback history yet'
     ], texts(4)
+  end
+
+  def test_navigation_selects_upcoming_tracks_but_not_history
+    @upcoming = Array.new(4) do |index|
+      track(index, title: "Song #{index}", duration_ms: 60_000)
+    end
+    @history = Array.new(3) do |index|
+      track(20 + index, title: "Past #{index}", duration_ms: 60_000)
+    end
+    @pane.reload!
+
+    assert_same @upcoming[0], @pane.selected_track
+    @pane.handle_action(:nav_down)
+
+    assert_same @upcoming[1], @pane.selected_track
+
+    4.times { @pane.handle_action(:nav_down) }
+
+    assert_same @upcoming[3], @pane.selected_track
+    refute_includes @upcoming, @history.first
+  end
+
+  def test_selected_upcoming_track_scrolls_without_hiding_history
+    @upcoming = Array.new(6) do |index|
+      track(index, title: "Song #{index}", duration_ms: 60_000)
+    end
+    @history = Array.new(3) do |index|
+      track(20 + index, title: "Past #{index}", duration_ms: 60_000)
+    end
+    @pane.reload!
+    4.times { @pane.handle_action(:nav_down) }
+
+    rows = @pane.display_rows(7)
+    row_texts = rows.map { |row| row[:text] }
+
+    assert_includes row_texts, 'Song 4 1:00 Artist'
+    assert_includes row_texts, 'Previously'
+    past_titles = rows.last(3).map { |row| row[:track].title }
+
+    assert_equal ['Past 0', 'Past 1', 'Past 2'], past_titles
   end
 
   def test_render_draws_decorative_headers_and_compact_rows
@@ -110,5 +162,27 @@ class QueuedPaneTest < Minitest::Test
     assert_includes lines[0], '--- Upcoming (1/1:00)'
     assert_includes lines[1], 'Song 1:00 Band'
     assert_includes lines[2], '--- Previously'
+  end
+
+  def test_render_highlights_selected_upcoming_row_only_when_active
+    @upcoming = [
+      track(1, title: 'First', duration_ms: 60_000),
+      track(2, title: 'Second', duration_ms: 60_000)
+    ]
+    @history = [track(3, title: 'Past', duration_ms: 60_000)]
+    @pane.reload!
+    @pane.handle_action(:nav_down)
+    screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 8, cols: 30)
+    theme = RubyPlayer::Theme::DEFAULT
+
+    @pane.render(screen, x: 0, y: 0, w: 30, h: 8, active: true, theme: theme)
+    back = screen.instance_variable_get(:@back)
+
+    selected_bg = theme[:selection_bg]
+    selected_row = back[2].any? { |cell| cell.bg == selected_bg }
+    history_row = back[4].any? { |cell| cell.bg == selected_bg }
+
+    assert selected_row
+    refute history_row
   end
 end

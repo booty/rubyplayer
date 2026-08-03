@@ -193,12 +193,88 @@ class AppRenderingThemeConfigTest < Minitest::Test
     assert_equal 3, @app.queued_pane.previous.size
   end
 
-  def test_tab_never_focuses_queued_pane
+  def test_tab_cycles_through_visible_queued_pane
+    select_library_kind(:folder)
+    use_screen(cols: 140)
+
+    assert_equal :library, @app.active_pane
+    @app.handle_key('tab')
+
+    assert_equal :tracks, @app.active_pane
+    @app.handle_key('tab')
+
+    assert_equal :queued, @app.active_pane
+    @app.handle_key('tab')
+
+    assert_equal :library, @app.active_pane
+  end
+
+  def test_tab_skips_disabled_queued_pane
+    select_library_kind(:folder)
+    use_screen(cols: 140)
+    @app.handle_key('b')
+
     6.times do
       @app.handle_key('tab')
 
       assert_includes %i[library tracks], @app.active_pane
     end
+  end
+
+  def test_active_queued_border_uses_focus_style
+    select_library_kind(:folder)
+    use_screen(cols: 140)
+    @app.handle_key('tab')
+    @app.handle_key('tab')
+    @app.render
+
+    screen = @app.instance_variable_get(:@screen)
+    queued_x = 140 - 36
+    cell = screen.instance_variable_get(:@back)[0][queued_x]
+
+    assert_equal RubyPlayer::Theme::DEFAULT[:border_focus], cell.fg
+  end
+
+  def test_hiding_active_queued_moves_to_another_eligible_pane
+    select_library_kind(:folder)
+    use_screen(cols: 140)
+    @app.handle_key('tab')
+    @app.handle_key('tab')
+
+    assert_equal :queued, @app.active_pane
+
+    @app.handle_key('b')
+    @app.render
+
+    refute_equal :queued, @app.active_pane
+    assert_includes %i[library tracks], @app.active_pane
+  end
+
+  def test_resizing_hides_active_queued_and_moves_focus
+    select_library_kind(:folder)
+    use_screen(cols: 140)
+    @app.handle_key('tab')
+    @app.handle_key('tab')
+
+    assert_equal :queued, @app.active_pane
+
+    use_screen(cols: 107)
+    @app.render
+
+    refute_equal :queued, @app.active_pane
+    assert_includes %i[library tracks], @app.active_pane
+  end
+
+  def test_help_scope_includes_queued_navigation_when_queued_is_active
+    select_library_kind(:folder)
+    use_screen(cols: 140)
+    @app.handle_key('tab')
+    @app.handle_key('tab')
+    @app.handle_key('?')
+    @app.render
+
+    assert_includes back_buffer_text, 'Hotkeys (queued)'
+    assert_includes back_buffer_text, 'UP     nav up'
   end
 
   def test_queued_pane_toggle_persists_and_reflows
@@ -211,7 +287,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
     assert_includes File.read(File.join(@tmp, 'config.rb')), 'config.ui.queued_pane = false'
   end
 
-  def test_enabling_queued_pane_while_narrow_reports_deferred_visibility
+  def test_enabling_queued_pane_while_narrow_does_not_claim_visibility
     select_library_kind(:folder)
     use_screen(cols: 100)
     @app.handle_key('b') # default on -> off
@@ -219,7 +295,8 @@ class AppRenderingThemeConfigTest < Minitest::Test
     @app.handle_key('b') # off -> on, still too narrow
     @app.render
 
-    assert_includes back_buffer_text, 'Queued pane: ON (hidden until terminal is wider)'
+    assert_includes back_buffer_text, 'Queued pane: ON'
+    refute_includes back_buffer_text, 'hidden until terminal is wider'
   end
 
   def test_hot_reload_updates_queued_preference_width_and_formatter

@@ -315,7 +315,7 @@ module RubyPlayer
         case action
         when :quit then @quit = true
         when :cycle_pane
-          @active_pane = @active_pane == :library ? :tracks : :library
+          cycle_pane
         when :toggle_play
           @engine.toggle_play
         when :play_now then play_now
@@ -375,17 +375,12 @@ module RubyPlayer
         @engine.seek([target, 0].max)
       end
 
-      # Removing from the queue is gated to the Playback Queue view (rather
-      # than, say, letting "x" also act on a folder's track list) because
-      # the tracks pane doesn't distinguish "queue position" from "row in
-      # whatever's currently shown" -- selected_track_index only means
-      # "queue index" when that's actually what's on screen.
+      # Removing from the queue is gated to an editable queue surface (rather
+      # than, say, letting "x" also act on a folder's track list). Both queue
+      # panes resolve the selected Track by identity so filtering or snapshot
+      # refreshes cannot make the action target a different row.
       def remove_from_queue
-        if @library_pane.selected&.kind != :queue
-          @status_line.set_message('Select a track in the Playback Queue to remove')
-          return
-        end
-        selected = @tracks_pane.selected_queue_track
+        selected = active_queue_track
         # Filtering changes display positions. Resolve selected object against
         # live queue identity so removing visible row cannot delete hidden row.
         index = @engine.queue_items.index { |track| track.equal?(selected) }
@@ -509,11 +504,8 @@ module RubyPlayer
         end
 
         message = "Queued pane: #{@queued_pane_enabled ? 'ON' : 'OFF'}"
-        if @queued_pane_enabled && queued_pane_cols(@screen.cols).zero? &&
-           @library_pane.selected&.kind != :queue
-          message += ' (hidden until terminal is wider)'
-        end
         @status_line.set_message(message)
+        normalize_active_pane!
         invalidate_screen!
       end
 
@@ -631,6 +623,9 @@ module RubyPlayer
           before = @library_pane.selected
           @library_pane.handle_action(action)
           show_selected_tracks if @library_pane.selected != before
+        elsif @active_pane == :queued
+          outcome = @queued_pane.handle_action(action)
+          @status_line.set_message(outcome[1]) if outcome.is_a?(Array) && outcome[0] == :disabled
         else
           outcome = @tracks_pane.handle_action(action)
           # Panes describe unavailable actions but do not own StatusLine;
@@ -871,8 +866,17 @@ module RubyPlayer
         @active_pane == :tracks && @tracks_pane.selected_focus_sound
       end
 
+      def active_queue_track
+        case @active_pane
+        when :queued then @queued_pane.selected_track
+        when :tracks then @tracks_pane.selected_queue_track
+        end
+      end
+
       def selected_tracks
-        if @active_pane == :tracks
+        if @active_pane == :queued
+          [@queued_pane.selected_track].compact
+        elsif @active_pane == :tracks
           # Track is a Struct, and Kernel#Array(struct) would splat it into its
           # field VALUES ([id, folder_id, ...]) rather than wrap it — which would
           # enqueue an Integer id as a "track". Wrap-and-compact keeps the Track
@@ -989,6 +993,7 @@ module RubyPlayer
         @idle_poll = @config['ui', 'idle_poll_seconds']
         @tracks_pane.update_config(@config)
         @queued_pane_enabled = @config['ui', 'queued_pane']
+        normalize_active_pane!
         @queued_pane.apply_config(prepared_queued_config)
         invalidate_screen!
         # Don't clobber an in-progress interactive preview with whatever's
@@ -1086,6 +1091,7 @@ module RubyPlayer
 
       def render_panes(cols, content_h)
         @art_region = nil
+        normalize_active_pane!
         # Below 72 columns, two bordered panes leave too little usable text.
         # Keep full-width active pane and let existing Tab binding switch it.
         # Art is skipped entirely here — there's no room it could take
@@ -1127,10 +1133,11 @@ module RubyPlayer
         end
         if queued_cols.positive?
           queued_x = cols - queued_cols
-          draw_box(queued_x, 0, queued_cols, content_h, active: false, title: 'Queued')
+          queued_active = @active_pane == :queued
+          draw_box(queued_x, 0, queued_cols, content_h, active: queued_active, title: 'Queued')
           @queued_pane.render(
             @screen, x: queued_x + 1, y: 1,
-                     w: queued_cols - 2, h: content_h - 2, theme: @theme
+                     w: queued_cols - 2, h: content_h - 2, active: queued_active, theme: @theme
           )
         end
         render_art_placeholder
@@ -1160,6 +1167,28 @@ module RubyPlayer
         return 0 if width < MIN_BOX_WIDTH
 
         cols - width > SINGLE_PANE_MAX_WIDTH ? width : 0
+      end
+
+      def focusable_panes
+        panes = %i[library tracks]
+        panes << :queued if queued_pane_cols(@screen.cols).positive?
+        panes
+      end
+
+      def normalize_active_pane!
+        panes = focusable_panes
+        return if panes.include?(@active_pane)
+
+        order = %i[library tracks queued]
+        current = order.index(@active_pane) || -1
+        @active_pane = panes.find { |pane| order.index(pane) > current } || panes.first
+      end
+
+      def cycle_pane
+        normalize_active_pane!
+        panes = focusable_panes
+        index = panes.index(@active_pane) || 0
+        @active_pane = panes[(index + 1) % panes.size]
       end
 
       def render_art_pane(x, w, content_h)
@@ -1508,6 +1537,7 @@ module RubyPlayer
         @last_resize_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         rows, cols = TTY::Screen.size
         @screen.resize(rows, cols)
+        normalize_active_pane!
       end
 
       def resize_settling?

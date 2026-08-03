@@ -26,7 +26,7 @@ class KeymapTest < Minitest::Test
 
   def test_page_navigation_bound_in_both_panes
     k = RubyPlayer::Keymap.new
-    %i[library tracks].each do |pane|
+    %i[library tracks queued].each do |pane|
       assert_equal :nav_page_up, k.action_for('pgup', pane: pane)
       assert_equal :nav_page_down, k.action_for('pgdn', pane: pane)
       # for keyboards without pgup/pgdn keys
@@ -102,6 +102,7 @@ class KeymapTest < Minitest::Test
 
     assert_equal :remove_library_item, k.action_for('x', pane: :library)
     assert_equal :remove_from_queue, k.action_for('x', pane: :tracks)
+    assert_equal :remove_from_queue, k.action_for('x', pane: :queued)
   end
 
   def test_theme_picker_key_is_global_and_sort_title_moved_off_it

@@ -37,7 +37,7 @@ Select **Focus** in the Library pane, then choose a noise recipe in Tracks and p
 - Tracks pane title shows current source or folder breadcrumb plus visible item count. Long breadcrumbs keep leaf name and count visible.
 - Pane-edge scrollbar appears only when rows overflow viewport.
 - Terminals narrower than 72 columns show one full-width pane; Tab switches panes. Wider terminals retain two-pane layout.
-- Wide terminals show a read-only **Queued** pane with upcoming tracks and the three latest playback-history entries. Press `B` to toggle it. It hides when the terminal cannot retain 72 columns for Library + Tracks and while the top-level **Playback Queue** view is selected.
+- Wide terminals show a **Queued** pane with upcoming tracks and the three latest playback-history entries. Tab selects it while visible; upcoming rows support the same queue actions as the top-level **Playback Queue** view, while history rows are informational. Press `B` to toggle it. It hides when the terminal cannot retain 72 columns for Library + Tracks and while the top-level **Playback Queue** view is selected; hidden Queued is excluded from Tab traversal.
 - Fixed smart views expose **Recently Added**, **Unrated**, **Missing**, **Failed to Scan**, and **Most Played** track lists.
 - In **Missing**, press `Ctrl+X` to permanently purge currently filtered/visible tracks and their playback history after confirmation.
 - Playback footer shows current track timing and queued next track. During Focus playback it identifies active recipe, infinite duration, paused queue, and next queued track.

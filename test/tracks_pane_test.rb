@@ -203,6 +203,23 @@ class TracksPaneTest < Minitest::Test
     assert_same @queue.find { |track| track.title == 'Bravo' }, @pane.selected_queue_track
   end
 
+  def test_queue_mode_delegates_cursor_to_shared_selection
+    @queue = @lib.tracks_under(@folder)
+    queue_row = RubyPlayer::UI::LibraryPane::Row.new(kind: :queue, depth: 0)
+    @pane.show(queue_row)
+
+    selection = @pane.instance_variable_get(:@queue_selection)
+
+    assert_instance_of RubyPlayer::UI::QueueSelection, selection
+
+    @pane.handle_action(:nav_down)
+    selected_id = @pane.selected_queue_track.id
+    @queue = @queue.map { |track| RubyPlayer::Track.new(**track.to_h) }
+    @pane.reload!
+
+    assert_equal selected_id, @pane.selected_queue_track.id
+  end
+
   def test_sorting
     @pane.show(@folder_row)
     @pane.handle_action(:sort_title)

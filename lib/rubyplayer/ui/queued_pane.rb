@@ -13,9 +13,23 @@ module RubyPlayer
       def initialize(config:, upcoming_source:, history_source:)
         @upcoming_source = upcoming_source
         @history_source = history_source
+        @selection = QueueSelection.new
         @upcoming = @upcoming_source.call.dup.freeze
+        @selection.replace(@upcoming)
         @previous = @history_source.call.first(HISTORY_LIMIT).dup.freeze
         update_config(config)
+      end
+
+      def handle_action(action)
+        @selection.handle_action(action)
+      end
+
+      def selected_track
+        @selection.selected_track
+      end
+
+      def selected_track_index
+        @selection.selected_index
       end
 
       def update_config(config)
@@ -47,6 +61,7 @@ module RubyPlayer
 
       def reload!
         @upcoming = @upcoming_source.call.dup.freeze
+        @selection.replace(@upcoming)
         @previous = @history_source.call.first(HISTORY_LIMIT).dup.freeze
         rebuild_rows
         nil
@@ -62,7 +77,7 @@ module RubyPlayer
         upcoming_rows_for(remaining) + previous_block
       end
 
-      def render(screen, x:, y:, w:, h:, theme:) # rubocop:disable Naming/MethodParameterName
+      def render(screen, x:, y:, w:, h:, theme:, active: false) # rubocop:disable Naming/MethodParameterName
         display_rows(h).each_with_index do |row, index|
           case row[:type]
           when :header
@@ -71,9 +86,10 @@ module RubyPlayer
           when :empty
             screen.put(y + index, x, row[:text][0, w], fg: theme[:text_muted])
           else
+            selected = active && row[:track].equal?(selected_track)
             ListRowRenderer.render_track(
               screen, row, x: x, y: y + index, w: w,
-                           selected: false, bg: nil, theme: theme
+                           selected:, bg: nil, theme: theme
             )
           end
         end
@@ -110,12 +126,16 @@ module RubyPlayer
         body_capacity = height - 1
         return [header] unless body_capacity.positive?
         return [header, { type: :empty, text: 'Queue empty' }] if @upcoming_rows.empty?
-        return [header] + @upcoming_rows if @upcoming_rows.size <= body_capacity
 
-        visible_count = [body_capacity - 1, 0].max
-        hidden_count = @upcoming_rows.size - visible_count
-        [header] + @upcoming_rows.first(visible_count) +
-          [{ type: :empty, text: "+ #{hidden_count} more" }]
+        overflow = @upcoming_rows.size > body_capacity
+        visible_count = overflow ? [body_capacity - 1, 0].max : body_capacity
+        return [header, { type: :empty, text: "+ #{@upcoming_rows.size} more" }] if visible_count.zero?
+
+        visible, hidden_count = @selection.visible_items(visible_count)
+        rows = [header] + @upcoming_rows[@selection.scroll, visible.size].to_a
+        return rows if !overflow || hidden_count.zero?
+
+        rows + [{ type: :empty, text: "+ #{hidden_count} more" }]
       end
 
       def total_duration

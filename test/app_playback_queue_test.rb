@@ -201,6 +201,41 @@ class AppPlaybackQueueTest < Minitest::Test
     assert_equal before_size, @app.engine.queue_items.size
   end
 
+  def test_sidebar_queue_removes_selected_upcoming_track
+    select_library_kind(:folder)
+    @app.handle_key('n')
+    @app.refresh_panes
+    use_screen(cols: 140)
+    @app.handle_key('tab')
+    @app.handle_key('tab')
+
+    selected = @app.engine.upcoming_items[1]
+    @app.handle_key('down')
+
+    assert_same selected, @app.queued_pane.selected_track
+
+    @app.handle_key('x')
+
+    refute_includes @app.engine.queue_items.map(&:id), selected.id
+  end
+
+  def test_sidebar_queue_play_now_uses_selected_upcoming_track
+    select_library_kind(:folder)
+    @app.handle_key('n')
+    @app.refresh_panes
+    use_screen(cols: 140)
+    @app.handle_key('tab')
+    @app.handle_key('tab')
+    @app.handle_key('down')
+    selected = @app.queued_pane.selected_track
+    calls = []
+    @app.engine.define_singleton_method(:enqueue_now) { |tracks| calls << tracks }
+
+    @app.handle_key('enter')
+
+    assert_equal [[selected]], calls
+  end
+
   def test_sorting_a_folder_then_viewing_queue_removes_the_right_track
     library = @app.instance_variable_get(:@library)
     folder_id = library.upsert_folder(parent_id: nil, name: 'synth', path: '/synth', kind: 'dir')

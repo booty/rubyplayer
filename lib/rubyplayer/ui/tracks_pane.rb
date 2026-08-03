@@ -25,6 +25,7 @@ module RubyPlayer
         @filter = ''
         @view_states = {}
         @page_size = ScrollableList::PAGE_SIZE_FALLBACK
+        @queue_selection = QueueSelection.new
         update_config(config)
       end
 
@@ -80,6 +81,12 @@ module RubyPlayer
         previous_selection = @selection
         previous_scroll = @scroll
         load_tracks
+        if @mode == :queue
+          @queue_selection.restore(identity: identity&.last, fallback: previous_selection,
+                                   scroll: previous_scroll)
+          sync_queue_cursor
+          return
+        end
         restore_selection(identity, previous_selection)
         @scroll = previous_scroll
       end
@@ -88,6 +95,13 @@ module RubyPlayer
         identity = selected_identity
         @filter = value.to_s
         invalidate_rows!
+        if @mode == :queue
+          @queue_selection.replace(filtered_tracks)
+          @queue_selection.restore(identity: identity&.last, fallback: 0,
+                                   scroll: @scroll)
+          sync_queue_cursor
+          return
+        end
         restore_selection(identity, 0)
       end
 
@@ -112,6 +126,7 @@ module RubyPlayer
           else Views.query(@mode, @library)
           end
         apply_sort
+        @queue_selection.replace(filtered_tracks) if @mode == :queue
       end
 
       def handle_action(action)
@@ -127,6 +142,12 @@ module RubyPlayer
         if playlist_tracks_view? &&
            %i[toggle_group sort_title sort_number sort_artist sort_year].include?(action)
           return [:disabled, 'Playlist order is fixed — ctrl+arrows move tracks']
+        end
+
+        if @mode == :queue && %i[nav_up nav_down nav_page_up nav_page_down].include?(action)
+          handled = @queue_selection.handle_action(action)
+          sync_queue_cursor
+          return handled
         end
 
         if @mode == :playlists
@@ -171,6 +192,8 @@ module RubyPlayer
       end
 
       def selected_track
+        return @queue_selection.selected_track if @mode == :queue
+
         row = display_rows[@selection]
         row && row[:type] == :track ? row[:track] : nil
       end
@@ -206,7 +229,7 @@ module RubyPlayer
       # Resolve queue position from selected Track identity. Display indexes
       # become unsafe once filtering can hide rows before selected item.
       def selected_track_index
-        return @tracks.index { |track| track.equal?(selected_track) } if @mode == :queue
+        return @queue_selection.selected_index if @mode == :queue
 
         rows = display_rows
         row = rows[@selection]
@@ -216,9 +239,15 @@ module RubyPlayer
       end
 
       def render(screen, x:, y:, w:, h:, active:, theme:)
-        @page_size = h
         rows = display_rows
-        follow_selection(h, rows.size)
+        if @mode == :queue
+          @queue_selection.set_page_size(h)
+          @queue_selection.follow_selection(h)
+          sync_queue_cursor
+        else
+          @page_size = h
+          follow_selection(h, rows.size)
+        end
         scrollbar = rows.size > h
         content_w = scrollbar ? w - 1 : w
         h.times do |i|
@@ -384,6 +413,8 @@ module RubyPlayer
       end
 
       def selected_identity
+        return [:track, @queue_selection.selected_track.id] if @mode == :queue && @queue_selection.selected_track
+
         row = display_rows[@selection]
         case row&.dig(:type)
         when :track then [:track, row[:track].id]
@@ -400,11 +431,24 @@ module RubyPlayer
       end
 
       def restore_view_state(state)
+        if @mode == :queue
+          @queue_selection.restore(identity: state[:selection_identity]&.last,
+                                   fallback: state.fetch(:selection, 0),
+                                   scroll: state.fetch(:scroll, 0))
+          sync_queue_cursor
+          return
+        end
         restore_selection(state[:selection_identity], state.fetch(:selection, 0))
         @scroll = state.fetch(:scroll, 0)
       end
 
       def restore_selection(identity, fallback)
+        if @mode == :queue
+          @queue_selection.restore(identity: identity&.last, fallback: fallback, scroll: @scroll)
+          sync_queue_cursor
+          return
+        end
+
         rows = display_rows
         match = rows.index do |row|
           case identity&.first
@@ -435,6 +479,11 @@ module RubyPlayer
         return unless rows[@selection] && rows[@selection][:type] == :header
 
         @selection += 1 if @selection + 1 < rows.size
+      end
+
+      def sync_queue_cursor
+        @selection = @queue_selection.selection
+        @scroll = @queue_selection.scroll
       end
     end
   end

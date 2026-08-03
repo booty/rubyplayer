@@ -74,6 +74,12 @@ module RubyPlayer
         # Reorder is ctrl+arrows (not letters): it repeats rapidly when held,
         # and arrow keys already mean "vertical movement" here.
         'ctrl_up' => 'move_entry_up', 'ctrl_down' => 'move_entry_down'
+      },
+      'queued' => {
+        'up' => 'nav_up', 'down' => 'nav_down',
+        'pgup' => 'nav_page_up', 'pgdn' => 'nav_page_down',
+        'shift_up' => 'nav_page_up', 'shift_down' => 'nav_page_down',
+        'ctrl_u' => 'nav_page_up', 'ctrl_d' => 'nav_page_down'
       }
     }.freeze
 
