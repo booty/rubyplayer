@@ -5,9 +5,9 @@
 Make the always-visible `Queued` sidebar an editable, focusable queue view.
 Tab should cycle through Library, Tracks, and Queued whenever the sidebar is
 actually rendered. When the terminal is too narrow, the sidebar remains hidden
-and Tab keeps its existing two-pane behavior. The top-level Library item
-`Playback Queue` remains available and keeps its current full-list behavior;
-the sidebar is suppressed while that item is selected.
+and is excluded from Tab traversal. The top-level Library item `Playback Queue`
+remains available and keeps its current full-list behavior; the sidebar is
+suppressed while that item is selected.
 
 The sidebar displays upcoming queue items followed by three recent history
 items. Only upcoming rows are selectable and editable. History rows remain
@@ -34,18 +34,19 @@ keeps presentation differences explicit while centralizing queue invariants.
 ### Focus and layout
 
 `App#active_pane` gains `:queued` as a valid focus value when
-`queued_pane_cols(screen.cols)` is positive. Tab cycles in visual order:
+`queued_pane_cols(screen.cols)` is positive. Tab cycles through the currently
+visible panes in visual order:
 
 ```text
 Library -> Tracks -> Queued -> Library
 ```
 
 If the sidebar is hidden because of terminal width, preference, or the
-top-level Playback Queue view, the cycle contains only Library and Tracks. If
-the sidebar becomes hidden while focused (resize, toggle, or selecting the
-top-level queue), App moves focus to Tracks so no input is stranded on an
-invisible pane. The sidebar border receives the active style only when
-`:queued` is focused.
+top-level Playback Queue view, it is absent from the cycle. If the sidebar
+becomes hidden while focused (resize, toggle, or selecting the top-level queue),
+App advances to the next eligible pane in visual order, wrapping when needed,
+so no input is stranded on an invisible pane. The sidebar border receives the
+active style only when `:queued` is focused.
 
 ### Input and mutations
 
@@ -76,9 +77,9 @@ with the active selection theme. Rows in the `Previously` section never receive
 selection highlighting. Existing headers, duration totals, overflow rows, and
 formatter behavior remain unchanged.
 
-The hotkey footer is generated for the active pane. Queued uses the same
-navigation and global queue labels as the other interactive panes, with no new
-shortcut text added specifically for focus cycling.
+The hotkey footer and help modal are generated for the active pane. Queued uses
+the same navigation and global queue labels as the other interactive panes,
+with no new shortcut text added specifically for focus cycling.
 
 ## Data flow
 
@@ -114,7 +115,8 @@ Add focused regression coverage for:
    are never selectable.
 3. Queued-pane rendering highlights the selected upcoming row only when active.
 4. Tab cycles Library → Tracks → Queued on a wide screen and skips Queued when
-   hidden, including focus recovery after resize/toggle/top-level queue view.
+   hidden, including focus recovery to the next eligible pane after
+   resize/toggle/top-level queue view.
 5. Sidebar `x` removes the selected upcoming track, while history selection or
    an empty queue is a safe no-op.
 6. Sidebar play-now and queue actions match top-level Playback Queue behavior.
