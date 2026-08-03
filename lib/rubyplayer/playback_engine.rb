@@ -159,6 +159,14 @@ module RubyPlayer
     end
 
     def queue_items = @mutex.synchronize { @queue.items }
+
+    def upcoming_items
+      @mutex.synchronize do
+        items = @queue.items
+        @playing ? items.drop(1) : items
+      end
+    end
+
     def levels = @level_tap.levels
 
     def state

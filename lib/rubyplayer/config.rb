@@ -26,6 +26,14 @@ module RubyPlayer
     )
   end
 
+  DEFAULT_FORMAT_QUEUED = lambda do |track, fmt|
+    fmt.line(
+      fmt.text(track.title, bold: true),
+      fmt.duration(track.duration_ms, fg: :text_muted),
+      fmt.text(track.artist, italic: true)
+    )
+  end
+
   DEFAULTS = {
     'ui' => {
       'library_pane_percent' => 33,
@@ -42,6 +50,9 @@ module RubyPlayer
       'seek_seconds' => 10,
       'format_track_grouped' => DEFAULT_FORMAT_GROUPED,
       'format_track_ungrouped' => DEFAULT_FORMAT_UNGROUPED,
+      'format_track_queued' => DEFAULT_FORMAT_QUEUED,
+      'queued_pane' => true,
+      'queued_pane_width' => 36,
       'theme' => 'default',
       # Album art placement: off | inset (bottom of library pane) |
       # pane (dedicated right-hand column) | corner (overlay). "off" is the
@@ -128,6 +139,17 @@ module RubyPlayer
   end
 
   class ConfigStore
+    class Candidate
+      def initialize(data)
+        @data = data
+      end
+
+      def [](*keys)
+        keys.reduce(@data) { |value, key| value.is_a?(Hash) ? value[key] : nil }
+      end
+    end
+    private_constant :Candidate
+
     # Settings this app version persists via managed blocks. Blocks naming
     # anything else were written by a version that had a since-removed
     # feature (this happened: a persisted ui.pulse_mode outlived the pulse
@@ -135,7 +157,7 @@ module RubyPlayer
     # fallback snapshot, which had faithfully copied the same block). Such
     # blocks are app-authored, so the app deletes them; hand-written
     # unknown settings still fail loudly.
-    MANAGED_SETTINGS = %w[theme art_mode].freeze
+    MANAGED_SETTINGS = %w[theme art_mode queued_pane].freeze
     MANAGED_BLOCK_PATTERN =
       /^# rubyplayer: managed (\w+) begin\n.*?^# rubyplayer: managed \1 end\n?/m
 
@@ -168,14 +190,15 @@ module RubyPlayer
       return false if signature == @signature
 
       @signature = signature
-      if signature.nil?
-        @data = ConfigDSL.deep_copy(DEFAULTS)
-      else
-        source = File.binread(@path)
-        candidate = ConfigDSL.evaluate(source, path: @path, defaults: DEFAULTS)
-        snapshot(source)
-        @data = candidate
-      end
+      source = File.binread(@path) unless signature.nil?
+      candidate = if source
+                    ConfigDSL.evaluate(source, path: @path, defaults: DEFAULTS)
+                  else
+                    ConfigDSL.deep_copy(DEFAULTS)
+                  end
+      yield Candidate.new(candidate) if block_given?
+      snapshot(source) if source
+      @data = candidate
       true
     end
 
@@ -185,6 +208,10 @@ module RubyPlayer
 
     def persist_art_mode(mode)
       persist_managed('art_mode', "config.ui.art_mode = #{mode.to_s.inspect}")
+    end
+
+    def persist_queued_pane(visible)
+      persist_managed('queued_pane', "config.ui.queued_pane = #{visible}")
     end
 
     private

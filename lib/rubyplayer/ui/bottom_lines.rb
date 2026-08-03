@@ -93,7 +93,7 @@ module RubyPlayer
         remove_from_queue: 'remove', remove_library_item: 'remove',
         purge_visible_missing: 'purge missing',
         show_track_info: 'info', show_help: 'help', show_theme_picker: 'theme',
-        filter_tracks: 'filter', cycle_art_mode: 'art',
+        filter_tracks: 'filter', cycle_art_mode: 'art', toggle_queued_pane: 'queue bar',
         show_now_playing: 'now playing',
         add_to_playlist: 'playlist+', duplicate_playlist: 'dup playlist',
         rename_playlist: 'rename', move_entry_up: nil, move_entry_down: nil

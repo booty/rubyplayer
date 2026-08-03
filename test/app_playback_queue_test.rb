@@ -162,6 +162,13 @@ class AppPlaybackQueueTest < Minitest::Test
     assert_operator before_size, :>=, 2
 
     @app.handle_key('p')                # select_queue: show the Playback Queue in tracks pane
+    use_screen(cols: 140)
+    @app.render
+    title_row = @app.instance_variable_get(:@screen).instance_variable_get(:@back)[0].map(&:ch).join
+
+    assert_equal 1, title_row.scan('Playback Queue').size
+    refute_includes title_row, 'Queued'
+
     @app.handle_key('tab')              # focus tracks pane so nav_down routes there
     @app.handle_key('down')             # move selection onto the 2nd queue row
 

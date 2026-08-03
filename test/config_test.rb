@@ -29,6 +29,38 @@ class ConfigTest < Minitest::Test
     assert_nil config['nope', 'nothing']
   end
 
+  def test_queued_pane_defaults
+    config = RubyPlayer::ConfigStore.new(path: @path)
+
+    assert config['ui', 'queued_pane']
+    assert_equal 36, config['ui', 'queued_pane_width']
+    assert_respond_to config['ui', 'format_track_queued'], :call
+  end
+
+  def test_boolean_settings_accept_false
+    write_config <<~RUBY
+      RubyPlayer.configure do |config|
+        config.ui.queued_pane = false
+        config.ui.art_accent = false
+      end
+    RUBY
+
+    config = RubyPlayer::ConfigStore.new(path: @path)
+
+    refute config['ui', 'queued_pane']
+    refute config['ui', 'art_accent']
+  end
+
+  def test_queued_pane_width_must_be_positive
+    write_config 'RubyPlayer.configure { |config| config.ui.queued_pane_width = 0 }'
+
+    error = assert_raises(RubyPlayer::ConfigError) do
+      RubyPlayer::ConfigStore.new(path: @path)
+    end
+
+    assert_includes error.message, 'ui.queued_pane_width must be a positive Integer'
+  end
+
   def test_packaged_sample_is_valid_and_does_not_pin_defaults
     source = File.read(RubyPlayer.config_sample_path)
     data = RubyPlayer::ConfigDSL.evaluate(
@@ -339,6 +371,23 @@ class ConfigTest < Minitest::Test
     assert_equal 1, source.scan('rubyplayer: managed art_mode begin').size
     assert_match(/config\.ui\.art_mode = "pane"/, source)
     assert_equal 'pane', config['ui', 'art_mode']
+  end
+
+  def test_persist_queued_pane_replaces_only_its_managed_block
+    config = RubyPlayer::ConfigStore.new(path: @path)
+    config.persist_theme(:basic_terminal)
+    config.persist_art_mode(:corner)
+
+    assert config.persist_queued_pane(false)
+    assert config.persist_queued_pane(true)
+
+    source = File.read(@path)
+
+    assert_equal 1, source.scan('managed queued_pane begin').size
+    assert_equal 1, source.scan('managed theme begin').size
+    assert_equal 1, source.scan('managed art_mode begin').size
+    assert_match(/config\.ui\.queued_pane = true/, source)
+    assert config['ui', 'queued_pane']
   end
 
   # Regression: the app persisted ui.pulse_mode via a managed block, the

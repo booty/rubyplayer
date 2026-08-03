@@ -145,4 +145,10 @@ class BottomLinesTest < Minitest::Test
 
     assert_empty back[2].map(&:ch).join.rstrip
   end
+
+  def test_queued_pane_binding_has_human_label
+    labels = RubyPlayer::UI::HotkeyLine::LABELS
+
+    assert_equal 'queue bar', labels[:toggle_queued_pane]
+  end
 end

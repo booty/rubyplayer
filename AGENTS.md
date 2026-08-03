@@ -86,8 +86,12 @@ Ruby comes from mise. Plain `bundle exec` may select wrong Ruby.
   changes: bump version; do not add migrations.
 - Playback state key is `state[:track]`, not `state[:current]`.
 - Config persistence uses separate managed blocks through `persist_managed` for
-  `theme` and `art_mode`; each update preserves user code/comments. New
-  persisted settings follow same per-setting managed-block pattern.
+  `theme`, `art_mode`, and `queued_pane`; each update preserves user
+  code/comments. New persisted settings follow same per-setting managed-block
+  pattern.
+- Queued-pane preference and effective visibility are separate: narrow width or
+  the top-level Playback Queue hides it without persisting `false`. Reserve
+  Queued width before optional dedicated artwork; neither pane receives focus.
 - Archives use macOS `bsdtar`; without `-P`, path-traversal entry names refuse.
 
 ## Refactor seams

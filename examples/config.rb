@@ -14,6 +14,8 @@ RubyPlayer.configure do |config|
   # Common UI settings
   # config.ui.theme = "ocean_mist"
   # config.ui.library_pane_percent = 30
+  # config.ui.queued_pane = true
+  # config.ui.queued_pane_width = 36
   # config.ui.seek_seconds = 10
 
   # Audio and scanning
@@ -35,6 +37,15 @@ RubyPlayer.configure do |config|
   #     fmt.text(track.artist, italic: true),
   #     fmt.duration(track.duration_ms, fg: :text_muted),
   #     fmt.stars(track.rating, fg: :yellow)
+  #   )
+  # end
+
+  # Read-only Queued-pane formatter
+  # config.ui.format_track_queued = lambda do |track, fmt|
+  #   fmt.line(
+  #     fmt.text(track.title, bold: true),
+  #     fmt.duration(track.duration_ms, fg: :text_muted),
+  #     fmt.text(track.artist, italic: true)
   #   )
   # end
 

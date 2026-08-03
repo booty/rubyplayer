@@ -51,7 +51,7 @@ module RubyPlayer
         method = name.to_s
         if method.end_with?('=')
           key = method.delete_suffix('=')
-          return super unless args.one?
+          return super unless args.size == 1
 
           unknown!(key) unless @data.key?(key)
           @data[key] = args.first
@@ -136,17 +136,26 @@ module RubyPlayer
           raise SettingError, "#{current.join('.')} must respond to call" unless value.respond_to?(:call)
         elsif current == %w[audio sample_rate]
           next
-        elsif expected.is_a?(Integer)
-          raise SettingError, "#{current.join('.')} must be an Integer" unless value.is_a?(Integer)
-        elsif !value.is_a?(expected.class)
-          raise SettingError, "#{current.join('.')} must be a #{expected.class}"
+        else
+          validate_value_type!(value, expected, current)
         end
       end
     end
 
+    def validate_value_type!(value, expected, path)
+      if [true, false].include?(expected)
+        raise SettingError, "#{path.join('.')} must be true or false" unless [true, false].include?(value)
+      elsif expected.is_a?(Integer)
+        raise SettingError, "#{path.join('.')} must be an Integer" unless value.is_a?(Integer)
+      elsif !value.is_a?(expected.class)
+        raise SettingError, "#{path.join('.')} must be a #{expected.class}"
+      end
+    end
+    private_class_method :validate_value_type!
+
     def validate_special_values!(data)
       positive = %w[
-        ui.frame_fps ui.status_message_seconds ui.seek_seconds
+        ui.frame_fps ui.status_message_seconds ui.seek_seconds ui.queued_pane_width
         audio.ring_buffer_ms audio.decode_chunk_frames
         library.backup_retention library.history_limit
         library.history_min_seconds_unknown library.undo_depth

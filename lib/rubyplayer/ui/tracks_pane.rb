@@ -224,11 +224,15 @@ module RubyPlayer
                end
           screen.put(y + i, x, ' ' * content_w, bg: bg) if selected
           if row[:type] == :header
-            screen.put(y + i, x, header_line(row[:text], content_w), fg: theme[:info], bg: bg, bold: true)
+            screen.put(y + i, x, ListRowRenderer.header_line(row[:text], content_w),
+                       fg: theme[:info], bg: bg, bold: true)
           elsif row[:type] == :empty
             screen.put(y + i, x, row[:text][0, content_w], fg: theme[:text_muted])
           else
-            render_track_row(screen, row, x, y + i, content_w, selected: selected, bg: bg, theme: theme)
+            ListRowRenderer.render_track(
+              screen, row, x: x, y: y + i, w: content_w,
+                           selected: selected, bg: bg, theme: theme
+            )
           end
         end
         return unless scrollbar
@@ -274,42 +278,9 @@ module RubyPlayer
         end
       end
 
-      # Selection owns foreground/background so every highlighted row remains
-      # readable. Formatter text attributes survive selection.
-      def render_track_row(screen, row, x, y, w, selected:, bg:, theme:)
-        col = x
-        remaining = w
-        row[:segments].each do |seg|
-          break if remaining <= 0
-          next if seg[:text].empty?
-
-          chunk = seg[:text][0, remaining]
-          fg = selected ? theme[:selection_text] : resolve_color(seg[:fg] || :text, theme)
-          segment_bg = selected ? theme[:selection_bg] : resolve_color(seg[:bg], theme)
-          screen.put(y, col, chunk, fg: fg, bg: segment_bg || bg,
-                                    bold: selected || seg[:bold], italic: seg[:italic],
-                                    underline: seg[:underline], dim: seg[:dim])
-          col += chunk.size
-          remaining -= chunk.size
-        end
-      end
-
-      # "--- Album Name ------..." with the trailing run of dashes extending
-      # to the pane's right edge. Built at render time (not baked into the
-      # row in #grouped_rows) since it depends on the pane width, which can
-      # change on terminal resize.
-      def header_line(album, w)
-        prefix = "--- #{album} "
-        return prefix[0, w] if prefix.size >= w
-
-        "#{prefix}#{'-' * (w - prefix.size)}"
-      end
-
       def flat_rows
-        filtered_tracks.map do |t|
-          segments = TrackFormatter.render(@flat_formatter, t, star_glyph: @star_glyph)
-          { type: :track, text: segments.map { |segment| segment[:text] }.join,
-            segments: segments, track: t }
+        filtered_tracks.map do |track|
+          ListRowRenderer.track(track, formatter: @flat_formatter, star_glyph: @star_glyph)
         end
       end
 
@@ -353,18 +324,13 @@ module RubyPlayer
           # that guess is why compilations used to show every artist inline.
           album_artist = tracks.filter_map(&:album_artist).tally.max_by { |_, n| n }&.first ||
                          tracks.map(&:artist).tally.max_by { |_, n| n }&.first
-          [{ type: :header, text: album }] + tracks.map do |t|
-            segments = TrackFormatter.render(
-              @grouped_formatter, t, album_artist: album_artist, star_glyph: @star_glyph
+          [{ type: :header, text: album }] + tracks.map do |track|
+            ListRowRenderer.track(
+              track, formatter: @grouped_formatter, star_glyph: @star_glyph,
+                     album_artist: album_artist
             )
-            { type: :track, text: segments.map { |segment| segment[:text] }.join,
-              segments: segments, track: t }
           end
         end
-      end
-
-      def resolve_color(color, theme)
-        color.is_a?(Symbol) && theme.key?(color) ? theme[color] : color
       end
 
       def apply_sort

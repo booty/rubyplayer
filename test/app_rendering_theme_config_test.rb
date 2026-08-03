@@ -39,6 +39,83 @@ class AppRenderingThemeConfigTest < Minitest::Test
     assert_includes title_row, 'Playback Queue · 0'
   end
 
+  def test_queued_pane_appears_at_default_threshold_for_non_queue_view
+    select_library_kind(:folder)
+    use_screen(cols: 108)
+
+    @app.render
+
+    title_row = @app.instance_variable_get(:@screen).instance_variable_get(:@back)[0].map(&:ch).join
+
+    assert_includes title_row, 'Library'
+    assert_includes title_row, 'Tracks'
+    assert_includes title_row, 'Queued'
+  end
+
+  def test_queued_pane_auto_hides_below_threshold_without_changing_preference
+    select_library_kind(:folder)
+    use_screen(cols: 107)
+
+    @app.render
+
+    title_row = @app.instance_variable_get(:@screen).instance_variable_get(:@back)[0].map(&:ch).join
+
+    refute_includes title_row, 'Queued'
+    assert @app.instance_variable_get(:@queued_pane_enabled)
+  end
+
+  def test_playback_queue_library_item_suppresses_queued_pane
+    select_library_kind(:queue)
+    use_screen(cols: 140)
+
+    @app.render
+
+    title_row = @app.instance_variable_get(:@screen).instance_variable_get(:@back)[0].map(&:ch).join
+
+    assert_equal 1, title_row.scan('Playback Queue').size
+    refute_includes title_row, 'Queued'
+    assert @app.instance_variable_get(:@queued_pane_enabled)
+  end
+
+  def test_queued_is_rightmost_after_dedicated_artwork_when_both_fit
+    select_library_kind(:folder)
+    @app.instance_variable_set(:@art_mode, :pane)
+    use_screen(cols: 138)
+
+    @app.render
+
+    title_row = @app.instance_variable_get(:@screen).instance_variable_get(:@back)[0].map(&:ch).join
+
+    assert_operator title_row.index('Tracks'), :<, title_row.index('Now Playing')
+    assert_operator title_row.index('Now Playing'), :<, title_row.index('Queued')
+  end
+
+  def test_queued_has_priority_when_dedicated_artwork_does_not_fit
+    select_library_kind(:folder)
+    @app.instance_variable_set(:@art_mode, :pane)
+    use_screen(cols: 108)
+
+    @app.render
+
+    title_row = @app.instance_variable_get(:@screen).instance_variable_get(:@back)[0].map(&:ch).join
+
+    assert_includes title_row, 'Queued'
+    refute_includes title_row, 'Now Playing'
+  end
+
+  def test_corner_art_stays_out_of_queued_column
+    select_library_kind(:folder)
+    @app.instance_variable_set(:@art_mode, :corner)
+    use_screen(cols: 120)
+
+    @app.render
+
+    region = art_region
+    queued_x = 120 - 36
+
+    assert_operator region[:x] + region[:w], :<=, queued_x
+  end
+
   def test_folder_stats_query_runs_once_across_frames
     library = @app.instance_variable_get(:@library)
     calls = 0
@@ -96,6 +173,144 @@ class AppRenderingThemeConfigTest < Minitest::Test
     2.times { @app.render_if_needed }
 
     assert_equal 2, flushes[:n]
+  end
+
+  def test_queued_pane_loads_upcoming_and_three_history_events
+    library = @app.instance_variable_get(:@library)
+    tracks = library.recently_added.first(2)
+    @app.engine.enqueue_end(tracks)
+    4.times do |index|
+      library.record_history(
+        track_id: tracks[index % tracks.size].id,
+        started_at: "2026-08-01T00:0#{index}:00Z",
+        ended_at: "2026-08-01T00:0#{index}:30Z"
+      )
+    end
+
+    @app.refresh_panes
+
+    assert_equal tracks.map(&:id), @app.queued_pane.upcoming.map(&:id)
+    assert_equal 3, @app.queued_pane.previous.size
+  end
+
+  def test_tab_never_focuses_queued_pane
+    6.times do
+      @app.handle_key('tab')
+
+      assert_includes %i[library tracks], @app.active_pane
+    end
+  end
+
+  def test_queued_pane_toggle_persists_and_reflows
+    select_library_kind(:folder)
+    use_screen(cols: 108)
+
+    @app.handle_key('b')
+
+    refute @app.instance_variable_get(:@queued_pane_enabled)
+    assert_includes File.read(File.join(@tmp, 'config.rb')), 'config.ui.queued_pane = false'
+  end
+
+  def test_enabling_queued_pane_while_narrow_reports_deferred_visibility
+    select_library_kind(:folder)
+    use_screen(cols: 100)
+    @app.handle_key('b') # default on -> off
+
+    @app.handle_key('b') # off -> on, still too narrow
+    @app.render
+
+    assert_includes back_buffer_text, 'Queued pane: ON (hidden until terminal is wider)'
+  end
+
+  def test_hot_reload_updates_queued_preference_width_and_formatter
+    track = @app.instance_variable_get(:@library).recently_added.first
+    @app.engine.enqueue_end([track])
+    @app.refresh_panes
+    path = File.join(@tmp, 'config.rb')
+    File.write(path, <<~RUBY)
+      RubyPlayer.configure do |config|
+        config.ui.queued_pane = false
+        config.ui.queued_pane_width = 44
+        config.ui.format_track_queued = ->(track, fmt) { fmt.text("RELOADED \#{track.title}") }
+      end
+    RUBY
+
+    force_config_reload
+
+    refute @app.instance_variable_get(:@queued_pane_enabled)
+    assert_equal 44, @app.instance_variable_get(:@config)['ui', 'queued_pane_width']
+    queued_track = @app.queued_pane.display_rows(8).find { |row| row[:type] == :track }
+
+    assert_equal "RELOADED #{track.title}", queued_track[:text]
+  end
+
+  def test_invalid_queued_formatter_hot_reload_keeps_active_config_and_rows
+    track = @app.instance_variable_get(:@library).recently_added.first
+    @app.engine.enqueue_end([track])
+    @app.refresh_panes
+    config = @app.instance_variable_get(:@config)
+    previous_formatter = config['ui', 'format_track_queued']
+    previous_text = @app.queued_pane.display_rows(8).find { |row| row[:type] == :track }[:text]
+    path = File.join(@tmp, 'config.rb')
+    File.write(path, <<~RUBY)
+      RubyPlayer.configure do |config|
+        config.ui.queued_pane_width = 44
+        config.ui.format_track_queued = ->(_track, _fmt) { raise "formatter exploded" }
+      end
+    RUBY
+
+    force_config_reload
+
+    assert_instance_of RubyPlayer::ConfigError, @app.config_error
+    assert_same previous_formatter, config['ui', 'format_track_queued']
+    assert_equal 36, config['ui', 'queued_pane_width']
+    assert_equal previous_text,
+                 @app.queued_pane.display_rows(8).find { |row| row[:type] == :track }[:text]
+  end
+
+  def test_too_small_positive_queued_width_hides_pane_without_crashing
+    path = File.join(@tmp, 'config.rb')
+    File.write(path, <<~RUBY)
+      RubyPlayer.configure { |config| config.ui.queued_pane_width = 1 }
+    RUBY
+    force_config_reload
+    select_library_kind(:folder)
+    use_screen(cols: 140)
+
+    @app.render
+
+    refute_includes back_buffer_text.lines.first, 'Queued'
+    assert_equal 1, @app.instance_variable_get(:@config)['ui', 'queued_pane_width']
+  end
+
+  def test_idle_frames_do_not_reload_queued_snapshots
+    pane = @app.queued_pane
+    original_reload = pane.method(:reload!)
+    reloads = 0
+    pane.define_singleton_method(:reload!) do
+      reloads += 1
+      original_reload.call
+    end
+    @app.render_if_needed
+
+    3.times { @app.render_if_needed }
+
+    assert_equal 0, reloads
+  end
+
+  def test_playback_state_event_refreshes_queued_snapshot_once
+    pane = @app.queued_pane
+    original_reload = pane.method(:reload!)
+    reloads = 0
+    pane.define_singleton_method(:reload!) do
+      reloads += 1
+      original_reload.call
+    end
+
+    @app.instance_variable_get(:@bus).publish(:playback_state, playing: false, paused: false)
+    @app.handle_events
+
+    assert_equal 1, reloads
   end
 
   def test_status_message_expiry_renders_exactly_once
@@ -186,15 +401,16 @@ class AppRenderingThemeConfigTest < Minitest::Test
   def test_pane_mode_reserves_right_hand_column
     play_with_cover_art
     2.times { @app.handle_key('v') } # -> pane
-    use_screen
+    use_screen(cols: 138)
     @app.render
 
     region = art_region
 
     refute_nil region
     art_w = 30 # ui.art_pane_width default
+    queued_w = 36 # ui.queued_pane_width default
 
-    assert_equal 110 - art_w + 1, region[:x]
+    assert_equal 138 - queued_w - art_w + 1, region[:x]
     assert_equal 1, region[:y]
   end
 
@@ -227,7 +443,9 @@ class AppRenderingThemeConfigTest < Minitest::Test
   def test_no_reemit_while_modal_covers_art_then_reemit_on_close
     play_with_cover_art
     @app.handle_key('v')
-    out = use_screen
+    # Keep the inset under the centered help modal. At the wider default,
+    # the Queued pane narrows Library enough that these regions do not overlap.
+    out = use_screen(cols: 100)
     @app.render_if_needed
 
     assert_equal 1, out.string.scan('1337;File=inline=1').size

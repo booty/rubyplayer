@@ -12,11 +12,12 @@ module RubyPlayer
   module UI
     class App
       SINGLE_PANE_MAX_WIDTH = 71
+      MIN_BOX_WIDTH = 3
       RATE_ACTIONS = { rate_0: nil, rate_1: 1, rate_2: 2, rate_3: 3,
                        rate_4: 4, rate_5: 5, rate_6: 6 }.freeze
       ART_MODES = %i[off inset pane corner].freeze
 
-      attr_reader :engine, :library_pane, :tracks_pane, :active_pane, :input_buffer,
+      attr_reader :engine, :library_pane, :tracks_pane, :queued_pane, :active_pane, :input_buffer,
                   :pending_delete, :info_track, :show_help, :theme_id, :theme_picker,
                   :focus_player, :filter_buffer, :pending_missing_purge, :config_error,
                   :art_mode, :show_now_playing, :playlist_modal, :name_prompt,
@@ -55,6 +56,14 @@ module RubyPlayer
         @tracks_pane = TracksPane.new(library: @library, config: @config,
                                       queue_source: -> { @engine.queue_items },
                                       focus_source: -> { FocusSounds::ALL })
+        @queued_pane = QueuedPane.new(
+          config: @config,
+          upcoming_source: -> { @engine.upcoming_items },
+          history_source: lambda {
+            @library.history(limit: QueuedPane::HISTORY_LIMIT).map { |entry| entry[:track] }
+          }
+        )
+        @queued_pane_enabled = @config['ui', 'queued_pane']
         @playback_line = PlaybackLine.new(glyphs: glyphs)
         @status_line = StatusLine.new(seconds: @config['ui', 'status_message_seconds'])
         @hotkey_line = HotkeyLine.new(keymap: @keymap)
@@ -344,6 +353,7 @@ module RubyPlayer
         when :show_help then @show_help = true
         when :show_theme_picker then request_show_theme_picker
         when :cycle_art_mode then cycle_art_mode
+        when :toggle_queued_pane then toggle_queued_pane
         when :show_now_playing then request_show_now_playing
         when :add_to_playlist then request_add_to_playlist
         when :rename_playlist then request_playlist_name(:rename)
@@ -489,6 +499,23 @@ module RubyPlayer
       end
 
       # ---- album art ----
+
+      def toggle_queued_pane
+        @queued_pane_enabled = !@queued_pane_enabled
+        begin
+          @config.persist_queued_pane(@queued_pane_enabled)
+        rescue ConfigError => e
+          @config_error = e
+        end
+
+        message = "Queued pane: #{@queued_pane_enabled ? 'ON' : 'OFF'}"
+        if @queued_pane_enabled && queued_pane_cols(@screen.cols).zero? &&
+           @library_pane.selected&.kind != :queue
+          message += ' (hidden until terminal is wider)'
+        end
+        @status_line.set_message(message)
+        invalidate_screen!
+      end
 
       def normalize_art_mode(value)
         mode = value.to_s.to_sym
@@ -888,6 +915,7 @@ module RubyPlayer
 
       def handle_events
         refresh = false
+        refresh_queued = false
         events = @bus.drain
         # Any event may carry a visible change (position tick, scan progress,
         # queue mutation) — cheaper to repaint once than to classify.
@@ -905,6 +933,7 @@ module RubyPlayer
             set_art(payload[:bytes], accent: payload[:accent]) if payload[:track_id] == @engine.state[:track]&.id
           when :playback_state
             set_art(nil) unless payload[:playing]
+            refresh_queued = true
           when :scan_complete
             @status_line.set_message(
               "Scan complete: #{payload[:processed]} files, #{payload[:errored]} errors"
@@ -914,7 +943,11 @@ module RubyPlayer
             @status_line.set_message("Error playing #{payload[:track]&.title}: skipped")
           end
         end
-        refresh_panes if refresh
+        if refresh
+          refresh_panes
+        elsif refresh_queued
+          @queued_pane.reload!
+        end
       end
 
       def refresh_panes
@@ -928,6 +961,7 @@ module RubyPlayer
         # correct here. `show` is reserved for actual selection changes (see
         # route_to_pane/select_queue) where resetting the cursor is desired.
         @tracks_pane.reload!
+        @queued_pane.reload!
       end
 
       def reload_config_if_changed
@@ -936,8 +970,12 @@ module RubyPlayer
         return if now - @last_config_check < 1.0
 
         @last_config_check = now
+        prepared_queued_config = nil
         begin
-          return unless @config.reload_if_changed
+          changed = @config.reload_if_changed do |candidate|
+            prepared_queued_config = @queued_pane.prepare_config(candidate)
+          end
+          return unless changed
         rescue ConfigError => e
           @config_error = e
           @needs_render = true # the error modal must appear without a keypress
@@ -950,6 +988,9 @@ module RubyPlayer
         @frame_interval = 1.0 / @config['ui', 'frame_fps']
         @idle_poll = @config['ui', 'idle_poll_seconds']
         @tracks_pane.update_config(@config)
+        @queued_pane_enabled = @config['ui', 'queued_pane']
+        @queued_pane.apply_config(prepared_queued_config)
+        invalidate_screen!
         # Don't clobber an in-progress interactive preview with whatever's
         # still on disk -- the picker itself is the source of truth for
         # @theme_id until it's closed.
@@ -1063,8 +1104,10 @@ module RubyPlayer
           return
         end
 
-        art_cols = @art_mode == :pane ? art_pane_cols(cols) : 0
-        usable = cols - art_cols
+        queued_cols = queued_pane_cols(cols)
+        without_queued = cols - queued_cols
+        art_cols = @art_mode == :pane ? art_pane_cols(without_queued) : 0
+        usable = without_queued - art_cols
         lib_w = usable * @config['ui', 'library_pane_percent'] / 100
         tracks_w = usable - lib_w
         inset_h = @art_mode == :inset ? art_inset_rows(lib_w, content_h) : 0
@@ -1080,7 +1123,15 @@ module RubyPlayer
         elsif art_cols.positive?
           render_art_pane(usable, art_cols, content_h)
         elsif @art_mode == :corner
-          place_art_corner(cols, content_h)
+          place_art_corner(without_queued, content_h)
+        end
+        if queued_cols.positive?
+          queued_x = cols - queued_cols
+          draw_box(queued_x, 0, queued_cols, content_h, active: false, title: 'Queued')
+          @queued_pane.render(
+            @screen, x: queued_x + 1, y: 1,
+                     w: queued_cols - 2, h: content_h - 2, theme: @theme
+          )
         end
         render_art_placeholder
       end
@@ -1098,6 +1149,16 @@ module RubyPlayer
       # stays selected but degrades to no art rather than crushing the lists.
       def art_pane_cols(cols)
         width = @config['ui', 'art_pane_width']
+        cols - width > SINGLE_PANE_MAX_WIDTH ? width : 0
+      end
+
+      def queued_pane_cols(cols)
+        return 0 unless @queued_pane_enabled
+        return 0 if @library_pane.selected&.kind == :queue
+
+        width = @config['ui', 'queued_pane_width']
+        return 0 if width < MIN_BOX_WIDTH
+
         cols - width > SINGLE_PANE_MAX_WIDTH ? width : 0
       end
 

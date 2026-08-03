@@ -29,6 +29,8 @@ module RubyPlayer
         't' => 'show_theme_picker',
         # "v" for "view": cycles album-art placement (off/inset/pane/corner).
         'v' => 'cycle_art_mode',
+        # "b" toggles the read-only queue bar without changing pane focus.
+        'b' => 'toggle_queued_pane',
         'o' => 'show_now_playing',
         # "l" for "list": opens the add-to-playlist modal on the highlighted track.
         'l' => 'add_to_playlist'

@@ -139,6 +139,46 @@ class PlaybackEngineTest < Minitest::Test
     assert_nil @engine.state[:track]
   end
 
+  def test_upcoming_items_include_head_when_stopped_and_exclude_it_while_active
+    first = make_track('shantae.gbs', subtune: 0)
+    second = make_track('shantae.gbs', subtune: 1)
+    @engine.enqueue_end([first, second])
+
+    assert_equal [first.id, second.id], @engine.upcoming_items.map(&:id)
+
+    @engine.toggle_play
+    wait_for_event(:track_started)
+
+    assert_equal [second.id], @engine.upcoming_items.map(&:id)
+
+    @engine.toggle_play
+    wait_until { @engine.state[:paused] }
+
+    assert_equal [second.id], @engine.upcoming_items.map(&:id)
+  end
+
+  def test_upcoming_items_include_full_queue_during_focus_playback
+    first = make_track('shantae.gbs', subtune: 0)
+    second = make_track('shantae.gbs', subtune: 1)
+    @engine.enqueue_end([first, second])
+
+    @engine.play_focus(RubyPlayer::FocusSounds::ALL.first)
+
+    assert_equal [first.id, second.id], @engine.upcoming_items.map(&:id)
+  end
+
+  def test_upcoming_items_returns_a_detached_snapshot
+    first = make_track('shantae.gbs', subtune: 0)
+    second = make_track('shantae.gbs', subtune: 1)
+    @engine.enqueue_end([first])
+
+    snapshot = @engine.upcoming_items
+    @engine.enqueue_end([second])
+
+    assert_equal [first.id], snapshot.map(&:id)
+    assert_equal [first.id, second.id], @engine.upcoming_items.map(&:id)
+  end
+
   def test_stop_ends_playback_without_advancing_queue
     first = make_track('shantae.gbs')
     second = make_track('shantae.gbs', subtune: 1)

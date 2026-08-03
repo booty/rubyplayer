@@ -37,6 +37,7 @@ Select **Focus** in the Library pane, then choose a noise recipe in Tracks and p
 - Tracks pane title shows current source or folder breadcrumb plus visible item count. Long breadcrumbs keep leaf name and count visible.
 - Pane-edge scrollbar appears only when rows overflow viewport.
 - Terminals narrower than 72 columns show one full-width pane; Tab switches panes. Wider terminals retain two-pane layout.
+- Wide terminals show a read-only **Queued** pane with upcoming tracks and the three latest playback-history entries. Press `B` to toggle it. It hides when the terminal cannot retain 72 columns for Library + Tracks and while the top-level **Playback Queue** view is selected.
 - Fixed smart views expose **Recently Added**, **Unrated**, **Missing**, **Failed to Scan**, and **Most Played** track lists.
 - In **Missing**, press `Ctrl+X` to permanently purge currently filtered/visible tracks and their playback history after confirmation.
 - Playback footer shows current track timing and queued next track. During Focus playback it identifies active recipe, infinite duration, paused queue, and next queued track.
@@ -120,7 +121,9 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | `app.rb` | `UI::App`: wires every other component together and owns the main loop — key dispatch, event handling, config hot-reload, and the top-level `render`. This is the natural place to look first to see how a keypress becomes an action and how state changes reach the screen. |
 | `screen.rb` | `Screen`: the double-buffered renderer described above (`put`/`clear_back`/`flush`), plus truecolor and named ANSI color support. Has no knowledge of panes, tracks, or layout — purely a drawing primitive. |
 | `library_pane.rb` | `LibraryPane`: left-hand source tree with queue/history/favorites/Focus, five smart views, and folder hierarchy. Owns folder breadcrumbs, selection, scrolling, and overflow indicator. |
-| `tracks_pane.rb` | `TracksPane`: right-hand item list for every source. Owns live filtering, per-view cursor/scroll memory, dynamic titles/counts, grouping/sorting where valid, and overflow indicator. Queue remains flat and ordered; filtered removal resolves underlying track identity. |
+| `list_row_renderer.rb` | Shared stateless track-row construction, styled segment drawing, clipping, theme-color resolution, and section-header text. |
+| `tracks_pane.rb` | `TracksPane`: interactive item list for every source. Owns filtering, cursor/scroll memory, grouping/sorting, and queue identity while delegating individual track-row drawing. Queue remains flat and ordered. |
+| `queued_pane.rb` | `QueuedPane`: read-only, snapshot-backed upcoming/history overview with cumulative duration and overflow allocation. |
 | `bottom_lines.rb` | Three bottom renderers: `PlaybackLine` (normal/Focus context, next queue item, EQ bars), `StatusLine` (transient feedback), and `HotkeyLine` (context-sensitive bindings). |
 | `key_decoder.rb` | `KeyDecoder`: turns raw bytes read from a raw-mode terminal into the normalized key-name strings `Keymap` understands (arrow-key escape sequences, Enter, Tab, Ctrl-combinations, etc). |
 
@@ -193,13 +196,14 @@ To intentionally reset config, remove both `config.rb` and
 These user files live under `~/.config`, outside repository, so repository
 `.gitignore` entries are unnecessary.
 
-Theme picker writes one clearly marked managed block at end of `config.rb`.
-Rubyplayer replaces only that block; user code and comments remain untouched.
+Theme, artwork mode, and Queued-pane preference each use a separate clearly
+marked managed block at the end of `config.rb`. Rubyplayer replaces only the
+relevant block; user code and comments remain untouched.
 
-Hot reload immediately applies pane width, seek interval, theme, keymap, History
-limit, star glyph, and track formatters. Settings used to construct audio,
-scanner, database, archive, playback, status-line, or frame-loop objects require
-restart.
+Hot reload immediately applies pane widths, Queued preference, seek interval,
+theme, keymap, History limit, star glyph, and track formatters. Settings used to
+construct audio, scanner, database, archive, playback, status-line, or
+frame-loop objects require restart.
 
 ### Setting reference
 
@@ -213,6 +217,9 @@ restart.
 | `config.ui.seek_seconds` | `10` | Seek step; positive integer. |
 | `config.ui.format_track_grouped` | callable | Grouped-row formatter. |
 | `config.ui.format_track_ungrouped` | callable | Flat-row formatter. |
+| `config.ui.format_track_queued` | callable | Queued-pane track formatter. |
+| `config.ui.queued_pane` | `true` | Enable the read-only Queued pane when width permits. |
+| `config.ui.queued_pane_width` | `36` | Queued pane width; positive integer columns. |
 | `config.ui.theme` | `"default"` | Id from `Theme::ALL_IDS`. |
 | `config.ui.art_mode` | `"off"` | Album-art placement: off, inset, pane, or corner. |
 | `config.ui.art_pane_width` | `30` | Dedicated album-art pane width. |
