@@ -90,8 +90,10 @@ Ruby comes from mise. Plain `bundle exec` may select wrong Ruby.
   code/comments. New persisted settings follow same per-setting managed-block
   pattern.
 - Queued-pane preference and effective visibility are separate: narrow width or
-  the top-level Playback Queue hides it without persisting `false`. Reserve
-  Queued width before optional dedicated artwork; neither pane receives focus.
+  the top-level Playback Queue hides it without persisting `false`. Hidden
+  Queued is excluded from Tab; if it loses visibility while active, move focus
+  to the next eligible pane. `QueueSelection` owns identity-preserving
+  selection/scroll for upcoming tracks; history rows stay decorative.
 - Archives use macOS `bsdtar`; without `-P`, path-traversal entry names refuse.
 
 ## Refactor seams
@@ -105,6 +107,8 @@ Ruby comes from mise. Plain `bundle exec` may select wrong Ruby.
   sleeps that create flaky tests.
 - App specs split by concern in `app_*_test.rb`; shared setup lives in
   `TestSupport::AppTestSupport`. Do not grow `test/app_test.rb` catch-all.
+- `QueueSelection` is the shared seam for editable ordered-queue views;
+  keep each pane's headers/history/layout separate from queue identity logic.
 
 ## Testing
 
