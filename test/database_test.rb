@@ -45,6 +45,25 @@ class DatabaseTest < Minitest::Test
     end
   end
 
+  def test_backup_includes_committed_wal_data
+    # Copying only the main file lost committed rows after an unclean exit.
+    with_db_path do |path|
+      writer = RubyPlayer::Database.new(path: path)
+      writer.read { |s| s.execute('PRAGMA wal_checkpoint(TRUNCATE)') }
+      writer.write { |s| s.execute("INSERT INTO folders (name, path, kind) VALUES ('Music', '/music', 'dir')") }
+      reopened = RubyPlayer::Database.new(path: path)
+      backup_path = Dir[File.join(File.dirname(path), 'library-*.sqlite3')].first
+      backup = SQLite3::Database.new(backup_path)
+
+      assert_equal 1, backup.get_first_value('SELECT COUNT(*) FROM folders')
+      assert_equal 'ok', backup.get_first_value('PRAGMA integrity_check')
+    ensure
+      backup&.close
+      reopened&.close
+      writer&.close
+    end
+  end
+
   def test_rebuilds_on_schema_version_mismatch
     with_db_path do |path|
       db = RubyPlayer::Database.new(path: path)

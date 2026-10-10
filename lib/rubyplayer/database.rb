@@ -3,6 +3,7 @@
 require 'sqlite3'
 require 'fileutils'
 require 'time'
+require 'tempfile'
 
 module RubyPlayer
   class Database
@@ -140,12 +141,31 @@ module RubyPlayer
     end
 
     def backup!(retention)
-      stamp = Time.now.utc.strftime('%Y%m%d%H%M%S')
+      stamp = Time.now.utc.strftime('%Y%m%d%H%M%S%6N')
       base = File.basename(@path, '.sqlite3')
       dir = File.dirname(@path)
-      FileUtils.cp(@path, File.join(dir, "#{base}-#{stamp}.sqlite3"))
+      # Read through SQLite so committed WAL pages are included. Publish only
+      # a complete snapshot, before schema-version checks can rebuild the DB.
+      Tempfile.create(['backup-', '.sqlite3'], dir) do |file|
+        copy_snapshot(file.path)
+        File.rename(file.path, File.join(dir, "#{base}-#{stamp}.sqlite3"))
+      end
       backups = Dir[File.join(dir, "#{base}-*.sqlite3")].sort
       (backups.size - retention).clamp(0, backups.size).times { |i| FileUtils.rm_f(backups[i]) }
+    end
+
+    def copy_snapshot(path)
+      source = SQLite3::Database.new(@path)
+      destination = SQLite3::Database.new(path)
+      backup = SQLite3::Backup.new(destination, 'main', source, 'main')
+      result = backup.step(-1)
+      return if result == SQLite3::Constants::ErrorCode::DONE
+
+      raise SQLite3::Exception, "Database backup failed (SQLite status #{result})"
+    ensure
+      backup&.finish
+      destination&.close
+      source&.close
     end
   end
 end
