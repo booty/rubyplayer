@@ -9,6 +9,15 @@ Use these files as normative guidance:
 Current supplementary implementation lessons live in [`memories.md`](memories.md).
 They record tested decisions without replacing the guidance above.
 
+Current visual explainers (reviewed 2026-10-10) describe the implementation:
+
+- [Component map](explainers/components.md)
+- [Playback sequence](explainers/playback.md)
+- [Library scan sequence](explainers/scanning.md)
+
+Their Mermaid diagrams render on GitHub and in Markdown viewers with Mermaid
+support. Source links below each diagram provide entry points for deeper reading.
+
 These files are historical design records:
 
 - `docs/ideas.md`
