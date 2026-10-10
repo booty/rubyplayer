@@ -107,6 +107,26 @@ class ExtractorPoolTest < Minitest::Test
     assert_equal 1, opens, 'scan must not reopen the same file per subtune'
   end
 
+  def test_gme_override_preserves_single_track_classification_across_rescans
+    # Backend choice does not change the scanner's multitrack extension list.
+    # Enumerating every GME subtune created a folder the next scan marked missing.
+    path = File.join(@music, 'renamed.custom')
+    FileUtils.cp(File.join(FIXTURES, 'mega-man-2.nsf'), path)
+    registry = RubyPlayer::Backends::Registry.new('custom' => 'gme')
+    scanner = RubyPlayer::Scanner.new(library: @lib, registry: registry)
+    pool = RubyPlayer::ExtractorPool.new(library: @lib, registry: registry)
+    pool.process(scanner.reconcile(path))
+
+    assert_equal 1, @lib.all_tracks.size
+    assert_equal [@music], @lib.db_paths_under(@music)[:folders].keys
+    work = scanner.reconcile(path)
+    pool.process(work)
+
+    assert_empty work
+    assert_equal 1, @lib.all_tracks.size
+    assert_equal 1, @lib.roots.first['track_count']
+  end
+
   def archive_pool
     RubyPlayer::ExtractorPool.new(
       library: @lib, registry: @reg, thread_count: 2,

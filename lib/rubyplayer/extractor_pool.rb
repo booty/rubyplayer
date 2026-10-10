@@ -96,9 +96,10 @@ module RubyPlayer
     end
 
     def each_metadata(backend, path, &)
-      return backend.each_metadata(path, &) if backend.respond_to?(:each_metadata)
+      multitrack = @registry.multitrack?(path)
+      return backend.each_metadata(path, &) if multitrack && backend.respond_to?(:each_metadata)
 
-      count = @registry.multitrack?(path) ? backend.track_count(path) : 1
+      count = multitrack ? backend.track_count(path) : 1
       count.times { |i| yield backend.metadata(path, i), i, count }
     end
 
