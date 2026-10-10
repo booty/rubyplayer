@@ -2,6 +2,8 @@
 
 A terminal (TUI) music player for retro game-music and tracker formats — chiptunes (NSF, GBS, HES, SPC, VGM, SAP, GYM, AY, KSS via [libgme](https://bitbucket.org/mpyne/game-music-emu/wiki/Home)), tracker modules (MOD, XM, IT, S3M, and more via [libopenmpt](https://lib.openmpt.org/libopenmpt/)), and ordinary audio files (MP3, FLAC, AAC/M4A, Ogg, Opus, WAV, and more via FFmpeg). Written in Ruby, with a small C shim ([miniaudio](https://miniaudio.docs/)) for audio output.
 
+<img width="1394" height="855" alt="image" src="https://github.com/user-attachments/assets/443610ad-c9ef-493d-ab7b-eb17f1d37645" />
+
 ## Requirements
 
 - Ruby 4.x (managed via [mise](https://mise.jdx.dev/); see `.ruby-version`)
