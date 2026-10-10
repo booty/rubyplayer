@@ -424,10 +424,10 @@ class AppTest < Minitest::Test
     @app.handle_key('l')
     @app.handle_key('enter')
 
-    refute_nil @app.playlist_modal[:confirm] # already contains the track
+    refute_nil @app.playlist_modal.confirm # already contains the track
     @app.handle_key('n')
 
-    assert_nil @app.playlist_modal[:confirm] # back to the list
+    assert_nil @app.playlist_modal.confirm # back to the list
     @app.handle_key('enter')
     @app.handle_key('y')
 

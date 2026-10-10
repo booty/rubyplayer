@@ -18,5 +18,10 @@ the authority for workflow and invariants.
 - GME metadata iteration owns one metadata-only handle per file and yields
   metadata, subtune index, and total count. Keep handles worker-local and use
   the existing ensure-based cleanup; sibling M3U metadata must remain intact.
+  Gate iteration on Registry's multitrack classification so custom backend
+  overrides do not create virtual folders the scanner cannot preserve.
 - LevelTap needs only the final window of a large PCM chunk. Short chunks must
   retain preceding samples; Goertzel coefficients depend only on construction.
+- PlaylistModal snapshots lists on open and caches rows/labels until filtering
+  changes. It returns intents to App; database mutations and pane refreshes
+  stay in App. Render calls must not query the library.

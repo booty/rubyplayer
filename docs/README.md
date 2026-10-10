@@ -6,6 +6,9 @@ Use these files as normative guidance:
 - `CLAUDE.md` — workflow, invariants, and gotchas.
 - `AGENTS.md` — agent behavior.
 
+Current supplementary implementation lessons live in [`memories.md`](memories.md).
+They record tested decisions without replacing the guidance above.
+
 These files are historical design records:
 
 - `docs/ideas.md`

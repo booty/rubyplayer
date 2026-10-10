@@ -122,6 +122,7 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | `screen.rb` | `Screen`: the double-buffered renderer described above (`put`/`clear_back`/`flush`), plus truecolor and named ANSI color support. Has no knowledge of panes, tracks, or layout — purely a drawing primitive. |
 | `library_pane.rb` | `LibraryPane`: left-hand source tree with queue/history/favorites/Focus, five smart views, and folder hierarchy. Owns folder breadcrumbs, selection, scrolling, and overflow indicator. |
 | `list_row_renderer.rb` | Shared stateless track-row construction, styled segment drawing, clipping, theme-color resolution, and section-header text. |
+| `playlist_modal.rb` | Snapshot-backed add-to-playlist picker. Owns filtering, selection, duplicate confirmation, and drawing; returns intents to `App` for database mutations. Playlist lists refresh when the picker opens, without queries during redraws. |
 | `tracks_pane.rb` | `TracksPane`: interactive item list for every source. Owns filtering, cursor/scroll memory, grouping/sorting, and queue identity while delegating individual track-row drawing. Queue remains flat and ordered. |
 | `queued_pane.rb` | `QueuedPane`: read-only, snapshot-backed upcoming/history overview with cumulative duration and overflow allocation. |
 | `bottom_lines.rb` | Three bottom renderers: `PlaybackLine` (normal/Focus context, next queue item, EQ bars), `StatusLine` (transient feedback), and `HotkeyLine` (context-sensitive bindings). |
