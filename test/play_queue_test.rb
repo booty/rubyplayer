@@ -25,6 +25,20 @@ class PlayQueueTest < Minitest::Test
     assert_equal %w[y a x b], @q.items
   end
 
+  def test_rewind_restores_previous_head_without_a_manual_undo_snapshot
+    @q.enqueue_end(%w[a b c])
+    @q.advance!
+    changes = []
+    @q.on_change { changes << @q.items }
+
+    @q.rewind!('a')
+
+    assert_equal [%w[a b c]], changes
+    @q.undo
+
+    assert_empty @q.items
+  end
+
   def test_enqueue_now_replaces_playing_head
     @q.enqueue_end(%w[a b])
     @q.enqueue_now(%w[x], playing: true)

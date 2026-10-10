@@ -14,9 +14,12 @@ module RubyPlayer
     ACTIVE_COMMAND_POLL_TIMEOUT_SECONDS = 0
     BUFFER_FULL_POLL_INTERVAL_SECONDS = 0.005
     MILLISECONDS_PER_SECOND = 1000
+    PREVIOUS_TRACK_THRESHOLD_MS = 3_000
+    PREVIOUS_TRACK_LIMIT = 100
     private_constant :THREAD_JOIN_TIMEOUT_SECONDS, :ACTIVE_COMMAND_POLL_TIMEOUT_SECONDS,
                      :BUFFER_FULL_POLL_INTERVAL_SECONDS,
-                     :MILLISECONDS_PER_SECOND
+                     :MILLISECONDS_PER_SECOND, :PREVIOUS_TRACK_THRESHOLD_MS,
+                     :PREVIOUS_TRACK_LIMIT
 
     def initialize(queue:, registry:, audio:, library:, event_bus:, config:, focus_player:,
                    archive_cache: nil)
@@ -52,6 +55,10 @@ module RubyPlayer
       @seek_offset_ms = 0
       @started_at = nil
       @published_second = nil
+      # Decoder-owned navigation history includes short plays that do not
+      # qualify for the library's persistent listening history.
+      @previous_tracks = []
+      @last_started_track = nil
       @queue.on_change { safe_publish(:queue_changed, items: @queue.items) }
     end
 
@@ -118,6 +125,9 @@ module RubyPlayer
         else
           @queue.remove_track_ids(ids)
         end
+        # Process after a queued skip so the removed current track cannot be
+        # added back to navigation history by the ensuing track transition.
+        @commands << [:forget_previous, ids.dup]
       end
     end
 
@@ -133,6 +143,7 @@ module RubyPlayer
     end
 
     def skip = @commands << :skip
+    def previous = @commands << :previous
 
     # Focus playback needs a complete handoff, not merely a queued stop request:
     # both sources share AudioOutput, so Focus must not unpause/write before the
@@ -213,21 +224,9 @@ module RubyPlayer
           case cmd
           when :play_head then play_head
           when :skip then finish_and_advance
+          when :previous then restart_or_previous
           when :toggle_pause then toggle_pause
-          when Array
-            case cmd[0]
-            when :seek then handle_seek(cmd[1])
-            when :stop_playback
-              begin
-                stop_playback
-              ensure
-                # Never strand a caller if stop cleanup raises; run's rescue
-                # still handles that error after the barrier is released.
-                cmd[1] << true
-              end
-            when :play_focus then complete_focus_command(cmd[2]) { start_focus(cmd[1]) }
-            when :stop_focus then complete_focus_command(cmd[1]) { stop_focus_playback }
-            end
+          when Array then handle_request(cmd)
           end
           pump if @focus_sound || (@playing && !@paused)
         rescue StandardError => e
@@ -244,6 +243,25 @@ module RubyPlayer
         stop_focus_playback
       ensure
         close_handle
+      end
+    end
+
+    def handle_request(cmd)
+      case cmd[0]
+      when :seek then handle_seek(cmd[1])
+      when :forget_previous
+        @previous_tracks.reject! { |track| cmd[1].include?(track.id) }
+        @last_started_track = nil if cmd[1].include?(@last_started_track&.id)
+      when :stop_playback
+        begin
+          stop_playback
+        ensure
+          # Never strand a caller if stop cleanup raises; run's rescue
+          # still handles that error after the barrier is released.
+          cmd[1] << true
+        end
+      when :play_focus then complete_focus_command(cmd[2]) { start_focus(cmd[1]) }
+      when :stop_focus then complete_focus_command(cmd[1]) { stop_focus_playback }
       end
     end
 
@@ -340,7 +358,7 @@ module RubyPlayer
       open_and_play(target)
     end
 
-    def open_and_play(track)
+    def open_and_play(track, remember_previous: true)
       track = next_playable(track)
       if track.nil?
         stop_playback
@@ -359,6 +377,12 @@ module RubyPlayer
       @audio.flush
       @audio.paused = false
       @mutex.synchronize do
+        if remember_previous && @last_started_track
+          @previous_tracks << @last_started_track
+          @previous_tracks.shift if @previous_tracks.size > PREVIOUS_TRACK_LIMIT
+        end
+        # Unlike @current, this survives an empty queue or a failed open.
+        @last_started_track = track
         @current = track
         @playing = true
         @paused = false
@@ -386,6 +410,22 @@ module RubyPlayer
       nxt = @mutex.synchronize { @queue.advance! }
       close_handle
       nxt ? open_and_play(nxt) : stop_playback
+    end
+
+    def restart_or_previous
+      return unless @playing && @current
+
+      if position_ms >= PREVIOUS_TRACK_THRESHOLD_MS || @previous_tracks.empty?
+        handle_seek(0)
+        return
+      end
+
+      target = @previous_tracks.pop
+      record_history
+      safe_publish(:track_ended, track: @current)
+      @mutex.synchronize { @queue.rewind!(target) }
+      close_handle
+      open_and_play(target, remember_previous: false)
     end
 
     def stop_playback

@@ -339,6 +339,7 @@ module RubyPlayer
         when :next_track
           @engine.skip
           @status_line.set_message('Skipped')
+        when :previous_track then @engine.previous
         when :seek_forward then seek_by(1)
         when :seek_back then seek_by(-1)
         when :remove_from_queue

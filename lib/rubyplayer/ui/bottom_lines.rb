@@ -89,7 +89,7 @@ module RubyPlayer
         nav_page_up: nil, nav_page_down: nil,
         toggle_group: 'group', sort_title: 'title', sort_number: 'number',
         sort_artist: 'artist', sort_year: 'year',
-        next_track: 'next', seek_back: 'seek-', seek_forward: 'seek+',
+        next_track: 'next', previous_track: 'restart/prev', seek_back: 'seek-', seek_forward: 'seek+',
         remove_from_queue: 'remove', remove_library_item: 'remove',
         purge_visible_missing: 'purge missing',
         show_track_info: 'info', show_help: 'help', show_theme_picker: 'theme',

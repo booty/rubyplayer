@@ -35,6 +35,7 @@ Select **Focus** in the Library pane, then choose a noise recipe in Tracks and p
 
 ### Navigation and views
 
+- Press `>` to skip to the next track. Press `<` to restart the current track; within its first three seconds, it plays the previous track from this session if available. With no previous track, it restarts the current track.
 - Press `/` to filter current Tracks view live across title, artist, album, composer, and path. Enter accepts filter; Escape restores previous filter. Each view remembers its filter, cursor, and scroll position.
 - Tracks pane title shows current source or folder breadcrumb plus visible item count. Long breadcrumbs keep leaf name and count visible.
 - Pane-edge scrollbar appears only when rows overflow viewport.

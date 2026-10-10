@@ -74,6 +74,13 @@ module RubyPlayer
       @items.first
     end
 
+    # Like advance!, playback navigation is separate from manual queue undo.
+    def rewind!(track)
+      @items.unshift(track)
+      changed!
+      track
+    end
+
     def undo
       return false if @undo_stack.empty?
 

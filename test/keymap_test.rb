@@ -87,6 +87,9 @@ class KeymapTest < Minitest::Test
 
     assert_equal :next_track, k.action_for('>', pane: :library)
     assert_equal :next_track, k.action_for('>', pane: :tracks)
+    %i[library tracks queued].each do |pane|
+      assert_equal :previous_track, k.action_for('<', pane: pane)
+    end
     assert_equal :seek_back, k.action_for('[', pane: :library)
     assert_equal :seek_back, k.action_for('[', pane: :tracks)
     assert_equal :seek_forward, k.action_for(']', pane: :library)

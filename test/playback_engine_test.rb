@@ -139,6 +139,135 @@ class PlaybackEngineTest < Minitest::Test
     assert_nil @engine.state[:track]
   end
 
+  def test_previous_before_three_seconds_restores_previous_track_and_preserves_upcoming
+    first = make_track('shantae.gbs', subtune: 0)
+    second = make_track('shantae.gbs', subtune: 1)
+    third = make_track('shantae.gbs', subtune: 2)
+    @engine.enqueue_now([first, second, third])
+    wait_for_event(:track_started)
+    @engine.skip
+    wait_for_event(:track_started)
+    @engine.toggle_play
+    wait_until { @engine.state[:paused] }
+    @engine.seek(2_999)
+    wait_until { @engine.state[:position_ms] == 2_999 }
+
+    # Even a briefly played track must be reachable, regardless of the DB's
+    # minimum listening threshold for playback-history entries.
+    @engine.previous
+
+    assert_equal first.id, wait_for_event(:track_started)[1][:track].id
+    assert_equal [first.id, second.id, third.id], @engine.queue_items.map(&:id)
+    @engine.skip
+
+    assert_equal second.id, wait_for_event(:track_started)[1][:track].id
+  end
+
+  def test_previous_at_three_seconds_restarts_current_track_without_consuming_previous
+    first = make_track('shantae.gbs', subtune: 0)
+    second = make_track('shantae.gbs', subtune: 1)
+    @engine.enqueue_now([first, second])
+    wait_for_event(:track_started)
+    @engine.skip
+    wait_for_event(:track_started)
+    @engine.toggle_play
+    wait_until { @engine.state[:paused] }
+    @engine.seek(3_000)
+    wait_until { @engine.state[:position_ms] == 3_000 }
+
+    @engine.previous
+    wait_until { @engine.state[:position_ms].zero? }
+
+    assert_equal second.id, @engine.state[:track].id
+    assert @engine.state[:paused]
+    assert_equal [second.id], @engine.queue_items.map(&:id)
+    @engine.previous
+
+    assert_equal first.id, wait_for_event(:track_started)[1][:track].id
+  end
+
+  def test_previous_without_a_previous_track_restarts_current_track
+    track = make_track('shantae.gbs')
+    @engine.enqueue_now([track])
+    wait_for_event(:track_started)
+    @engine.toggle_play
+    wait_until { @engine.state[:paused] }
+    @engine.seek(1_000)
+    wait_until { @engine.state[:position_ms] == 1_000 }
+
+    @engine.previous
+    wait_until { @engine.state[:position_ms].zero? }
+
+    assert_equal track.id, @engine.state[:track].id
+    assert @engine.state[:paused]
+    assert_equal [track.id], @engine.queue_items.map(&:id)
+  end
+
+  def test_previous_while_idle_does_not_start_playback
+    @engine.enqueue_end([make_track('shantae.gbs')])
+    @engine.previous
+    # A synchronous command serves as a barrier after previous in the queue.
+    @engine.stop
+
+    refute @engine.state[:playing]
+    assert_nil @engine.state[:track]
+    assert_equal 1, @engine.queue_items.size
+  end
+
+  def test_previous_remembers_last_track_across_an_empty_queue
+    first = make_track('shantae.gbs', subtune: 0)
+    second = make_track('shantae.gbs', subtune: 1)
+    @engine.enqueue_now([first])
+    wait_for_event(:track_started)
+    @engine.skip
+    wait_until { !@engine.state[:playing] }
+    @engine.enqueue_now([second])
+    wait_for_event(:track_started)
+
+    @engine.previous
+
+    assert_equal first.id, wait_for_event(:track_started)[1][:track].id
+  end
+
+  def test_previous_remembers_last_track_across_a_failed_open
+    first = make_track('shantae.gbs', subtune: 0)
+    second = make_track('shantae.gbs', subtune: 1)
+    broken = first.dup
+    broken.physical_path = File.join(@tmp, 'missing.gbs')
+    @engine.enqueue_now([first, broken, second])
+    wait_for_event(:track_started)
+    @engine.skip
+
+    assert_equal second.id, wait_for_event(:track_started)[1][:track].id
+
+    @engine.previous
+
+    assert_equal first.id, wait_for_event(:track_started)[1][:track].id
+  end
+
+  def test_previous_excludes_removed_tracks_including_the_current_track
+    first = make_track('shantae.gbs', subtune: 0)
+    second = make_track('shantae.gbs', subtune: 1)
+    third = make_track('shantae.gbs', subtune: 2)
+    @engine.enqueue_now([first, second, third])
+    wait_for_event(:track_started)
+    @engine.skip
+    wait_for_event(:track_started)
+    @engine.remove_track_ids([first.id, second.id])
+
+    assert_equal third.id, wait_for_event(:track_started)[1][:track].id
+    @engine.toggle_play
+    wait_until { @engine.state[:paused] }
+    @engine.seek(1_000)
+    wait_until { @engine.state[:position_ms] == 1_000 }
+
+    @engine.previous
+    wait_until { @engine.state[:position_ms] < 1_000 }
+
+    assert_equal third.id, @engine.state[:track].id
+    assert_equal [third.id], @engine.queue_items.map(&:id)
+  end
+
   def test_idle_decoder_blocks_until_a_command_arrives
     @engine.shutdown
     waits = Queue.new

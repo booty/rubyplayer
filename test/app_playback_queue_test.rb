@@ -273,6 +273,15 @@ class AppPlaybackQueueTest < Minitest::Test
     assert_equal %w[Charlie Bravo], @app.engine.queue_items.map(&:title)
   end
 
+  def test_previous_track_key_dispatches_to_engine
+    calls = []
+    @app.engine.define_singleton_method(:previous) { calls << :previous }
+
+    @app.handle_key('<')
+
+    assert_equal [:previous], calls
+  end
+
   def test_seek_forward_key_issues_absolute_seek_without_error
     select_library_kind(:folder)
     @app.handle_key('enter')

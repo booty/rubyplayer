@@ -11,6 +11,11 @@ the authority for workflow and invariants.
   recompute folder counts and publish scan completion, even with zero workers.
 - Decoder command waits can block indefinitely when idle or paused. Every
   transition requiring work arrives through the command queue.
+- Previous-track navigation uses decoder-owned session history, separate from
+  the library's minimum-listening-threshold history. Restart seeks to zero;
+  going back restores the queue head without creating a manual undo snapshot.
+  Retain the last successful start across idle/error transitions; library
+  deletion must clear navigation history after any queued current-track skip.
 - Frame state needs only a queue entry, not a queue snapshot. Cache Queued's
   duration summary alongside its upcoming snapshot and refresh both together.
 - Screen cells are replaced, not mutated. Sharing frozen BLANK across slots
