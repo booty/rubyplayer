@@ -59,17 +59,17 @@ module RubyPlayer
 
       def metadata(path, subtune_index)
         with_emu(path, GmeLib::GME_INFO_ONLY) do |emu|
-          with_info(emu, subtune_index) do |info|
-            {
-              title: MetadataHelper.presence(info[:song]) || format('Track %02d', subtune_index + 1),
-              album: MetadataHelper.presence(info[:game]),
-              artist: MetadataHelper.presence(info[:author]),
-              composer: MetadataHelper.presence(info[:author]),
-              track_number: subtune_index + 1,
-              duration_ms: real_length(info),
-              format: MetadataHelper.format_extension(path)
-            }
-          end
+          metadata_for(emu, path, subtune_index)
+        end
+      end
+
+      # Each enumeration owns its handle, so extractor workers never share it.
+      def each_metadata(path)
+        return enum_for(__method__, path) unless block_given?
+
+        with_emu(path, GmeLib::GME_INFO_ONLY) do |emu|
+          count = GmeLib.gme_track_count(emu)
+          count.times { |i| yield metadata_for(emu, path, i), i, count }
         end
       end
 
@@ -138,6 +138,20 @@ module RubyPlayer
       end
 
       private
+
+      def metadata_for(emu, path, subtune_index)
+        with_info(emu, subtune_index) do |info|
+          {
+            title: MetadataHelper.presence(info[:song]) || format('Track %02d', subtune_index + 1),
+            album: MetadataHelper.presence(info[:game]),
+            artist: MetadataHelper.presence(info[:author]),
+            composer: MetadataHelper.presence(info[:author]),
+            track_number: subtune_index + 1,
+            duration_ms: real_length(info),
+            format: MetadataHelper.format_extension(path)
+          }
+        end
+      end
 
       def open_emu(path, sample_rate)
         out = FFI::MemoryPointer.new(:pointer)

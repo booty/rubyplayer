@@ -23,6 +23,23 @@ class GmeBackendTest < Minitest::Test
     assert_equal 1, meta[:track_number]
   end
 
+  def test_each_metadata_opens_once_and_preserves_subtune_metadata
+    path = File.join(FIXTURES, 'air-zonk.hes')
+    expected = Array.new(@gme.track_count(path)) { |i| @gme.metadata(path, i) }
+    opens = 0
+    original = @gme.method(:open_emu)
+    @gme.define_singleton_method(:open_emu) do |*args|
+      opens += 1
+      original.call(*args)
+    end
+    entries = @gme.each_metadata(path).to_a
+
+    assert_equal expected, entries.map(&:first)
+    assert_equal((0...expected.size).to_a, entries.map { |entry| entry[1] })
+    assert(entries.all? { |entry| entry[2] == expected.size })
+    assert_equal 1, opens, 'subtunes must share one metadata-only handle'
+  end
+
   def test_subtune_metadata_has_incremented_track_number
     meta = @gme.metadata(File.join(FIXTURES, 'mega-man-2.nsf'), 3)
 

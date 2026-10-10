@@ -92,6 +92,21 @@ class ExtractorPoolTest < Minitest::Test
     assert_empty @scanner.reconcile(@music)
   end
 
+  def test_multitrack_scan_uses_one_backend_handle
+    path = File.join(@music, 'mega-man-2.nsf')
+    backend = @reg.backend_for(path)
+    opens = 0
+    original = backend.method(:open_emu)
+    backend.define_singleton_method(:open_emu) do |*args|
+      opens += 1
+      original.call(*args)
+    end
+    @pool.process(@scanner.reconcile(path))
+
+    assert_operator @lib.all_tracks.size, :>, 1
+    assert_equal 1, opens, 'scan must not reopen the same file per subtune'
+  end
+
   def archive_pool
     RubyPlayer::ExtractorPool.new(
       library: @lib, registry: @reg, thread_count: 2,

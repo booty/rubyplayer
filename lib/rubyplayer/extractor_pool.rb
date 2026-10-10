@@ -68,25 +68,24 @@ module RubyPlayer
 
     def extract_tracks(real, folder_id, stat, archive_metadata: {})
       backend = @registry.backend_for(real)
-      count = @registry.multitrack?(real) ? backend.track_count(real) : 1
       physical_path = archive_metadata.fetch(:physical_path, real)
       archive_entry = archive_metadata.fetch(:archive_entry, '')
       virtual_path = archive_metadata.fetch(:virtual_path, real)
-      album_fallback = archive_metadata.fetch(:album_fallback) do
-        count > 1 ? File.basename(real, '.*') : File.basename(File.dirname(real))
-      end
+      track_folder_id = nil
 
-      if count > 1
-        track_folder_id = @library.upsert_folder(parent_id: folder_id,
-                                                 name: File.basename(real),
-                                                 path: virtual_path, kind: 'multitrack',
-                                                 mtime: stat.mtime.to_f, size: stat.size)
-        count.times do |i|
-          upsert(physical_path, track_folder_id, i, backend, backend.metadata(real, i), stat,
-                 archive_entry: archive_entry, album_fallback: album_fallback)
+      each_metadata(backend, real) do |meta, index, count|
+        track_folder_id ||= if count > 1
+                              @library.upsert_folder(parent_id: folder_id,
+                                                     name: File.basename(real), path: virtual_path,
+                                                     kind: 'multitrack', mtime: stat.mtime.to_f,
+                                                     size: stat.size)
+                            else
+                              folder_id
+                            end
+        album_fallback = archive_metadata.fetch(:album_fallback) do
+          count > 1 ? File.basename(real, '.*') : File.basename(File.dirname(real))
         end
-      else
-        upsert(physical_path, folder_id, 0, backend, backend.metadata(real, 0), stat,
+        upsert(physical_path, track_folder_id, index, backend, meta, stat,
                archive_entry: archive_entry, album_fallback: album_fallback)
       end
       true
@@ -94,6 +93,13 @@ module RubyPlayer
       # One undecodable file or archive entry must not sink the scan.
       upsert_error_track(real, folder_id, stat, archive_metadata: archive_metadata)
       false
+    end
+
+    def each_metadata(backend, path, &)
+      return backend.each_metadata(path, &) if backend.respond_to?(:each_metadata)
+
+      count = @registry.multitrack?(path) ? backend.track_count(path) : 1
+      count.times { |i| yield backend.metadata(path, i), i, count }
     end
 
     def upsert_error_track(real, folder_id, stat, archive_metadata: {})

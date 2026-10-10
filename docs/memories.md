@@ -15,3 +15,6 @@ the authority for workflow and invariants.
   duration summary alongside its upcoming snapshot and refresh both together.
 - Screen cells are replaced, not mutated. Sharing frozen BLANK across slots
   reduces a 120x40 clear from 4,842 allocations to 42 without changing diffs.
+- GME metadata iteration owns one metadata-only handle per file and yields
+  metadata, subtune index, and total count. Keep handles worker-local and use
+  the existing ensure-based cleanup; sibling M3U metadata must remain intact.
