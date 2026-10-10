@@ -115,7 +115,8 @@ module RubyPlayer
       end
 
       def blank_buffer
-        Array.new(@rows) { Array.new(@cols) { BLANK.dup } }
+        # put replaces cells; the immutable blank can be shared across slots.
+        Array.new(@rows) { Array.new(@cols, BLANK) }
       end
 
       def sgr(cell)

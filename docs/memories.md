@@ -13,3 +13,5 @@ the authority for workflow and invariants.
   transition requiring work arrives through the command queue.
 - Frame state needs only a queue entry, not a queue snapshot. Cache Queued's
   duration summary alongside its upcoming snapshot and refresh both together.
+- Screen cells are replaced, not mutated. Sharing frozen BLANK across slots
+  reduces a 120x40 clear from 4,842 allocations to 42 without changing diffs.

@@ -27,6 +27,21 @@ class ScreenTest < Minitest::Test
     assert_equal '', s.flush
   end
 
+  def test_clearing_large_screen_allocates_rows_not_cells
+    screen = make_screen(rows: 40, cols: 120)
+    screen.clear_back
+    before = GC.stat(:total_allocated_objects)
+    screen.clear_back
+    allocated = GC.stat(:total_allocated_objects) - before
+
+    assert_operator allocated, :<, 200, 'blank cells should not allocate per column'
+    screen.put(0, 0, 'x')
+    cells = screen.instance_variable_get(:@back)
+
+    assert_equal ' ', cells[0][1].ch
+    assert_equal ' ', cells[1][0].ch
+  end
+
   def test_diff_emits_only_changed_cells
     s = make_screen
     s.put(0, 0, 'aaaaaaaaaa')
