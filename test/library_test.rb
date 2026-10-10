@@ -29,6 +29,21 @@ class LibraryTest < Minitest::Test
     assert_equal @root, id2
   end
 
+  def test_scan_paths_match_literal_case_sensitive_directory_prefixes
+    # LIKE used to interpret filename characters and include sibling roots.
+    ['/m/music_1', '/m/music%1', '/m/Music', '/m/music[1]'].each do |root|
+      paths = [root, "#{root}/nested", "#{root}extra", '/m/musicA1', '/m/music']
+      paths.uniq.each do |path|
+        folder = @lib.upsert_folder(parent_id: nil, name: path, path: path, kind: 'dir')
+        add_track("#{path}/song.vgm", folder: folder)
+      end
+      known = @lib.db_paths_under(root)
+
+      assert_equal [root, "#{root}/nested"].sort, known[:folders].keys.sort
+      assert_equal ["#{root}/nested/song.vgm", "#{root}/song.vgm"].sort, known[:tracks].keys.sort
+    end
+  end
+
   def test_upsert_track_idempotent_and_preserves_rating
     id = add_track('/m/sega/a.vgm')
     @lib.set_rating(id, 5)

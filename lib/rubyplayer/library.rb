@@ -447,20 +447,23 @@ module RubyPlayer
     # For the Scanner's diff pass: everything the DB knows under `root`.
     def db_paths_under(root)
       prefix = "#{root.chomp('/')}/"
+      # Binary ranges match literal paths and retain index-friendly predicates.
+      # The successor of a trailing slash is '0', enclosing every descendant.
+      limit = "#{prefix.chop}0"
       tracks = {}
       folders = {}
       @db.read do |s|
-        s.execute(<<~SQL, [root, "#{prefix}%"]).each do |r|
+        s.execute(<<~SQL, [root, prefix, limit]).each do |r|
           SELECT physical_path, file_mtime, file_size, GROUP_CONCAT(id) AS ids
           FROM tracks
-          WHERE missing = 0 AND (physical_path = ? OR physical_path LIKE ?)
+          WHERE missing = 0 AND (physical_path = ? OR (physical_path >= ? AND physical_path < ?))
           GROUP BY physical_path
         SQL
           tracks[r['physical_path']] = { mtime: r['file_mtime'], size: r['file_size'],
                                          ids: r['ids'].split(',').map(&:to_i) }
         end
-        s.execute('SELECT id, path, mtime, size FROM folders WHERE missing = 0 AND (path = ? OR path LIKE ?)',
-                  [root, "#{prefix}%"]).each do |r|
+        s.execute('SELECT id, path, mtime, size FROM folders WHERE missing = 0 AND (path = ? OR (path >= ? AND path < ?))',
+                  [root, prefix, limit]).each do |r|
           folders[r['path']] = { id: r['id'], mtime: r['mtime'], size: r['size'] }
         end
       end
