@@ -20,18 +20,22 @@ module RubyPlayer
 
     def initialize(bands: DEFAULT_BANDS, sample_rate: DEFAULT_SAMPLE_RATE,
                    window: DEFAULT_WINDOW_SIZE)
-      @bands = bands
-      @rate = sample_rate
       @window = window
+      @window_bytes = window * AudioFormat::BYTES_PER_FRAME
       @mono = Array.new(window, 0.0)
       @mutex = Mutex.new
       lo = LOW_FREQUENCY_HZ
       hi = [MAX_FREQUENCY_HZ, sample_rate * NYQUIST_RATIO].min
       step = (Math.log(hi) - Math.log(lo)) / (bands - 1)
-      @freqs = Array.new(bands) { |i| Math.exp(Math.log(lo) + (step * i)) }
+      @coefficients = Array.new(bands) do |i|
+        frequency = Math.exp(Math.log(lo) + (step * i))
+        2.0 * Math.cos(2.0 * Math::PI * frequency / sample_rate)
+      end.freeze
     end
 
     def push(frames_string)
+      # Earlier samples cannot survive the rolling window; skip their conversion.
+      frames_string = frames_string.byteslice(-@window_bytes, @window_bytes) if frames_string.bytesize > @window_bytes
       floats = frames_string.unpack('e*')
       mono = Array.new(floats.size / STEREO_CHANNELS) do |i|
         offset = i * STEREO_CHANNELS
@@ -50,8 +54,7 @@ module RubyPlayer
 
     def levels
       window = @mutex.synchronize { @mono.dup }
-      @freqs.map do |freq|
-        coeff = 2.0 * Math.cos(2.0 * Math::PI * freq / @rate)
+      @coefficients.map do |coeff|
         s1 = 0.0
         s2 = 0.0
         window.each do |x|

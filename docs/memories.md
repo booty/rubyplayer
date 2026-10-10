@@ -18,3 +18,5 @@ the authority for workflow and invariants.
 - GME metadata iteration owns one metadata-only handle per file and yields
   metadata, subtune index, and total count. Keep handles worker-local and use
   the existing ensure-based cleanup; sibling M3U metadata must remain intact.
+- LevelTap needs only the final window of a large PCM chunk. Short chunks must
+  retain preceding samples; Goertzel coefficients depend only on construction.

@@ -15,6 +15,44 @@ class LevelTapTest < Minitest::Test
     assert(tap.levels.all? { |l| l < 0.01 })
   end
 
+  def test_large_chunks_only_unpack_the_retained_window
+    tap = RubyPlayer::LevelTap.new(window: 512)
+    data = sine(440, 48_000, 4096)
+    unpacked_bytes = 0
+    trace = TracePoint.new(:call, :c_call) do |event|
+      unpacked_bytes += event.self.bytesize if event.method_id == :unpack && event.self.is_a?(String)
+    end
+    trace.enable { tap.push(data) }
+
+    assert_equal 512 * RubyPlayer::AudioFormat::BYTES_PER_FRAME, unpacked_bytes
+  end
+
+  def test_levels_do_not_recompute_frequency_coefficients
+    tap = RubyPlayer::LevelTap.new
+    calls = 0
+    trace = TracePoint.new(:c_call) { |event| calls += 1 if event.method_id == :cos }
+    trace.enable { 2.times { tap.levels } }
+
+    assert_equal 0, calls
+  end
+
+  def test_short_chunks_preserve_the_same_rolling_window_as_one_large_chunk
+    whole = RubyPlayer::LevelTap.new(window: 512)
+    split = RubyPlayer::LevelTap.new(window: 512)
+    data = sine(440, 48_000, 900)
+    whole.push(data)
+    frame_bytes = RubyPlayer::AudioFormat::BYTES_PER_FRAME
+    [0, 300, 600].each { |offset| split.push(data.byteslice(offset * frame_bytes, 300 * frame_bytes)) }
+
+    assert_equal whole.levels, split.levels
+    split.push('')
+
+    assert_equal whole.levels, split.levels
+    split.reset
+
+    assert split.levels.all?(&:zero?)
+  end
+
   def test_low_tone_excites_low_bands_most
     tap = RubyPlayer::LevelTap.new(bands: 8, sample_rate: 48_000)
     tap.push(sine(80, 48_000, 2048))
