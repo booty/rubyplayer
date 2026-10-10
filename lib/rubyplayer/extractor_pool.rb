@@ -15,15 +15,16 @@ module RubyPlayer
     end
 
     def process(work_items)
-      return { processed: 0, errored: 0 } if work_items.empty?
-
+      # Reconciliation may mark files missing even when extraction has no work.
+      # Always finalize counts and notify the UI, without spawning idle workers.
+      worker_count = [@thread_count, work_items.size].min
       queue = Thread::Queue.new
       work_items.each { |w| queue << w }
-      @thread_count.times { queue << :done }
+      worker_count.times { queue << :done }
       errored = 0
       mutex = Mutex.new
 
-      threads = Array.new(@thread_count) do
+      threads = Array.new(worker_count) do
         Thread.new do
           while (item = queue.pop) != :done
             ok = extract(item)

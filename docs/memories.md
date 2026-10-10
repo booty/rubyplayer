@@ -7,3 +7,5 @@ the authority for workflow and invariants.
   ranges avoid SQL wildcard interpretation while allowing indexed comparisons.
 - SQLite backups must include committed WAL pages. Use the backup API and
   publish only completed snapshots; copying the main file alone loses data.
+- Empty extraction work can follow a deletion-only reconciliation. Always
+  recompute folder counts and publish scan completion, even with zero workers.
