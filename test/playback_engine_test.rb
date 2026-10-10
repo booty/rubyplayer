@@ -139,6 +139,27 @@ class PlaybackEngineTest < Minitest::Test
     assert_nil @engine.state[:track]
   end
 
+  def test_idle_decoder_blocks_until_a_command_arrives
+    @engine.shutdown
+    waits = Queue.new
+    commands = Queue.new
+    commands.define_singleton_method(:pop) do |**options|
+      waits << options
+      super(**options)
+    end
+    @engine.instance_variable_set(:@commands, commands)
+    @engine.start
+    # A finite timeout used to wake the stopped decoder twenty times a second.
+    options = waits.pop(timeout: 1)
+
+    refute_nil options, 'decoder must reach its command wait'
+    assert_nil options[:timeout], 'idle wait must have no polling deadline'
+    track = make_track('shantae.gbs')
+    @engine.enqueue_now([track])
+
+    assert_equal track.id, wait_for_event(:track_started)[1][:track].id
+  end
+
   def test_upcoming_items_include_head_when_stopped_and_exclude_it_while_active
     first = make_track('shantae.gbs', subtune: 0)
     second = make_track('shantae.gbs', subtune: 1)

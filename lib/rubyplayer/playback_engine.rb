@@ -12,11 +12,10 @@ module RubyPlayer
   class PlaybackEngine
     THREAD_JOIN_TIMEOUT_SECONDS = 5
     ACTIVE_COMMAND_POLL_TIMEOUT_SECONDS = 0
-    IDLE_COMMAND_POLL_TIMEOUT_SECONDS = 0.05
     BUFFER_FULL_POLL_INTERVAL_SECONDS = 0.005
     MILLISECONDS_PER_SECOND = 1000
     private_constant :THREAD_JOIN_TIMEOUT_SECONDS, :ACTIVE_COMMAND_POLL_TIMEOUT_SECONDS,
-                     :IDLE_COMMAND_POLL_TIMEOUT_SECONDS, :BUFFER_FULL_POLL_INTERVAL_SECONDS,
+                     :BUFFER_FULL_POLL_INTERVAL_SECONDS,
                      :MILLISECONDS_PER_SECOND
 
     def initialize(queue:, registry:, audio:, library:, event_bus:, config:, focus_player:,
@@ -201,7 +200,8 @@ module RubyPlayer
         # a busy-wait bug.
         cmd = begin
           active = @focus_sound || (@playing && !@paused)
-          @commands.pop(timeout: active ? ACTIVE_COMMAND_POLL_TIMEOUT_SECONDS : IDLE_COMMAND_POLL_TIMEOUT_SECONDS)
+          # Idle and paused sources have no work until a command wakes them.
+          @commands.pop(timeout: active ? ACTIVE_COMMAND_POLL_TIMEOUT_SECONDS : nil)
         rescue ThreadError
           nil
         end

@@ -9,3 +9,5 @@ the authority for workflow and invariants.
   publish only completed snapshots; copying the main file alone loses data.
 - Empty extraction work can follow a deletion-only reconciliation. Always
   recompute folder counts and publish scan completion, even with zero workers.
+- Decoder command waits can block indefinitely when idle or paused. Every
+  transition requiring work arrives through the command queue.
