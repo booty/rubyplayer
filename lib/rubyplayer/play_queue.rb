@@ -17,6 +17,7 @@ module RubyPlayer
 
     def items = @items.dup
     def first = @items.first
+    def at(index) = @items[index]
     def size = @items.size
     def empty? = @items.empty?
     def on_change(&blk) = @on_change = blk

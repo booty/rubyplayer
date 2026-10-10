@@ -170,11 +170,10 @@ module RubyPlayer
 
     def state
       @mutex.synchronize do
-        queue = @queue.items
         # Focus suspends finite queue playback without consuming its head. For
         # UI purposes that head is therefore "next"; during normal playback
         # the head is current, so next is the following queue entry.
-        next_track = @playing ? queue[1] : queue[0]
+        next_track = @queue.at(@playing ? 1 : 0)
         { track: @current, playing: @playing, paused: @paused,
           position_ms: position_ms, skip_disliked: @skip_disliked,
           focus_sound: @focus_sound, next_track: next_track }

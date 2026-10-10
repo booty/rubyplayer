@@ -33,6 +33,29 @@ class QueuedPaneTest < Minitest::Test
     assert_equal 'Upcoming (2/2:05)', texts.first
   end
 
+  def test_duration_summary_is_cached_until_snapshot_reload
+    item = track(1, title: 'One', duration_ms: 60_000)
+    @upcoming = [item]
+    @pane.reload!
+    reads = 0
+    item.define_singleton_method(:duration_ms) do
+      reads += 1
+      super()
+    end
+
+    3.times { assert_equal 'Upcoming (1/1:00)', texts.first }
+
+    assert_equal 0, reads, 'rendering must not scan track durations'
+    item.duration_ms = nil
+    @pane.reload!
+
+    assert_equal 'Upcoming (1/0:00 + ??)', texts.first
+    @upcoming = []
+    @pane.reload!
+
+    assert_equal 'Upcoming (0/0:00)', texts.first
+  end
+
   def test_unknown_duration_appends_marker_to_known_sum
     @upcoming = [
       track(1, title: 'Known', duration_ms: 7_425_000),

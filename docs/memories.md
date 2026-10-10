@@ -11,3 +11,5 @@ the authority for workflow and invariants.
   recompute folder counts and publish scan completion, even with zero workers.
 - Decoder command waits can block indefinitely when idle or paused. Every
   transition requiring work arrives through the command queue.
+- Frame state needs only a queue entry, not a queue snapshot. Cache Queued's
+  duration summary alongside its upcoming snapshot and refresh both together.

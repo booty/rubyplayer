@@ -15,6 +15,7 @@ module RubyPlayer
         @history_source = history_source
         @selection = QueueSelection.new
         @upcoming = @upcoming_source.call.dup.freeze
+        @total_duration = total_duration
         @selection.replace(@upcoming)
         @previous = @history_source.call.first(HISTORY_LIMIT).dup.freeze
         update_config(config)
@@ -61,6 +62,7 @@ module RubyPlayer
 
       def reload!
         @upcoming = @upcoming_source.call.dup.freeze
+        @total_duration = total_duration
         @selection.replace(@upcoming)
         @previous = @history_source.call.first(HISTORY_LIMIT).dup.freeze
         rebuild_rows
@@ -122,7 +124,7 @@ module RubyPlayer
       def upcoming_rows_for(height)
         return [] unless height.positive?
 
-        header = { type: :header, text: "Upcoming (#{@upcoming.size}/#{total_duration})" }
+        header = { type: :header, text: "Upcoming (#{@upcoming.size}/#{@total_duration})" }
         body_capacity = height - 1
         return [header] unless body_capacity.positive?
         return [header, { type: :empty, text: 'Queue empty' }] if @upcoming_rows.empty?

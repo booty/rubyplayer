@@ -265,6 +265,20 @@ class PlaybackEngineTest < Minitest::Test
     assert_equal queued.id, state[:next_track].id
   end
 
+  def test_state_does_not_copy_the_queue
+    track = make_track('shantae.gbs')
+    @engine.enqueue_end([track])
+    queue = @engine.instance_variable_get(:@queue)
+    copies = 0
+    queue.define_singleton_method(:items) do
+      copies += 1
+      super()
+    end
+
+    assert_equal track, @engine.state[:next_track]
+    assert_equal 0, copies, 'frame state must not allocate a full queue snapshot'
+  end
+
   def test_plays_track_stored_inside_an_archive
     zip = File.join(FIXTURES, 'musha.zip')
     id = @lib.upsert_track(folder_id: @folder, physical_path: zip,
