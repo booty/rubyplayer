@@ -23,6 +23,27 @@ class GmeBackendTest < Minitest::Test
     assert_equal 1, meta[:track_number]
   end
 
+  def test_metadata_includes_static_hardware_and_timing_for_real_chiptunes
+    {
+      'alisa-dragoon-introduction.vgm' => ['YM2612', '6 FM'],
+      'mega-man-2.nsf' => ['NES APU', '2 pulse'],
+      'shantae.gbs' => ['Game Boy APU', '1 wave'],
+      'earthbound-megaton-walk.spc' => ['S-DSP', '8 sample'],
+      'air-zonk.hes' => ['HuC6280', '6 wavetable']
+    }.each do |file, expected|
+      extras = @gme.metadata(File.join(FIXTURES, file), 0).fetch(:extra)
+
+      refute_empty extras.fetch('system')
+      assert_includes extras.fetch('sound_chips'), expected.first
+      assert_includes extras.fetch('voice_layout'), expected.last
+    end
+    extras = @gme.metadata(File.join(FIXTURES, 'alisa-dragoon-introduction.vgm'), 0).fetch(:extra)
+
+    assert_match(/\A\d+\.\d+\z/, extras.fetch('vgm_version'))
+    assert_includes extras.fetch('chip_clocks'), 'YM2612'
+    assert_operator extras.fetch('loop_length_ms').to_i, :>, 0
+  end
+
   def test_each_metadata_opens_once_and_preserves_subtune_metadata
     path = File.join(FIXTURES, 'air-zonk.hes')
     expected = Array.new(@gme.track_count(path)) { |i| @gme.metadata(path, i) }

@@ -4,6 +4,7 @@ require 'ffi'
 require_relative '../runtime_dependencies'
 require_relative '../audio_format'
 require_relative 'metadata_helper'
+require_relative 'chiptune_metadata'
 
 module RubyPlayer
   module Backends
@@ -59,7 +60,7 @@ module RubyPlayer
 
       def metadata(path, subtune_index)
         with_emu(path, GmeLib::GME_INFO_ONLY) do |emu|
-          metadata_for(emu, path, subtune_index)
+          metadata_for(emu, path, subtune_index, ChiptuneMetadata.read(path))
         end
       end
 
@@ -69,7 +70,8 @@ module RubyPlayer
 
         with_emu(path, GmeLib::GME_INFO_ONLY) do |emu|
           count = GmeLib.gme_track_count(emu)
-          count.times { |i| yield metadata_for(emu, path, i), i, count }
+          hardware = ChiptuneMetadata.read(path)
+          count.times { |i| yield metadata_for(emu, path, i, hardware), i, count }
         end
       end
 
@@ -139,7 +141,7 @@ module RubyPlayer
 
       private
 
-      def metadata_for(emu, path, subtune_index)
+      def metadata_for(emu, path, subtune_index, hardware)
         with_info(emu, subtune_index) do |info|
           {
             title: MetadataHelper.presence(info[:song]) || format('Track %02d', subtune_index + 1),
@@ -148,9 +150,20 @@ module RubyPlayer
             composer: MetadataHelper.presence(info[:author]),
             track_number: subtune_index + 1,
             duration_ms: real_length(info),
-            format: MetadataHelper.format_extension(path)
+            format: MetadataHelper.format_extension(path),
+            extra: hardware.merge(info_extras(info))
           }
         end
+      end
+
+      def info_extras(info)
+        extras = %i[system copyright dumper comment].to_h do |field|
+          [field.to_s, MetadataHelper.presence(info[field])]
+        end
+        %i[intro_length loop_length].each do |field|
+          extras["#{field}_ms"] = info[field].to_s if info[field].positive?
+        end
+        extras.compact
       end
 
       def open_emu(path, sample_rate)

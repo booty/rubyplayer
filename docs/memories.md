@@ -41,3 +41,8 @@ the authority for workflow and invariants.
   both the modal instance and current track to reject stale results. Reserve
   artwork space independently of tag count, and test short layouts against
   the real modal frame so metadata cannot overwrite its hint or border.
+- Chiptune hardware extras describe static capabilities, not active voices.
+  Read variable hardware from headers (including NSF/NSFE expansion flags),
+  reuse one hardware snapshot across subtunes, and decompress only a bounded
+  VGM/VGZ header. Mask clock flags before displaying Hz; bit flags can indicate
+  dual chips or variants. Preserve uncertainty in legacy FM identification.

@@ -56,8 +56,12 @@ information remains available.
 Now Playing separates artist and album information from technical file details.
 Track numbers show `N of M` when the file tags include a total. The technical
 section shows file type, codec, bitrate, sample rate, channels, and bit depth
-where available. For ordinary audio files, opening the popup loads fresh
-details without a rescan. Unknown fields are omitted.
+where available. Chiptunes show system, sound chips, static voice capabilities,
+and known intro/loop lengths; VGM/VGZ also show version and declared chip clocks.
+NSF/NSFE expansion hardware and SAP/KSS configurations come from file headers.
+Voice capabilities describe hardware, not live activity. Copyright, dumper,
+and comments appear when available. Opening the popup loads fresh details for
+ordinary audio files and chiptunes without a rescan. Unknown fields are omitted.
 
 Artwork comes from embedded pictures in FFmpeg-backed files, falling back to
 images in the track's folder (such as `cover.jpg` or `folder.png`). Archived

@@ -528,7 +528,7 @@ module RubyPlayer
       def prepare_now_playing(track)
         modal = NowPlayingModal.new(track, extras: @library.track_metadata_for(track.id))
         @now_playing_modal = modal
-        return unless track.backend == 'ffmpeg'
+        return unless %w[ffmpeg gme].include?(track.backend)
 
         # Existing library rows predate technical metadata. Probe once when
         # opening, off the UI thread, rather than requiring a destructive rescan.

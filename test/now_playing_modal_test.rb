@@ -58,6 +58,26 @@ class NowPlayingModalTest < Minitest::Test
     assert_operator art[:h], :>=, 3
   end
 
+  def test_chiptune_technical_section_shows_hardware_instead_of_audio_encoding_facts
+    tune = RubyPlayer::Track.new(id: 3, title: 'Chip song', format: 'vgm')
+    modal = RubyPlayer::UI::NowPlayingModal.new(tune, extras: {
+                                                  'system' => 'Sega Mega Drive', 'sound_chips' => 'YM2612 + SN76489',
+                                                  'voice_layout' => '6 FM (FM 6 can use PCM); 3 tone + 1 noise',
+                                                  'vgm_version' => '1.50', 'chip_clocks' => 'YM2612 7670454 Hz',
+                                                  'intro_length_ms' => '12300', 'loop_length_ms' => '45000'
+                                                })
+    text, = render_modal(modal, rows: 40)
+
+    assert_includes text, 'System: Sega Mega Drive'
+    assert_includes text, 'Chips: YM2612 + SN76489'
+    assert_includes text, 'Voices: 6 FM (FM 6 can use PCM); 3 tone + 1 noise'
+    assert_includes text, 'VGM version: 1.50'
+    assert_includes text, 'Chip clocks: YM2612 7670454 Hz'
+    assert_includes text, 'Intro: 0:12'
+    assert_includes text, 'Loop: 0:45'
+    refute_includes text, 'Bit rate:'
+  end
+
   def test_fresh_metadata_replaces_stored_tags_and_invalid_track_totals_are_ignored
     modal = RubyPlayer::UI::NowPlayingModal.new(track, extras: { 'track_total' => '12' })
     modal.update(artist: nil, track_number: 8, extra: { 'track_total' => '2' })

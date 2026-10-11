@@ -4,6 +4,27 @@ require_relative 'support/app_test_support'
 class AppNowPlayingTest < Minitest::Test
   include TestSupport::AppTestSupport
 
+  def test_existing_chiptune_track_refreshes_hardware_details_without_a_rescan
+    library = @app.instance_variable_get(:@library)
+    track = library.all_tracks.find { |entry| entry.format == 'gbs' }
+    # Existing libraries have no cached hardware extras from older scans.
+    library.replace_track_metadata(track.id, {})
+    @app.engine.enqueue_now([track])
+    wait_until { @app.engine.state[:track]&.id == track.id }
+    @app.handle_events
+    use_screen(rows: 40, cols: 110)
+    @app.handle_key('o')
+    wait_until do
+      @app.handle_events
+      @app.render
+      back_buffer_text.include?('Chips: Game Boy APU')
+    end
+
+    assert_includes back_buffer_text, 'Voices: 2 pulse + 1 wave + 1 noise'
+    assert_includes back_buffer_text, 'System:'
+    refute_includes back_buffer_text, 'Bit rate:'
+  end
+
   def test_popup_loads_fresh_file_tags_and_technical_details_for_an_existing_library_track
     path = File.join(@tmp, 'tagged.mp3')
     system('ffmpeg', '-hide_banner', '-loglevel', 'error',

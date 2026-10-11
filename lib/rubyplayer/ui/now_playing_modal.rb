@@ -66,7 +66,8 @@ module RubyPlayer
       def artist_rows
         rows = [['Title', value(:title)], ['Artist', value(:artist)], ['Album artist', value(:album_artist)],
                 ['Album', value(:album)], ['Track', track_number], ['Composer', value(:composer)],
-                ['Year', value(:year)], ['Genre', @extras['genre']]]
+                ['Year', value(:year)], ['Genre', @extras['genre']],
+                ['Copyright', @extras['copyright']], ['Dumper', @extras['dumper']], ['Comment', @extras['comment']]]
         present_rows(rows)
       end
 
@@ -76,11 +77,19 @@ module RubyPlayer
         bitrate = "#{bitrate} (average)" if bitrate && @extras['bit_rate_mode'] == 'average'
         sample_rate = positive_number(@extras['sample_rate'])
         bits = positive_number(@extras['bits_per_sample'])
-        rows = [['File type', value(:format).to_s.upcase], ['Bit rate', bitrate],
+        rows = [['File type', value(:format).to_s.upcase],
+                ['Chips', @extras['sound_chips']], ['Voices', @extras['voice_layout']], ['System', @extras['system']],
+                ['VGM version', @extras['vgm_version']], ['Chip clocks', @extras['chip_clocks']],
+                ['Intro', timing('intro_length_ms')], ['Loop', timing('loop_length_ms')], ['Bit rate', bitrate],
                 ['Codec', @extras['codec']&.upcase],
                 ['Sample rate', sample_rate && format('%g kHz', sample_rate / 1000.0)],
                 ['Channels', channels], ['Bit depth', bits && "#{bits} bit"]]
         present_rows(rows)
+      end
+
+      def timing(key)
+        ms = positive_number(@extras[key])
+        DurationFormatter.format(ms) if ms
       end
 
       def positive_number(value)

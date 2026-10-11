@@ -132,7 +132,7 @@ module RubyPlayer
         track_number: meta[:track_number], duration_ms: meta[:duration_ms],
         file_mtime: stat.mtime.to_f, file_size: stat.size
       )
-      # nil means "this backend has no extras concept" (gme/openmpt never
+      # nil means "this backend has no extras concept" (openmpt never
       # produce :extra) — leave existing KV rows alone. {} means "the backend
       # looked and the file has none" (ffmpeg after a retag that dropped all
       # extra tags) — still must clear stale rows from a prior scan, since
