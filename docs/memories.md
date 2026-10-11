@@ -1,6 +1,6 @@
 # Implementation lessons
 
-Current as of 2026-10-10. Supplementary implementation notes; AGENTS.md remains
+Current as of 2026-10-11. Supplementary implementation notes; AGENTS.md remains
 the authority for workflow and invariants.
 
 - Scan paths need literal, case-sensitive matching. Binary directory-prefix
@@ -20,6 +20,9 @@ the authority for workflow and invariants.
   duration summary alongside its upcoming snapshot and refresh both together.
 - Screen cells are replaced, not mutated. Sharing frozen BLANK across slots
   reduces a 120x40 clear from 4,842 allocations to 42 without changing diffs.
+- Footer hints use effective pane bindings and reserve help before fitting
+  whole hints. Derive pane, artwork, status, and input geometry from the same
+  command-row count; test styled cells to distinguish bold keys from dim text.
 - GME metadata iteration owns one metadata-only handle per file and yields
   metadata, subtune index, and total count. Keep handles worker-local and use
   the existing ensure-based cleanup; sibling M3U metadata must remain intact.

@@ -323,7 +323,7 @@ module RubyPlayer
         when :enqueue_end then enqueue(:end)
         when :select_queue then select_queue
         when :undo
-          @status_line.set_message('Queue restored (u:undo ctrl_r:redo)') if @engine.undo
+          @status_line.set_message('Queue restored (U:undo ^R:redo)') if @engine.undo
           select_queue
         when :redo
           @engine.redo
@@ -1013,25 +1013,25 @@ module RubyPlayer
         @screen.clear_back
         rows = @screen.rows
         cols = @screen.cols
-        content_h = rows - 4 # playback + status + 2-row hotkey hint
+        content_h = rows - HotkeyLine::ROWS - 2 # playback + status + command rows
         render_panes(cols, content_h)
-        @playback_line.render(@screen, row: rows - 4, w: cols,
+        @playback_line.render(@screen, row: content_h, w: cols,
                                        state: @engine.state, levels: @engine.levels, theme: @theme)
         if @filter_buffer
-          @screen.put(rows - 3, 0, "Filter: #{@filter_buffer}_"[0, cols], fg: @theme[:accent])
+          @screen.put(content_h + 1, 0, "Filter: #{@filter_buffer}_"[0, cols], fg: @theme[:accent])
         elsif @input_buffer
-          @screen.put(rows - 3, 0, "Add path: #{@input_buffer}_"[0, cols], fg: @theme[:accent])
+          @screen.put(content_h + 1, 0, "Add path: #{@input_buffer}_"[0, cols], fg: @theme[:accent])
         else
           # Cached because render runs at 30fps and the counts only change
           # when the library does — without this, the idle status line costs
           # two SQLite COUNT(*) queries per frame. Invalidated wherever panes
           # rebuild after a library change (refresh_panes, delete/purge).
           @folder_stats ||= @library.folder_stats
-          @status_line.render(@screen, row: rows - 3, w: cols,
+          @status_line.render(@screen, row: content_h + 1, w: cols,
                                        default: "#{@folder_stats[:tracks]} tracks in #{@folder_stats[:folders]} folders",
                                        theme: @theme)
         end
-        @hotkey_line.render(@screen, row: rows - 2, w: cols, h: 2, pane: @active_pane, theme: @theme)
+        @hotkey_line.render(@screen, row: content_h + 2, w: cols, pane: @active_pane, theme: @theme)
         render_now_playing_modal if @show_now_playing
         render_playlist_modal if @playlist_modal
         render_name_prompt_modal if @name_prompt
@@ -1356,7 +1356,7 @@ module RubyPlayer
         bindings = @keymap.bindings_for(@active_pane)
         lines = bindings.map do |key, action|
           label = HotkeyLine::LABELS[action] || action.to_s.tr('_', ' ')
-          "#{key.upcase.ljust(6)} #{label}"
+          "#{HotkeyLine.key_label(key).ljust(6)} #{label}"
         end
         title = "Hotkeys (#{@active_pane})"
         hint = '[?/esc/enter] Close'

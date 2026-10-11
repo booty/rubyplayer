@@ -279,7 +279,7 @@ class AppTest < Minitest::Test
     out = @app.instance_variable_get(:@io_out).string
 
     assert_includes out, 'Hotkeys (library)'
-    assert_includes out, 'SPACE'
+    assert_includes out, 'Space'
   end
 
   def test_help_modal_lays_out_bindings_in_two_columns

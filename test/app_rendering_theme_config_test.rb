@@ -277,6 +277,30 @@ class AppRenderingThemeConfigTest < Minitest::Test
     assert_includes back_buffer_text, 'UP     nav up'
   end
 
+  def test_footer_reserves_three_command_rows_below_playback_and_status
+    use_screen(cols: 140)
+    @app.render
+    cells = @app.instance_variable_get(:@screen).instance_variable_get(:@back)
+    rows = cells.map { |row| row.map(&:ch).join.rstrip }
+
+    assert_includes rows[-5], 'stopped'
+    assert_match(/tracks in .* folders/, rows[-4])
+    assert_match(/^PLAY /, rows[-3])
+    assert_match(/^QUEUE /, rows[-2])
+    assert_match(/^LIBRARY /, rows[-1])
+    assert rows[-1].end_with?('?:help')
+    assert_match(/[└┘]/, rows[-6])
+  end
+
+  def test_help_uses_caret_notation_for_control_keys
+    use_screen(cols: 160, rows: 32)
+    @app.handle_key('?')
+    @app.render
+
+    assert_includes back_buffer_text, '^R     redo'
+    refute_includes back_buffer_text, 'CTRL_R'
+  end
+
   def test_queued_pane_toggle_persists_and_reflows
     select_library_kind(:folder)
     use_screen(cols: 108)
@@ -469,7 +493,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
     region = art_region
 
     refute_nil region
-    content_h = 24 - 4
+    content_h = 24 - 5
 
     assert_equal 1, region[:x] # inside the library box border
     assert_equal content_h - 1 - region[:h], region[:y] # docked at pane bottom

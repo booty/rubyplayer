@@ -99,34 +99,109 @@ module RubyPlayer
         rename_playlist: 'rename', move_entry_up: nil, move_entry_down: nil
       }.freeze
 
-      def initialize(keymap:)
-        @keymap = keymap
+      ROWS = 3
+      COMPACT_WIDTH = 100
+      PLAY_GROUPS = [%i[toggle_play previous_track next_track seek_back seek_forward],
+                     %i[toggle_skip_disliked show_now_playing]].freeze
+      QUEUE_GROUPS = [%i[play_now enqueue_front enqueue_end select_queue],
+                      %i[remove_from_queue undo redo add_to_playlist]].freeze
+      VIEW_GROUPS = [%i[cycle_pane filter_tracks toggle_group],
+                     %i[sort_title sort_number sort_artist sort_year show_track_info]].freeze
+      COMPACT_VIEW_GROUPS = [%i[cycle_pane filter_tracks toggle_group show_track_info]].freeze
+      LIBRARY_GROUPS = [%i[cycle_pane filter_tracks], %i[add_path remove_library_item],
+                        %i[duplicate_playlist rename_playlist]].freeze
+      FOOTER_LABELS = { toggle_play: 'pause', seek_back: 'back', seek_forward: 'forward',
+                        toggle_skip_disliked: 'skip disliked' }.freeze
+      COMPACT_LABELS = { previous_track: 'prev/start', seek_forward: 'fwd',
+                         enqueue_front: 'next', enqueue_end: 'last', toggle_skip_disliked: 'skip1',
+                         show_now_playing: 'now', duplicate_playlist: 'duplicate' }.freeze
+      STYLES = { category: { italic: true }, key: { bold: true }, muted: { dim: true } }.freeze
+      private_constant :COMPACT_WIDTH, :PLAY_GROUPS, :QUEUE_GROUPS, :VIEW_GROUPS,
+                       :COMPACT_VIEW_GROUPS, :LIBRARY_GROUPS, :FOOTER_LABELS, :COMPACT_LABELS, :STYLES
+
+      def self.key_label(key)
+        key.to_s.upcase.sub(/\ACTRL[_+]/, '^').sub(/\ASPACE\z/, 'Space')
+           .sub(/\AENTER\z/, 'Enter').sub(/\ATAB\z/, 'Tab')
       end
 
-      def render(screen, row:, w:, pane:, theme:, h: 1)
-        pairs = @keymap.bindings_for(pane).filter_map do |key, action|
-          next if action.to_s.start_with?('rate_')
-
-          label = LABELS.fetch(action, action.to_s)
-          label ? "#{key.upcase}:#{label}" : nil
+      def initialize(keymap:)
+        @bindings = %i[library tracks queued].to_h do |pane|
+          [pane, keymap.bindings_for(pane).group_by(&:last)]
         end
-        # Greedy word-wrap of whole KEY:label pairs across h rows -- a pair
-        # split mid-hint is unreadable. Overflow past the last row is dropped
-        # (same behavior as the old single-line truncation).
-        lines = [[]]
-        pairs.each do |pair|
-          candidate = (lines.last + [pair]).join('  ')
-          if candidate.size <= w || lines.last.empty?
-            lines.last << pair
-          elsif lines.size < h
-            lines << [pair]
-          else
-            break
+      end
+
+      def render(screen, row:, w:, pane:, theme:, h: ROWS)
+        bindings = @bindings.fetch(pane.to_sym)
+        context = pane.to_sym == :library ? 'LIBRARY' : 'VIEW'
+        groups = context_groups(pane, w)
+        help_key = bindings[:show_help]&.last&.first
+        rows = [['PLAY', PLAY_GROUPS], ['QUEUE', QUEUE_GROUPS], [context, groups]]
+        rows.first(h).each_with_index do |(title, actions), index|
+          help = index == ROWS - 1 ? help_key : nil
+          row_fragments(title, actions, bindings, w, help: help).each do |col, text, style|
+            color = style == :key ? theme[:text] : theme[:text_muted]
+            screen.put(row + index, col, text, fg: color, **STYLES.fetch(style))
           end
         end
-        lines.each_with_index do |line, i|
-          screen.put(row + i, 0, line.join('  ')[0, w], fg: theme[:text_muted])
+      end
+
+      private
+
+      def context_groups(pane, width)
+        return LIBRARY_GROUPS if pane.to_sym == :library
+
+        width < COMPACT_WIDTH ? COMPACT_VIEW_GROUPS : VIEW_GROUPS
+      end
+
+      def row_fragments(title, groups, bindings, width, help:)
+        help_label = "#{self.class.key_label(help)}:" if help
+        help_text = LABELS.fetch(:show_help)
+        help_width = help_label ? help_label.size + help_text.size : 0
+        help_width = 0 if help_width > width
+        limit = help_width.positive? ? width - help_width - 2 : width
+        fragments = [[0, title[0, [limit, 0].max], :category]]
+        x = title.size + 3
+        groups.each do |group|
+          hints = group.flat_map { |action| bindings.fetch(action, []) }
+          x = append_group(fragments, hints, x: x, limit: limit, compact: width < COMPACT_WIDTH)
         end
+        if help_width.positive?
+          fragments << [width - help_width, help_label, :key]
+          fragments << [width - help_text.size, help_text, :muted]
+        end
+        fragments
+      end
+
+      # Reserve help before fitting hints. Omit whole hints rather than clipping
+      # key labels or letting commands spill into another category's row.
+      def append_group(fragments, hints, x:, limit:, compact:)
+        started = false
+        hints.each do |key, action|
+          label = hint_label(action, compact)
+          key_label = "#{self.class.key_label(key)}:"
+          prefix = if started
+                     '  '
+                   elsif fragments.any? { |fragment| fragment.last == :key }
+                     ' │ '
+                   else
+                     ''
+                   end
+          next if x + prefix.size + key_label.size + label.size > limit
+
+          fragments << [x, prefix, :muted] unless prefix.empty?
+          x += prefix.size
+          fragments << [x, key_label, :key]
+          fragments << [x + key_label.size, label, :muted]
+          x += key_label.size + label.size
+          started = true
+        end
+        x
+      end
+
+      def hint_label(action, compact)
+        return COMPACT_LABELS[action] if compact && COMPACT_LABELS.key?(action)
+
+        FOOTER_LABELS[action] || LABELS.fetch(action)
       end
     end
   end

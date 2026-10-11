@@ -110,40 +110,88 @@ class BottomLinesTest < Minitest::Test
     refute_includes out, 'enqueued'
   end
 
-  def test_hotkey_line_lists_pane_bindings
-    line = RubyPlayer::UI::HotkeyLine.new(keymap: RubyPlayer::Keymap.new)
-    line.render(screen, row: 2, w: 60, pane: :tracks, theme: theme)
-    out = screen.flush
-
-    assert_includes out, 'G:group'
+  def hotkey_rows(pane: :tracks, width: 160, keymap: RubyPlayer::Keymap.new)
+    output = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 4, cols: width)
+    RubyPlayer::UI::HotkeyLine.new(keymap: keymap).render(output, row: 1, w: width, pane: pane, theme: theme)
+    output.instance_variable_get(:@back).drop(1)
   end
 
-  def test_hotkey_line_wraps_whole_pairs_across_h_rows
-    line = RubyPlayer::UI::HotkeyLine.new(keymap: RubyPlayer::Keymap.new)
-    wide = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 4, cols: 60)
-    line.render(wide, row: 1, w: 60, h: 2, pane: :tracks, theme: theme)
-    back = wide.instance_variable_get(:@back)
-    row1 = back[1].map(&:ch).join.rstrip
-    row2 = back[2].map(&:ch).join.rstrip
-    # two rows hold more than one 60-col row could
-    refute_empty row2
-    assert_operator (row1 + row2).size, :>, 60
-    # pairs wrap whole: no row ends or starts mid-pair
-    # pairs are joined by exactly two spaces; labels themselves may contain
-    # single spaces ("play now"), so only the double-space is a separator
-    all_pairs = "#{row1}  #{row2}".split('  ')
+  def test_hotkeys_have_stable_categories_and_logical_separators
+    play, queue, view = hotkey_rows.map { |row| row.map(&:ch).join.rstrip }
 
-    assert_includes all_pairs, 'G:group'
-    assert(all_pairs.all? { |p| p.include?(':') }, "broken pair in #{all_pairs.inspect}")
+    assert_match(/^PLAY /, play)
+    assert_includes play, '<:restart/prev'
+    assert_includes play, '>:next'
+    assert_includes play, ' │ '
+    assert_match(/^QUEUE /, queue)
+    assert_includes queue, 'Q:queue next'
+    assert_includes queue, '^R:redo'
+    assert_match(/^VIEW /, view)
+    assert_includes view, 'G:group'
+    assert_includes view, 'E:year'
+    assert view.end_with?('?:help')
   end
 
-  def test_hotkey_line_defaults_to_one_row
-    line = RubyPlayer::UI::HotkeyLine.new(keymap: RubyPlayer::Keymap.new)
-    wide = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 4, cols: 60)
-    line.render(wide, row: 1, w: 60, pane: :tracks, theme: theme)
-    back = wide.instance_variable_get(:@back)
+  def test_hotkey_keys_and_colons_are_bold_while_descriptions_are_dim
+    rows = hotkey_rows
+    queue = rows[1]
+    index = queue.map(&:ch).join.index('X:remove')
 
-    assert_empty back[2].map(&:ch).join.rstrip
+    refute_nil index
+    assert queue[index, 2].all?(&:bold)
+    refute queue[index, 2].any?(&:dim)
+    assert queue[index + 2, 6].all?(&:dim)
+    refute queue[index + 2, 6].any?(&:bold)
+    assert rows[0][0, 4].all?(&:italic)
+  end
+
+  def test_hotkey_context_changes_without_moving_playback_or_queue_rows
+    tracks = hotkey_rows.map { |row| row.map(&:ch).join }
+    library = hotkey_rows(pane: :library).map { |row| row.map(&:ch).join }
+    queued = hotkey_rows(pane: :queued).map { |row| row.map(&:ch).join }
+
+    assert_equal tracks[0], library[0]
+    assert_equal tracks[0], queued[0]
+    assert_match(/^QUEUE /, library[1])
+    refute_includes library[1], 'X:remove'
+    assert_match(/^LIBRARY /, library[2])
+    assert_includes library[2], 'X:remove'
+    assert_includes library[2], 'R:rename'
+    refute_includes queued[2], 'G:group'
+  end
+
+  def test_narrow_footer_shortens_labels_and_keeps_help_at_right_edge
+    play, queue, view = hotkey_rows(width: 60).map { |row| row.map(&:ch).join }
+
+    assert_includes play, '<:prev/start'
+    assert_includes play, ']:fwd'
+    assert_includes queue, 'Q:next'
+    assert_includes queue, 'N:last'
+    assert_includes view, 'I:info'
+    assert_equal '?:help', view[-6, 6]
+    refute_includes view, 'Y:title'
+  end
+
+  def test_help_reserves_space_even_in_a_very_narrow_footer
+    view = hotkey_rows(width: 20).last.map(&:ch).join
+
+    assert_match(/^VIEW /, view)
+    assert_equal '?:help', view[-6, 6]
+    refute_includes view, 'Tab:'
+  end
+
+  def test_footer_uses_effective_remapped_keys_including_help
+    map = RubyPlayer::Keymap.new('global' => { 'ctrl_p' => 'toggle_play', 'space' => 'show_help',
+                                               '?' => 'quit', 'ctrl_h' => 'show_help' },
+                                 'tracks' => { 'x' => 'show_track_info' })
+    play, queue, view = hotkey_rows(keymap: map).map { |row| row.map(&:ch).join.rstrip }
+
+    assert_includes play, '^P:pause'
+    refute_includes play, 'Space:pause'
+    refute_includes queue, 'X:remove'
+    assert_includes view, 'X:info'
+    assert view.end_with?('^H:help')
+    refute_includes view, '?:help'
   end
 
   def test_queued_pane_binding_has_human_label
