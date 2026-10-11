@@ -35,3 +35,9 @@ the authority for workflow and invariants.
 - PlaylistModal snapshots lists on open and caches rows/labels until filtering
   changes. It returns intents to App; database mutations and pane refreshes
   stay in App. Render calls must not query the library.
+- NowPlayingModal renders a metadata snapshot. Source audio facts and tagged
+  album totals live in metadata extras; totals never come from library counts.
+  Existing FFmpeg tracks refresh off-thread on popup open. Match replies to
+  both the modal instance and current track to reject stale results. Reserve
+  artwork space independently of tag count, and test short layouts against
+  the real modal frame so metadata cannot overwrite its hint or border.

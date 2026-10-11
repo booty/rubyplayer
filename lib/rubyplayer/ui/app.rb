@@ -516,11 +516,34 @@ module RubyPlayer
       end
 
       def request_show_now_playing
-        unless @engine.state[:track]
+        track = @engine.state[:track]
+        unless track
           @status_line.set_message('Nothing playing')
           return
         end
+        prepare_now_playing(track)
         @show_now_playing = true
+      end
+
+      def prepare_now_playing(track)
+        modal = NowPlayingModal.new(track, extras: @library.track_metadata_for(track.id))
+        @now_playing_modal = modal
+        return unless track.backend == 'ffmpeg'
+
+        # Existing library rows predate technical metadata. Probe once when
+        # opening, off the UI thread, rather than requiring a destructive rescan.
+        Thread.new do
+          path = if track.archive_entry.to_s.empty?
+                   track.physical_path
+                 else
+                   @archive_cache.materialize(track.physical_path, track.archive_entry)
+                 end
+          metadata = @registry.backend_for(path).metadata(path, track.subtune_index)
+          @bus.publish(:now_playing_metadata_ready, modal: modal, metadata: metadata)
+        rescue StandardError
+          # File may have disappeared since playback began; retain cached facts.
+          nil
+        end
       end
 
       def cycle_art_mode
@@ -886,6 +909,13 @@ module RubyPlayer
           when :track_started
             refresh = true
             fetch_art(payload[:track])
+            prepare_now_playing(payload[:track]) if @show_now_playing && @engine.state[:track]&.id == payload[:track].id
+          when :now_playing_metadata_ready
+            if @show_now_playing && payload[:modal].equal?(@now_playing_modal) &&
+               @now_playing_modal.matches?(@engine.state[:track])
+              @now_playing_modal.update(payload[:metadata])
+              invalidate_screen!
+            end
           when :queue_changed, :track_ended then refresh = true
           when :art_ready
             # Compare against the *current* track: the decoder may have
@@ -1197,19 +1227,11 @@ module RubyPlayer
         # Track ended while the modal was open: nothing to show anymore.
         return @show_now_playing = false unless track
 
-        max_img_h = [(@screen.cols - 8) / 2, @screen.rows - 12].min
-        img_h = max_img_h.clamp(@config['ui', 'art_min_rows'], Float::INFINITY)
-        w = [(img_h * 2) + 4, @screen.cols - 2].min
-        lines = [track.title, track.album, track.artist].reject { |t| t.to_s.empty? }
-        render_modal(title: 'Now Playing', w: w, h: img_h + lines.size + 5,
-                     hint: '[o/esc/enter] Close') do |x, y|
-          @art_region = { x: x + 2, y: y + 1, w: w - 4, h: img_h }
-          lines.each_with_index do |text, i|
-            @screen.put(y + 1 + img_h + i, x + 2, text[0, w - 4],
-                        fg: i.zero? ? @theme[:primary] : @theme[:text_muted], bold: i.zero?)
-          end
-          render_art_placeholder
-        end
+        return unless @now_playing_modal&.matches?(track)
+
+        @art_region = @now_playing_modal.render(@screen, theme: @theme, frame: method(:render_modal),
+                                                         min_art_rows: @config['ui', 'art_min_rows'])
+        render_art_placeholder
       end
 
       # Fills the art region when there's no image to show. While audio is

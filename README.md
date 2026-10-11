@@ -53,6 +53,12 @@ pane, and corner; the choice persists in configuration. Press `O` to open the
 now-playing view. Other terminals show an artwork placeholder while track
 information remains available.
 
+Now Playing separates artist and album information from technical file details.
+Track numbers show `N of M` when the file tags include a total. The technical
+section shows file type, codec, bitrate, sample rate, channels, and bit depth
+where available. For ordinary audio files, opening the popup loads fresh
+details without a rescan. Unknown fields are omitted.
+
 Artwork comes from embedded pictures in FFmpeg-backed files, falling back to
 images in the track's folder (such as `cover.jpg` or `folder.png`). Archived
 tracks use the folder containing the on-disk archive. Loading and image

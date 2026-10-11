@@ -17,7 +17,7 @@ module RubyPlayer
 
       # Tags folded into named metadata fields; everything else lands in
       # :extra rather than being silently dropped.
-      CONSUMED_TAGS = %w[title album artist album_artist composer track].freeze
+      CONSUMED_TAGS = %w[title album artist album_artist albumartist composer track tracknumber].freeze
 
       def name = 'ffmpeg'
 
@@ -29,18 +29,13 @@ module RubyPlayer
         format = data.fetch('format', {})
         tags = merged_tags(format, stream)
 
-        {
-          title: MetadataHelper.presence(tags['title']) || File.basename(path, '.*'),
-          album: MetadataHelper.presence(tags['album']),
-          artist: MetadataHelper.presence(tags['artist']) || MetadataHelper.presence(tags['album_artist']),
-          album_artist: MetadataHelper.presence(tags['album_artist']),
-          composer: MetadataHelper.presence(tags['composer']),
-          track_number: parse_track_number(tags['track']),
-          year: parse_year(tags),
+        fields = tag_metadata(tags)
+        fields[:title] ||= File.basename(path, '.*')
+        fields.merge(
           duration_ms: duration_ms(format, stream),
           format: MetadataHelper.format_extension(path),
-          extra: extra_tags(tags)
-        }
+          extra: extra_tags(tags).merge(audio_details(stream, format, tags))
+        )
       end
 
       def open(path, _subtune_index, sample_rate:)
@@ -221,9 +216,47 @@ module RubyPlayer
       end
 
       def parse_track_number(value)
-        return nil if value.nil? || value.empty?
+        positive_integer(value.to_s.split('/', 2).first)&.to_i
+      end
 
-        value.to_s.split('/', 2).first.to_i
+      def tag_metadata(tags)
+        album_artist = MetadataHelper.presence(tags['album_artist'] || tags['albumartist'])
+        {
+          title: MetadataHelper.presence(tags['title']), album: MetadataHelper.presence(tags['album']),
+          artist: MetadataHelper.presence(tags['artist']) || album_artist, album_artist: album_artist,
+          composer: MetadataHelper.presence(tags['composer']),
+          track_number: parse_track_number(tags['track'] || tags['tracknumber']), year: parse_year(tags)
+        }
+      end
+
+      def positive_integer(value)
+        text = value.to_s.strip
+        text if text.match?(/\A\d+\z/) && text.to_i.positive?
+      end
+
+      def audio_details(stream, format, tags)
+        details = {
+          'track_total' => track_total(tags),
+          'codec' => stream['codec_name'],
+          'sample_rate' => positive_integer(stream['sample_rate']),
+          'channels' => positive_integer(stream['channels']),
+          'bits_per_sample' => positive_integer(stream['bits_per_raw_sample']) || positive_integer(stream['bits_per_sample'])
+        }
+        normalize_tags(details.compact.merge(bitrate_details(stream, format)))
+      end
+
+      def track_total(tags)
+        track = tags['track'] || tags['tracknumber']
+        totals = [track.to_s.split('/', 2)[1], tags['tracktotal'], tags['totaltracks'], tags['track_total']]
+        totals.filter_map { |value| positive_integer(value) }.first
+      end
+
+      def bitrate_details(stream, format)
+        stream_rate = positive_integer(stream['bit_rate'])
+        rate = stream_rate || positive_integer(format['bit_rate'])
+        return {} unless rate
+
+        { 'bit_rate' => rate, 'bit_rate_mode' => ('average' unless stream_rate) }.compact
       end
     end
   end
