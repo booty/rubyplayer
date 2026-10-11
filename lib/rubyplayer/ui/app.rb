@@ -1015,8 +1015,9 @@ module RubyPlayer
         cols = @screen.cols
         content_h = rows - HotkeyLine::ROWS - 2 # playback + status + command rows
         render_panes(cols, content_h)
+        playback_state = @engine.state
         @playback_line.render(@screen, row: content_h, w: cols,
-                                       state: @engine.state, levels: @engine.levels, theme: @theme)
+                                       state: playback_state, levels: @engine.levels, theme: @theme)
         if @filter_buffer
           @screen.put(content_h + 1, 0, "Filter: #{@filter_buffer}_"[0, cols], fg: @theme[:accent])
         elsif @input_buffer
@@ -1031,7 +1032,9 @@ module RubyPlayer
                                        default: "#{@folder_stats[:tracks]} tracks in #{@folder_stats[:folders]} folders",
                                        theme: @theme)
         end
-        @hotkey_line.render(@screen, row: content_h + 2, w: cols, pane: @active_pane, theme: @theme)
+        @hotkey_line.render(@screen, row: content_h + 2, w: cols, pane: @active_pane, theme: @theme,
+                                     toggle_states: { toggle_skip_disliked: playback_state[:skip_disliked],
+                                                      toggle_group: @tracks_pane.grouped? })
         render_now_playing_modal if @show_now_playing
         render_playlist_modal if @playlist_modal
         render_name_prompt_modal if @name_prompt

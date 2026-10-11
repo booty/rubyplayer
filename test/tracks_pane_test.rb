@@ -245,6 +245,23 @@ class TracksPaneTest < Minitest::Test
     assert_equal :header, rows.first[:type]
   end
 
+  def test_grouped_state_reports_effective_view_without_losing_the_preference
+    @pane.show(@folder_row)
+
+    refute_predicate @pane, :grouped?
+    @pane.handle_action(:toggle_group)
+
+    assert_predicate @pane, :grouped?
+    %i[queue focus playlists].each do |kind|
+      @pane.show(RubyPlayer::UI::LibraryPane::Row.new(kind: kind, depth: 0))
+
+      refute_predicate @pane, :grouped?
+    end
+    @pane.show(@folder_row)
+
+    assert_predicate @pane, :grouped?
+  end
+
   def test_grouped_template_hides_artist_matching_album_artist
     @pane.show(@folder_row)
     @pane.handle_action(:toggle_group)

@@ -107,6 +107,11 @@ module RubyPlayer
 
       def clear_filter = self.filter = ''
 
+      # Ordered views keep the grouping preference but do not apply it.
+      def grouped?
+        @group_by_album && !%i[queue focus playlists].include?(@mode) && !playlist_tracks_view?
+      end
+
       def load_tracks
         # Focus reuses this pane's navigation and rendering shell, but its rows
         # carry FocusSound values rather than Track records. Keeping a distinct

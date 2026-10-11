@@ -116,8 +116,10 @@ module RubyPlayer
                          enqueue_front: 'next', enqueue_end: 'last', toggle_skip_disliked: 'skip1',
                          show_now_playing: 'now', duplicate_playlist: 'duplicate' }.freeze
       STYLES = { category: { italic: true }, key: { bold: true }, muted: { dim: true } }.freeze
+      TOGGLE_ACTIONS = %i[toggle_skip_disliked toggle_group].freeze
       private_constant :COMPACT_WIDTH, :PLAY_GROUPS, :QUEUE_GROUPS, :VIEW_GROUPS,
-                       :COMPACT_VIEW_GROUPS, :LIBRARY_GROUPS, :FOOTER_LABELS, :COMPACT_LABELS, :STYLES
+                       :COMPACT_VIEW_GROUPS, :LIBRARY_GROUPS, :FOOTER_LABELS, :COMPACT_LABELS,
+                       :STYLES, :TOGGLE_ACTIONS
 
       def self.key_label(key)
         key.to_s.upcase.sub(/\ACTRL[_+]/, '^').sub(/\ASPACE\z/, 'Space')
@@ -130,15 +132,16 @@ module RubyPlayer
         end
       end
 
-      def render(screen, row:, w:, pane:, theme:, h: ROWS)
+      def render(screen, row:, w:, pane:, theme:, h: ROWS, toggle_states: {})
         bindings = @bindings.fetch(pane.to_sym)
         context = pane.to_sym == :library ? 'LIBRARY' : 'VIEW'
         groups = context_groups(pane, w)
         help_key = bindings[:show_help]&.last&.first
+        labels = hint_labels(toggle_states, compact: w < COMPACT_WIDTH)
         rows = [['PLAY', PLAY_GROUPS], ['QUEUE', QUEUE_GROUPS], [context, groups]]
         rows.first(h).each_with_index do |(title, actions), index|
           help = index == ROWS - 1 ? help_key : nil
-          row_fragments(title, actions, bindings, w, help: help).each do |col, text, style|
+          row_fragments(title, actions, bindings, w, help: help, labels: labels).each do |col, text, style|
             color = style == :key ? theme[:text] : theme[:text_muted]
             screen.put(row + index, col, text, fg: color, **STYLES.fetch(style))
           end
@@ -153,7 +156,7 @@ module RubyPlayer
         width < COMPACT_WIDTH ? COMPACT_VIEW_GROUPS : VIEW_GROUPS
       end
 
-      def row_fragments(title, groups, bindings, width, help:)
+      def row_fragments(title, groups, bindings, width, help:, labels:)
         help_label = "#{self.class.key_label(help)}:" if help
         help_text = LABELS.fetch(:show_help)
         help_width = help_label ? help_label.size + help_text.size : 0
@@ -163,7 +166,7 @@ module RubyPlayer
         x = title.size + 3
         groups.each do |group|
           hints = group.flat_map { |action| bindings.fetch(action, []) }
-          x = append_group(fragments, hints, x: x, limit: limit, compact: width < COMPACT_WIDTH)
+          x = append_group(fragments, hints, x: x, limit: limit, labels: labels)
         end
         if help_width.positive?
           fragments << [width - help_width, help_label, :key]
@@ -174,10 +177,10 @@ module RubyPlayer
 
       # Reserve help before fitting hints. Omit whole hints rather than clipping
       # key labels or letting commands spill into another category's row.
-      def append_group(fragments, hints, x:, limit:, compact:)
+      def append_group(fragments, hints, x:, limit:, labels:)
         started = false
         hints.each do |key, action|
-          label = hint_label(action, compact)
+          label = labels.fetch(action)
           key_label = "#{self.class.key_label(key)}:"
           prefix = if started
                      '  '
@@ -198,10 +201,13 @@ module RubyPlayer
         x
       end
 
-      def hint_label(action, compact)
-        return COMPACT_LABELS[action] if compact && COMPACT_LABELS.key?(action)
-
-        FOOTER_LABELS[action] || LABELS.fetch(action)
+      def hint_labels(toggle_states, compact:)
+        labels = LABELS.merge(FOOTER_LABELS)
+        labels.merge!(COMPACT_LABELS) if compact
+        TOGGLE_ACTIONS.each do |action|
+          labels[action] = "#{labels.fetch(action)} (#{toggle_states[action] ? 'on' : 'off'})"
+        end
+        labels
       end
     end
   end

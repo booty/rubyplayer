@@ -110,9 +110,10 @@ class BottomLinesTest < Minitest::Test
     refute_includes out, 'enqueued'
   end
 
-  def hotkey_rows(pane: :tracks, width: 160, keymap: RubyPlayer::Keymap.new)
+  def hotkey_rows(pane: :tracks, width: 160, keymap: RubyPlayer::Keymap.new, toggle_states: {})
     output = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 4, cols: width)
-    RubyPlayer::UI::HotkeyLine.new(keymap: keymap).render(output, row: 1, w: width, pane: pane, theme: theme)
+    RubyPlayer::UI::HotkeyLine.new(keymap: keymap).render(output, row: 1, w: width, pane: pane,
+                                                                  theme: theme, toggle_states: toggle_states)
     output.instance_variable_get(:@back).drop(1)
   end
 
@@ -198,5 +199,29 @@ class BottomLinesTest < Minitest::Test
     labels = RubyPlayer::UI::HotkeyLine::LABELS
 
     assert_equal 'queue bar', labels[:toggle_queued_pane]
+  end
+
+  def test_feature_toggle_labels_show_current_state_without_decorating_transport
+    [false, true].each do |enabled|
+      rows = hotkey_rows(toggle_states: { toggle_skip_disliked: enabled, toggle_group: enabled })
+      play, _, view = rows.map { |row| row.map(&:ch).join }
+      suffix = enabled ? '(on)' : '(off)'
+
+      assert_includes play, "S:skip disliked #{suffix}"
+      assert_includes view, "G:group #{suffix}"
+      assert_includes play, 'Space:pause  '
+      index = play.index("skip disliked #{suffix}")
+
+      assert rows[0][index, "skip disliked #{suffix}".size].all?(&:dim)
+    end
+  end
+
+  def test_compact_toggle_labels_keep_the_state_and_help_anchor
+    play, _, view = hotkey_rows(width: 99, toggle_states: { toggle_skip_disliked: true })
+                    .map { |row| row.map(&:ch).join }
+
+    assert_includes play, 'S:skip1 (on)'
+    assert_includes view, 'G:group (off)'
+    assert_equal '?:help', view[-6, 6]
   end
 end

@@ -292,6 +292,33 @@ class AppRenderingThemeConfigTest < Minitest::Test
     assert_match(/[└┘]/, rows[-6])
   end
 
+  def test_footer_toggle_indicators_follow_live_state_and_effective_grouping
+    select_tracks_for(:folder)
+    use_screen(cols: 160)
+    @app.render
+
+    assert_includes back_buffer_text, 'S:skip disliked (off)'
+    assert_includes back_buffer_text, 'G:group (off)'
+    @app.handle_key('s')
+    @app.handle_key('g')
+    @app.render
+
+    assert_includes back_buffer_text, 'S:skip disliked (on)'
+    assert_includes back_buffer_text, 'G:group (on)'
+    @app.handle_key('p')
+    @app.handle_key('tab')
+    @app.render
+
+    assert_includes back_buffer_text, 'G:group (off)'
+    select_tracks_for(:folder)
+    @app.handle_key('s')
+    @app.handle_key('g')
+    @app.render
+
+    assert_includes back_buffer_text, 'S:skip disliked (off)'
+    assert_includes back_buffer_text, 'G:group (off)'
+  end
+
   def test_help_uses_caret_notation_for_control_keys
     use_screen(cols: 160, rows: 32)
     @app.handle_key('?')

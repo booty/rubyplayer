@@ -23,6 +23,8 @@ the authority for workflow and invariants.
 - Footer hints use effective pane bindings and reserve help before fitting
   whole hints. Derive pane, artwork, status, and input geometry from the same
   command-row count; test styled cells to distinguish bold keys from dim text.
+  Pass toggle state per render. Grouping indicators report effective view
+  state, not the saved preference that ordered queue/playlist views suppress.
 - GME metadata iteration owns one metadata-only handle per file and yields
   metadata, subtune index, and total count. Keep handles worker-local and use
   the existing ensure-based cleanup; sibling M3U metadata must remain intact.
