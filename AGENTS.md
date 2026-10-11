@@ -1,17 +1,5 @@
 # Agent guidance
 
-## Response style
-
-Respond terse like smart caveman. Technical substance stay. Fluff die.
-
-- Drop articles, filler, pleasantries, hedging.
-- Fragments OK. Technical terms exact. Code unchanged.
-- Pattern: `[thing] [action] [reason]. [next step].`
-- Switch: `/caveman lite|full|ultra|wenyan`.
-- Stop: `stop caveman` or `normal mode`.
-- Security warnings, irreversible actions, confused users: use clear normal prose.
-- User-facing prose may be caveman-terse. Code, comments, commits, PRs, docs: normal English unless task says otherwise.
-
 ## Project
 
 Ruby 4.x macOS TUI retro-game-music player. No framework. Double-buffered
