@@ -4,6 +4,11 @@ A terminal (TUI) music player for retro game-music and tracker formats — chipt
 
 <img width="1394" height="855" alt="image" src="https://github.com/user-attachments/assets/443610ad-c9ef-493d-ab7b-eb17f1d37645" />
 
+Many popular chiptune formats support a live look into what the various sound channels are doing. Here's "The Shinobi" from *Revenge of Shinobi* / *The Super Shinobi* (Yuzo Koshiro) showing us what all of the Genesis' sound channels are doing. We can even see part of Yuzo's secret sauce here -- the seldom-used PSG channels are helping out the FM channels.
+
+<img width="1415" height="908" alt="image" src="https://github.com/user-attachments/assets/a6339d61-343b-4cfc-b3a6-d7e9f1d17dc4" />
+
+
 ## Requirements
 
 - Ruby 4.x (managed via [mise](https://mise.jdx.dev/); see `.ruby-version`)
