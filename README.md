@@ -45,7 +45,7 @@ To run directly from the checkout:
 mise exec -- bundle exec ruby --yjit bin/rubyplayer [path ...]
 ```
 
-`mise exec -- bundle exec rake compile` builds the native audio shim (`lib/rubyplayer/native/librp_audio.dylib`) and the SPC player (`lib/rubyplayer/native/librp_spc.dylib`, C++, needs `clang++`) automatically as a prerequisite of `mise exec -- bundle exec rake test`; `bin/rubyplayer` expects it to already exist, so run `mise exec -- bundle exec rake compile` (or `mise exec -- bundle exec rake test`) at least once after a fresh checkout.
+`mise exec -- bundle exec rake compile` builds the native audio shim (`lib/rubyplayer/native/librp_audio.dylib`), the SPC player (`lib/rubyplayer/native/librp_spc.dylib`), and the GBS player (`lib/rubyplayer/native/librp_gbs.dylib`; both C++, needing `clang++`) automatically as a prerequisite of `mise exec -- bundle exec rake test`; `bin/rubyplayer` expects it to already exist, so run `mise exec -- bundle exec rake compile` (or `mise exec -- bundle exec rake test`) at least once after a fresh checkout.
 
 Startup checks every supported runtime dependency before taking over the terminal. Missing Homebrew packages are reported together with one `brew install ...` command. If only the bundled audio shim is missing, run `mise exec -- bundle exec rake compile`.
 
@@ -229,6 +229,7 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | `gme.rb` | `Backends::Gme`: FFI bindings to libgme, plus `Handle` (an open, playable track) and metadata extraction for chiptune formats. Converts libgme's 16-bit PCM output to the app's canonical float32 format. |
 | `openmpt.rb` | `Backends::Openmpt`: FFI bindings to libopenmpt, plus `Handle` and metadata extraction for tracker module formats. libopenmpt renders float natively, so no format conversion is needed. |
 | `snes_spc.rb`, `snes_spc_lib.rb` | `Backends::SnesSpc`: plays `.spc` through `librp_spc` (handles also expose DSP snapshots, RAM, and voice muting); scanning and metadata stay on libgme. Requiring `snes_spc_lib.rb` loads the dylib and doubles as the availability check. |
+| `gbs_native.rb`, `gbs_native_lib.rb` | `Backends::GbsNative`: plays `.gbs` through `librp_gbs` (handles also expose APU snapshots and voice muting, and load a sibling `.m3u` as libgme does); scanning and metadata stay on libgme. Requiring `gbs_native_lib.rb` doubles as the availability check. |
 | `ffmpeg.rb` | `Backends::Ffmpeg`: probes ordinary audio files with ffprobe and decodes through an FFmpeg subprocess to float32 stereo PCM; supports seeking by restarting decoding at the requested offset. |
 
 ### Terminal UI (`lib/rubyplayer/ui/`)
@@ -263,6 +264,13 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 |---|---|
 | `ext/snes_spc/` | Vendored SPC700 + S-DSP core, output filter, and resampler from libgme 0.6.5 (LGPL 2.1; see `ext/snes_spc/VENDOR.md` for files, build flags, and the one read-only accessor patch). |
 | `ext/rp_spc/rp_spc.{h,cpp}` | C API over that core: a faithful port of libgme's SPC playback control (resampling, gain, fade, silence handling) so output matches libgme exactly, plus S-DSP snapshots recorded once per emulator call (~50 ms). Compiled to `lib/rubyplayer/native/librp_spc.dylib` by `mise exec -- bundle exec rake compile`. `test/snes_spc_parity_test.rb` requires bit-exact output against libgme on every SPC fixture. |
+
+### Native GBS player (`ext/rp_gbs/`, `ext/gme_gbs/`)
+
+| File | Purpose |
+|---|---|
+| `ext/gme_gbs/` | Vendored libgme 0.6.5 GBS emulator and the playback framework, effects buffer, and C API it plays through (LGPL 2.1; see `ext/gme_gbs/VENDOR.md` for files, build flags, and the read-only accessor patch). |
+| `ext/rp_gbs/rp_gbs.{h,cpp}`, `rp_gbs_hooks.h` | C API that builds the emulator through libgme's own `gme_new_emu` path (so output is libgme's), plus APU snapshots taken at each music-driver call through libgme's `GME_APU_HOOK`/`GME_FRAME_HOOK` macros and mapped to output frames across leading-silence skipping. Compiled with hidden symbols to `lib/rubyplayer/native/librp_gbs.dylib`. `test/gbs_native_parity_test.rb` requires bit-exact output against libgme. |
 
 ### Other directories
 
@@ -393,7 +401,7 @@ restart.
 | `config.keymap.global` | `{}` | Global key/action overrides. |
 | `config.keymap.library` | `{}` | Library overrides; beat global bindings. |
 | `config.keymap.tracks` | `{}` | Tracks overrides; beat global bindings. |
-| `config.backends` | `{}` | Extension/backend overrides; dot optional. `.spc` defaults to the native SPC player; `".spc" => :gme` restores libgme playback. |
+| `config.backends` | `{}` | Extension/backend overrides; dot optional. `.spc` and `.gbs` default to the native SPC and GBS players; `".spc" => :gme` or `".gbs" => :gme` restores libgme playback. |
 
 Map settings use bracket assignment:
 

@@ -19,7 +19,7 @@ Work on git branch `main`
 ```sh
 mise exec -- bundle exec rake test                    # full suite
 mise exec -- bundle exec ruby -Itest test/foo_test.rb # one test file
-mise exec -- bundle exec rake compile                 # native audio shim + SPC player (C++)
+mise exec -- bundle exec rake compile                 # native audio shim + SPC and GBS players (C++)
 ```
 
 Ruby comes from mise. Plain `bundle exec` may select wrong Ruby.
@@ -89,6 +89,12 @@ Ruby comes from mise. Plain `bundle exec` may select wrong Ruby.
   change `Snes_Spc::play` call sizes (e.g. to densify DSP snapshots): the DSP
   runs ahead of the CPU at call boundaries, so splitting calls changes audio.
   Vendored files change only per `ext/snes_spc/VENDOR.md`.
+- `.gbs` plays through `ext/rp_gbs` (vendored libgme GBS core, built through
+  libgme's own `gme_new_emu`), checked bit-exact by
+  `test/gbs_native_parity_test.rb`. APU state is captured by libgme's
+  `GME_APU_HOOK`/`GME_FRAME_HOOK` macros, not by editing the emulator;
+  vendored files change only per `ext/gme_gbs/VENDOR.md`. Keep the dylib's
+  symbols hidden: Homebrew libgme, with the same classes, shares the process.
 
 ## Refactor seams
 

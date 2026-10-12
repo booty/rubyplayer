@@ -619,7 +619,7 @@ module RubyPlayer
           @vgm_telemetry_controller.visible = kind == :vgm
           live ? set_art(nil) : fetch_art(track)
         end
-        return unless %w[ffmpeg gme snes_spc].include?(track.backend)
+        return unless %w[ffmpeg gme snes_spc gbs_native].include?(track.backend)
 
         # Existing library rows predate technical metadata. Probe once when
         # opening, off the UI thread, rather than requiring a destructive rescan.
