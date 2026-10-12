@@ -5,8 +5,7 @@ require_relative 'audio_output'
 require_relative 'level_tap'
 require_relative 'vgm/reader'
 require_relative 'vgm/snapshot'
-require_relative 'spc/timeline'
-require_relative 'playback_engine/spc_state'
+require_relative 'playback_engine/chip_state'
 require_relative 'playback_engine/voice_muting'
 
 module RubyPlayer
@@ -15,7 +14,7 @@ module RubyPlayer
   # event_bus.publish. The audio device is started once and runs for the life
   # of the engine; pause/underrun emit silence.
   class PlaybackEngine
-    include SpcState
+    include ChipState
     include VoiceMuting
 
     THREAD_JOIN_TIMEOUT_SECONDS = 5
@@ -75,7 +74,8 @@ module RubyPlayer
       @vgm_generation = 0
       @vgm_revision = 0
       @vgm_source = nil
-      @spc_live = false
+      @chip_record = nil
+      @chip_generation = 0
       initialize_voice_muting
       @published_second = nil
       # Decoder-owned navigation history includes short plays that do not
@@ -359,7 +359,7 @@ module RubyPlayer
       else
         @pending = data
         @pending_levels = true
-        capture_spc_state
+        capture_chip_state
         publish_position
       end
       ACTIVE_COMMAND_POLL_TIMEOUT_SECONDS
@@ -397,15 +397,15 @@ module RubyPlayer
       refill_wait(refill_frames(writable) - writable)
     end
 
-    # EQ levels and S-DSP snapshots follow played audio. The level tap keeps
-    # what can still wait in the ring plus the chunk being written; the SPC
+    # EQ levels and chip snapshots follow played audio. The level tap keeps
+    # what can still wait in the ring plus the chunk being written; the chip
     # timeline prunes by played position instead, because silence lookahead
     # can tag snapshots seconds ahead.
     def build_played_audio_followers(config)
       ring_frames = config['audio', 'ring_buffer_ms'] * @audio.sample_rate / MILLISECONDS_PER_SECOND
       @level_tap = LevelTap.new(bands: config['eq', 'bands'], sample_rate: @audio.sample_rate,
                                 retain_frames: ring_frames + (2 * @chunk_frames))
-      @spc_timeline = Spc::Timeline.new
+      @chip_timeline = ChipTimeline.new
       @spc_ram = nil
       @pending_snapshots = nil
     end
@@ -482,7 +482,7 @@ module RubyPlayer
         @vgm_generation += 1
         @vgm_revision = 0
         @vgm_source = vgm ? build_vgm_source(track, path) : nil
-        start_spc_tracking
+        start_chip_tracking
         start_voice_muting
         @started_at = Time.now.utc
       end
@@ -613,14 +613,14 @@ module RubyPlayer
       @audio.paused = true
       @audio.flush
       @pending = nil
-      reset_spc_state
+      reset_chip_state
       if @handle.seek(ms)
         @mutex.synchronize do
           @seek_offset_ms = ms
           @frames_base = @audio.frames_played
           @vgm_revision += 1 if @vgm_source
         end
-        capture_spc_state_after_seek
+        capture_chip_state_after_seek
         @published_second = nil
       end
       @audio.paused = @paused
@@ -650,15 +650,15 @@ module RubyPlayer
       @mutex.synchronize do
         @vgm_source = nil
         @vgm_revision = 0
-        @spc_live = false
+        @chip_record = nil
         stop_voice_muting
       end
-      reset_spc_state
+      reset_chip_state
     end
 
     def reset_played_audio_followers
       @level_tap.reset
-      reset_spc_state
+      reset_chip_state
     end
 
     # Publish calls happen from inside code that may already hold @mutex

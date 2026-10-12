@@ -6,7 +6,7 @@ module RubyPlayer
 
     # One S-DSP state record from librp_spc (rp_spc_snapshot in
     # ext/rp_spc/rp_spc.h). `frame` is relative to the first frame of the read
-    # that produced it; Spc::Timeline turns that into an output-timeline frame.
+    # that produced it; ChipTimeline turns that into an output-timeline frame.
     Snapshot = Data.define(:frame, :regs, :env, :env_mode, :brr_addr, :attack_edges) do
       # Constants live in the class body below; a define block's lexical scope
       # is Spc, so they need a qualified lookup here.

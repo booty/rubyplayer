@@ -4,9 +4,11 @@ require 'test_helper'
 require 'rubyplayer/audio_output'
 require 'rubyplayer/playback_engine'
 require 'rubyplayer/spc/snapshot'
+require 'rubyplayer/gbs/snapshot'
 
-# The engine must show the S-DSP state of the audio being heard, not of the
-# chunk the decoder just produced (up to a ring buffer and a chunk ahead).
+# The engine must show the chip state (SPC S-DSP, GBS APU) of the audio being
+# heard, not of the chunk the decoder just produced (up to a ring buffer and
+# a chunk ahead).
 class PlaybackEngineSpcTest < Minitest::Test
   RATE = 48_000
   CAPACITY = 40_000
@@ -64,6 +66,7 @@ class PlaybackEngineSpcTest < Minitest::Test
       [[0, *regs, *Array.new(24, 0), 0].pack(RubyPlayer::Spc::Snapshot::FORMAT), 1]
     end
 
+    def snapshot_record = RubyPlayer::Spc::Snapshot
     def copy_ram = "ram #{@reads}".freeze
     # Fake of the backend seek contract, which reports success.
     def seek(_milliseconds) = true # rubocop:disable Naming/PredicateMethod
@@ -78,6 +81,37 @@ class PlaybackEngineSpcTest < Minitest::Test
     def close; end
 
     def mute(mask) = @muted_on = [mask, Thread.current]
+  end
+
+  # Two APU records per read, at the chunk's first frame and 1000 frames in,
+  # carrying the read number in regs[0] and the record number in regs[1].
+  class GbsHandle
+    attr_reader :reads
+
+    def initialize = @reads = 0
+
+    def read(frames)
+      @reads += 1
+      ([0.0] * frames * 2).pack('e*')
+    end
+
+    def snapshot_record = RubyPlayer::Gbs::Snapshot
+    def take_snapshots = [record(0, @reads, 0) + record(1_000, @reads, 1), 2]
+    def capture_now = [record(0, 99, 0), 1]
+    # Fake of the backend seek contract, which reports success.
+    def seek(_milliseconds) = true # rubocop:disable Naming/PredicateMethod
+    def mute(_mask); end
+    def close; end
+
+    private
+
+    def record(frame, read, index)
+      regs = Array.new(48, 0)
+      regs[0] = read
+      regs[1] = index
+      [frame, *regs, *Array.new(4, 0), 0, 0, 0, *Array.new(4, 0), 0, 70_224, 4_194_304]
+        .pack(RubyPlayer::Gbs::Snapshot::FORMAT)
+    end
   end
 
   class PlainHandle
@@ -192,6 +226,36 @@ class PlaybackEngineSpcTest < Minitest::Test
     assert_empty engine.instance_variable_get(:@commands)
   end
 
+  # The GBS page must see every heard snapshot once, in order: notes come
+  # from consecutive states.
+  def test_gbs_live_returns_each_heard_snapshot_once
+    start(GbsHandle)
+
+    assert_equal :gbs, @engine.chip_live_kind
+    assert_nil @engine.spc_live
+    assert_equal [[1, 0]], gbs_records
+
+    @audio.play!(chunk_frames + 1_000)
+
+    assert_equal [[1, 1], [2, 0], [2, 1]], gbs_records
+    assert_empty gbs_records
+  end
+
+  # A seek restarts note history (new generation) but is the same track.
+  def test_gbs_seek_changes_the_history_generation_only
+    start(GbsHandle)
+    before = @engine.gbs_live
+    @engine.toggle_play
+    wait_until { @engine.state[:paused] }
+    @engine.seek(30_000)
+    wait_until { gbs_records_with_state.last&.first == [99, 0] }
+    after = @engine.gbs_live
+
+    refute_equal before.generation, after.generation
+    assert_equal before.track_generation, after.track_generation
+    assert after.paused
+  end
+
   def test_no_live_state_for_handles_without_snapshots
     start(PlainHandle)
 
@@ -203,9 +267,17 @@ class PlaybackEngineSpcTest < Minitest::Test
     @engine.stop
 
     assert_nil @engine.spc_live
+    assert_nil @engine.chip_live_kind
   end
 
   private
+
+  def gbs_records = @engine.gbs_live.snapshots.map { |snapshot| snapshot.regs.first(2) }
+
+  # [[read, record]] of each snapshot handed over, collected across calls.
+  def gbs_records_with_state
+    (@gbs_seen ||= []).concat(@engine.gbs_live.snapshots.map { |snapshot| [snapshot.regs.first(2)] })
+  end
 
   def build_engine(handle_class)
     @audio = FakeRing.new
@@ -234,7 +306,7 @@ class PlaybackEngineSpcTest < Minitest::Test
   end
 
   def start_tracking(engine)
-    engine.send(:start_spc_tracking)
+    engine.send(:start_chip_tracking)
     engine.send(:start_voice_muting)
   end
 end

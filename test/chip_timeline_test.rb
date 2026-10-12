@@ -2,14 +2,15 @@
 
 require 'test_helper'
 require 'rubyplayer/spc/snapshot'
-require 'rubyplayer/spc/timeline'
+require 'rubyplayer/chip_timeline'
+require 'rubyplayer/gbs/snapshot'
 require 'rubyplayer/backends/snes_spc'
 
-class SpcTimelineTest < Minitest::Test
+class ChipTimelineTest < Minitest::Test
   Snapshot = RubyPlayer::Spc::Snapshot
 
   def setup
-    @timeline = RubyPlayer::Spc::Timeline.new
+    @timeline = RubyPlayer::ChipTimeline.new(record: Snapshot)
   end
 
   def test_at_returns_the_latest_snapshot_heard_by_a_frame
@@ -91,11 +92,41 @@ class SpcTimelineTest < Minitest::Test
 
   # Without lookups (live page closed), the segment cap bounds memory.
   def test_segment_count_is_capped_without_lookups
-    timeline = RubyPlayer::Spc::Timeline.new(max_segments: 4)
+    timeline = RubyPlayer::ChipTimeline.new(max_segments: 4, record: Snapshot)
     10.times { |index| timeline.push(*records([0, "s#{index}"]), origin_frame: index * 1_000) }
 
     assert_nil timeline.at(5_999)
     assert_equal 's6', marker(timeline.at(6_000))
+  end
+
+  # take_through returns each heard record once, in order, across segments.
+  def test_take_through_returns_every_heard_record_once
+    @timeline.push(*records([0, 'a'], [2_400, 'b']), origin_frame: 0)
+    @timeline.push(*records([400, 'c'], [2_800, 'd']), origin_frame: 4_000)
+
+    assert_equal %w[a], taken(1_000)
+    assert_equal %w[b c], taken(4_400)
+    assert_empty taken(4_500)
+    assert_equal [6_800], @timeline.take_through(10_000, limit: 10).map(&:frame)
+  end
+
+  def test_take_through_keeps_only_the_newest_records_past_the_limit
+    @timeline.push(*records([0, 'a'], [10, 'b'], [20, 'c']), origin_frame: 0)
+
+    assert_equal(%w[b c], @timeline.take_through(100, limit: 2).map { |snapshot| marker(snapshot) })
+  end
+
+  # Each push names its record class, so one timeline serves SPC and GBS.
+  def test_records_unpack_with_the_class_they_were_pushed_with
+    gbs = RubyPlayer::Gbs::Snapshot
+    packed = [120, *Array.new(48, 7), 15, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 70_224, 4_194_304].pack(gbs::FORMAT)
+    @timeline.push(packed, 1, origin_frame: 1_000, record: gbs)
+
+    snapshot = @timeline.at(2_000)
+
+    assert_kind_of gbs, snapshot
+    assert_equal 1_120, snapshot.frame
+    assert_in_delta 59.73, snapshot.driver_hz, 0.01
   end
 
   def test_empty_pushes_and_reset
@@ -123,4 +154,6 @@ class SpcTimelineTest < Minitest::Test
   end
 
   def marker(snapshot) = snapshot && @labels.fetch(snapshot.regs[0])
+
+  def taken(frame) = @timeline.take_through(frame, limit: 10).map { |snapshot| marker(snapshot) }
 end

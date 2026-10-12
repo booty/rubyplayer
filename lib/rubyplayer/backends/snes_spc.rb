@@ -4,6 +4,7 @@ require 'stringio'
 require 'zlib'
 require_relative '../audio_format'
 require_relative 'gme'
+require_relative '../spc/snapshot'
 
 module RubyPlayer
   module Backends
@@ -111,6 +112,9 @@ module RubyPlayer
 
           SnesSpcLib.rp_spc_tell_ms(@spc)
         end
+
+        # Decodes take_snapshots records.
+        def snapshot_record = Spc::Snapshot
 
         # DSP snapshots from the latest read as [packed records, count]; decode
         # with Spc::Snapshot.unpack. Packed so only displayed records pay for
