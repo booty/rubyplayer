@@ -79,7 +79,79 @@ class SpcLiveViewTest < Minitest::Test
     assert_includes text, 'voice 2'
   end
 
+  # Regression: the derived-data cache keyed only on the directory table, so
+  # sample bytes rewritten in place (or another track with the same table)
+  # kept showing the old waveform and sample info.
+  def test_changed_sample_data_is_redrawn
+    ram = synthetic_ram
+    first = render_synthetic(ram, srcn: 0)
+    ram[0x3000, 9] = [0xc1, *Array.new(8, 0x77)].pack('C*')
+
+    refute_equal first, render_synthetic(ram, srcn: 0)
+  end
+
+  # Regression: with DIR near the top of RAM the directory wraps to $0000,
+  # but the cache key only covered the bytes up to $FFFF.
+  def test_changed_wrapped_directory_entry_is_redrawn
+    ram = synthetic_ram(dir: 0xfe)
+    write_entry(ram, 0xfe, 200, 0x3000)
+    first = render_synthetic(ram, srcn: 200, dir: 0xfe)
+    write_entry(ram, 0xfe, 200, 0x4000)
+    second = render_synthetic(ram, srcn: 200, dir: 0xfe)
+
+    assert_includes first, 'start $3000'
+    assert_includes second, 'start $4000'
+  end
+
+  # Each panel keeps one cached result; changing inputs replaces it rather
+  # than accumulating every combination ever rendered.
+  def test_panel_caches_stay_bounded
+    regs = SpcFixture.regs('earthbound-megaton-walk').dup
+    ram = SpcFixture.ram('earthbound-megaton-walk')
+    40.times do |step|
+      regs[0x0f] = step
+      render_state(regs, ram)
+    end
+
+    assert_operator @view.instance_variable_get(:@caches).size, :<=, 6
+  end
+
   private
+
+  # Two one-block samples ($3000, $4000) and a directory at DIR * $100 whose
+  # entry 0 points at $3000; echo buffer parked at $8000.
+  def synthetic_ram(dir: 0x20)
+    ram = ("\0" * 0x10000).b
+    ram[0x3000, 9] = [0x41, *Array.new(8, 0x11)].pack('C*')
+    ram[0x4000, 9] = [0x41, *Array.new(8, 0x22)].pack('C*')
+    write_entry(ram, dir, 0, 0x3000)
+    ram
+  end
+
+  def write_entry(ram, dir, srcn, start)
+    address = (dir * 0x100) + (srcn * 4)
+    [start & 0xff, start >> 8, start & 0xff, start >> 8].each_with_index do |byte, index|
+      ram.setbyte((address + index) % 0x10000, byte)
+    end
+  end
+
+  def render_synthetic(ram, srcn:, dir: 0x20)
+    regs = Array.new(128, 0)
+    regs[0x5d] = dir
+    regs[0x6d] = 0x80
+    regs[0x7d] = 1
+    regs[4] = srcn
+    render_state(regs, ram.dup)
+  end
+
+  def render_state(regs, ram)
+    snapshot = RubyPlayer::Spc::Snapshot.new(frame: 0, regs: regs, env: Array.new(8, 0x400),
+                                             env_mode: Array.new(8, 3), brr_addr: Array.new(8, 0), attack_edges: 0)
+    state = RubyPlayer::Spc::LiveState.new(snapshot: snapshot, ram: ram, paused: false, mute_mask: 0)
+    screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 50, cols: 160)
+    @view.render(screen, x: 0, y: 0, width: 160, height: 50, theme: THEME, state: state, track_title: 'x')
+    text_of(screen).join("\n")
+  end
 
   # A snapshot built from the file's dumped registers, with every voice
   # sustaining at half level.

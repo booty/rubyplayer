@@ -36,7 +36,6 @@ module RubyPlayer
       # A note-start edge stays bold for about two snapshots (~100 ms at 48 kHz).
       EDGE_HOLD_FRAMES = 4_800
       WAVEFORM_SAMPLES = 4_096
-      DIRECTORY_TABLE_BYTES = 256 * 4
       ENV_MAX = 0x7ff
       LEVEL_GLYPHS = ' ▁▂▃▄▅▆▇█'
       BAR_PARTIALS = ['', '▏', '▎', '▍', '▌', '▋', '▊', '▉'].freeze
@@ -49,7 +48,7 @@ module RubyPlayer
                        :ECHO_FIXED_ROWS, :SAMPLE_FIXED_ROWS, :RAM_FIXED_ROWS, :RAM_LABEL, :RAM_SLICE_ALIGN,
                        :WIDE_FIXED_COLUMNS,
                        :NARROW_FIXED_COLUMNS, :COLUMN_GAP, :EDGE_HOLD_FRAMES,
-                       :WAVEFORM_SAMPLES, :DIRECTORY_TABLE_BYTES, :ENV_MAX, :LEVEL_GLYPHS, :BAR_PARTIALS, :RAM_GLYPHS,
+                       :WAVEFORM_SAMPLES, :ENV_MAX, :LEVEL_GLYPHS, :BAR_PARTIALS, :RAM_GLYPHS,
                        :GAIN_LABELS
 
       attr_reader :selected_voice
@@ -59,7 +58,10 @@ module RubyPlayer
         @edge_frames = Array.new(VOICES)
         @cache_key = nil
         @derived = nil
-        @memo = {}
+        @caches = {}
+        @derived_generation = 0
+        @fingerprint_ram = nil
+        @fingerprint = nil
       end
 
       # Key handling returns whether this widget consumed the command.
@@ -268,11 +270,11 @@ module RubyPlayer
         voices = (0...VOICES).select { |index| global[:eon][index] == 1 }
         writes = global[:flg][:echo_write] ? 'writes on' : 'writes OFF'
         graph_height = graph_rows(rows, ECHO_FIXED_ROWS)
-        fir_graph = memo(:fir, global[:fir], width, graph_height) do
+        fir_graph = cached(:fir_graph, [global[:fir], width, graph_height]) do
           curve = Spc::Fir.response(global[:fir], points: width).map { |db| db - Spc::Fir::MIN_DB }
           graph(curve, Spc::Fir::MAX_DB - Spc::Fir::MIN_DB, graph_height)
         end
-        kind = memo(:fir_kind, global[:fir]) { Spc::Fir.kind(global[:fir]) }
+        kind = cached(:fir_kind, global[:fir]) { Spc::Fir.kind(global[:fir]) }
         [title('Echo / FIR'),
          line("Delay #{global[:delay_ms]} ms · FB #{signed(global[:efb])} · Vol #{volume_pair(global[:evol],
                                                                                               global[:evol_inverted])}"),
@@ -294,7 +296,9 @@ module RubyPlayer
         [heading,
          line(format('start $%04X · loop $%04X · %s · %s', entry[:start], entry[:loop],
                      format_samples(info[:samples]), info[:looped] ? 'looped' : 'one-shot')),
-         *memo(:waveform, srcn, width, rows) { waveform_lines(derived, entry, width, graph_rows(rows, SAMPLE_FIXED_ROWS)) },
+         *cached(:waveform, [@derived_generation, srcn, width, rows]) do
+           waveform_lines(derived, entry, width, graph_rows(rows, SAMPLE_FIXED_ROWS))
+         end,
          line("Used by voices #{users.join(' ')}", color: :text_muted)]
       end
 
@@ -304,7 +308,7 @@ module RubyPlayer
         bar_width = [width - RAM_LABEL.length, 1].max
         # Round slices up to $400 so row labels read as tidy addresses.
         slice = ((Spc::RamMap::RAM_BYTES / graph_rows(rows, RAM_FIXED_ROWS).to_f) / RAM_SLICE_ALIGN).ceil * RAM_SLICE_ALIGN
-        bars = memo(:ram, width, slice) do
+        bars = cached(:ram_bars, [@derived_generation, width, slice]) do
           Array.new(Spc::RamMap::RAM_BYTES.fdiv(slice).ceil) do |row|
             from = row * slice
             to = [from + slice, Spc::RamMap::RAM_BYTES].min
@@ -319,7 +323,7 @@ module RubyPlayer
         return unless rows.positive?
 
         in_use = voices.map { |voice| voice[:srcn] }
-        cells = memo(:strip, in_use) do
+        cells = cached(:strip, [@derived_generation, in_use]) do
           derived[:directory].select { |entry| entry[:info] }
                              .sort_by { |entry| [in_use.include?(entry[:srcn]) ? 0 : 1, entry[:srcn]] }
                              .map { |entry| strip_cell(entry, voices) }
@@ -342,26 +346,52 @@ module RubyPlayer
 
       # -- derived data (cached per RAM copy) ------------------------------
 
-      # The engine hands over a fresh RAM copy every decode chunk, and the
-      # echo buffer inside it changes constantly, so key on what the derived
-      # data actually depends on: the directory table, the samples in use, and
-      # the echo/directory registers. Sample data itself rarely changes.
+      # Directory, sample, and RAM-map data depend on every RAM byte except the
+      # echo buffer, which the DSP rewrites constantly. Keying on a fingerprint
+      # of exactly that catches rewritten samples, wrapped directories, and
+      # track changes, while the engine's fresh RAM copy every decode chunk
+      # still hits the cache when nothing relevant changed.
       def derive(ram, voices, global)
         in_use = voices.map { |voice| voice[:srcn] }.uniq.sort
-        table = ram.byteslice(global[:dir] * 0x100, DIRECTORY_TABLE_BYTES)
-        key = [table, in_use, global[:dir], global[:esa], global[:edl]]
+        key = [ram_fingerprint(ram, global), in_use, global[:dir], global[:esa], global[:edl]]
         return @derived if key == @cache_key
 
         directory = Spc::Brr.directory(ram, global[:dir], in_use: in_use)
         @cache_key = key
-        @memo.clear
+        # Panel caches key on this counter, not the hash itself, which would
+        # deep-compare 64 KB of RAM on every frame.
+        @derived_generation += 1
         @derived = { ram: ram, directory: directory, waveforms: {},
                      regions: Spc::RamMap.regions(global: global, directory: directory) }
       end
 
-      # Graph lines depend only on derived data, size, and a few registers, but
-      # building them per frame dominated render time (~3 ms at 158 columns).
-      def memo(*key) = @memo.fetch(key) { @memo[key] = yield }
+      # Hashed once per RAM copy (~3 a second), not per frame.
+      def ram_fingerprint(ram, global)
+        return @fingerprint if ram.equal?(@fingerprint_ram)
+
+        echo_start = global[:esa] * 0x100
+        echo_end = echo_start + global[:echo_bytes]
+        outside = if echo_end <= Spc::RamMap::RAM_BYTES
+                    [ram.byteslice(0, echo_start), ram.byteslice(echo_end..)]
+                  else # the echo buffer wraps past $FFFF
+                    [ram.byteslice((echo_end - Spc::RamMap::RAM_BYTES)...echo_start)]
+                  end
+        @fingerprint_ram = ram
+        @fingerprint = outside.map(&:hash)
+      end
+
+      # One entry per panel: a result is reused only while that panel's own
+      # inputs are unchanged, so memory stays bounded and unrelated changes
+      # (an instrument switch) don't discard it. Building graph lines per
+      # frame dominated render time (~3 ms at 158 columns).
+      def cached(name, key)
+        stored_key, value = @caches[name]
+        return value if @caches.key?(name) && stored_key == key
+
+        value = yield
+        @caches[name] = [key, value]
+        value
+      end
 
       def waveform_lines(derived, entry, width, rows)
         samples = derived[:waveforms][entry[:srcn]] ||=
