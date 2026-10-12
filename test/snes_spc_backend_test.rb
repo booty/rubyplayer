@@ -133,7 +133,7 @@ class SnesSpcBackendTest < Minitest::Test
   end
 
   def test_opening_a_non_spc_file_raises
-    path = File.join(FIXTURES, 'mega-man-2.nsf')
+    path = File.join(FIXTURES, 'nsf', 'mega-man-2.nsf')
 
     assert_raises(RubyPlayer::Backends::SnesSpc::Error) { @backend.open(path, 0, sample_rate: RATE) }
   end

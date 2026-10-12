@@ -7,6 +7,6 @@ class ScaffoldTest < Minitest::Test
 
   def test_fixtures_present
     assert_path_exists File.join(FIXTURES, 'space-debris.mod')
-    assert_path_exists File.join(FIXTURES, 'mega-man-2.nsf')
+    assert_path_exists File.join(FIXTURES, 'nsf', 'mega-man-2.nsf')
   end
 end

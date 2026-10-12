@@ -213,7 +213,7 @@ module RubyPlayer
 
       # NSF/HES-family rips rarely embed real per-track lengths themselves;
       # an m3u playlist with the same basename is the genre's convention for
-      # supplying them (see fixtures/air-zonk.{hes,m3u}). Best-effort: a
+      # supplying them (see fixtures/hes/air-zonk.{hes,m3u}). Best-effort: a
       # missing or malformed m3u just leaves GME's defaults in place rather
       # than failing the whole open.
       def load_sibling_m3u(emu, path)

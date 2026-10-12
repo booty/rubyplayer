@@ -41,7 +41,7 @@ class ExtractorPoolTest < Minitest::Test
     @music = File.join(@tmp, 'music')
     FileUtils.mkdir_p(@music)
     FileUtils.cp(File.join(FIXTURES, 'space-debris.mod'), @music)
-    FileUtils.cp(File.join(FIXTURES, 'mega-man-2.nsf'), @music)
+    FileUtils.cp(File.join(FIXTURES, 'nsf', 'mega-man-2.nsf'), @music)
     File.write(File.join(@music, 'corrupt.mod'), "\x00" * 64) # bogus module
     @db = RubyPlayer::Database.new(path: File.join(@tmp, 'library.sqlite3'))
     @lib = RubyPlayer::Library.new(@db)
@@ -111,7 +111,7 @@ class ExtractorPoolTest < Minitest::Test
     # Backend choice does not change the scanner's multitrack extension list.
     # Enumerating every GME subtune created a folder the next scan marked missing.
     path = File.join(@music, 'renamed.custom')
-    FileUtils.cp(File.join(FIXTURES, 'mega-man-2.nsf'), path)
+    FileUtils.cp(File.join(FIXTURES, 'nsf', 'mega-man-2.nsf'), path)
     registry = RubyPlayer::Backends::Registry.new('custom' => 'gme')
     scanner = RubyPlayer::Scanner.new(library: @lib, registry: registry)
     pool = RubyPlayer::ExtractorPool.new(library: @lib, registry: registry)

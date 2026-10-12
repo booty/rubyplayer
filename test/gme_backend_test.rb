@@ -7,7 +7,7 @@ class GmeBackendTest < Minitest::Test
   end
 
   def test_track_count_multitrack_nsf
-    assert_operator @gme.track_count(File.join(FIXTURES, 'mega-man-2.nsf')), :>, 1
+    assert_operator @gme.track_count(File.join(FIXTURES, 'nsf', 'mega-man-2.nsf')), :>, 1
   end
 
   def test_track_count_single_spc
@@ -26,10 +26,10 @@ class GmeBackendTest < Minitest::Test
   def test_metadata_includes_static_hardware_and_timing_for_real_chiptunes
     {
       'alisa-dragoon-introduction.vgm' => ['YM2612', '6 FM'],
-      'mega-man-2.nsf' => ['NES APU', '2 pulse'],
+      'nsf/mega-man-2.nsf' => ['NES APU', '2 pulse'],
       'shantae.gbs' => ['Game Boy APU', '1 wave'],
       'spc/earthbound-megaton-walk.spc' => ['S-DSP', '8 sample'],
-      'air-zonk.hes' => ['HuC6280', '6 wavetable']
+      'hes/air-zonk.hes' => ['HuC6280', '6 wavetable']
     }.each do |file, expected|
       extras = @gme.metadata(File.join(FIXTURES, file), 0).fetch(:extra)
 
@@ -45,7 +45,7 @@ class GmeBackendTest < Minitest::Test
   end
 
   def test_each_metadata_opens_once_and_preserves_subtune_metadata
-    path = File.join(FIXTURES, 'air-zonk.hes')
+    path = File.join(FIXTURES, 'hes', 'air-zonk.hes')
     expected = Array.new(@gme.track_count(path)) { |i| @gme.metadata(path, i) }
     opens = 0
     original = @gme.method(:open_emu)
@@ -62,7 +62,7 @@ class GmeBackendTest < Minitest::Test
   end
 
   def test_subtune_metadata_has_incremented_track_number
-    meta = @gme.metadata(File.join(FIXTURES, 'mega-man-2.nsf'), 3)
+    meta = @gme.metadata(File.join(FIXTURES, 'nsf', 'mega-man-2.nsf'), 3)
 
     assert_equal 4, meta[:track_number]
   end
@@ -72,7 +72,7 @@ class GmeBackendTest < Minitest::Test
   # known) -- it used to be read as the track's real duration, so every
   # subtune of a file with no embedded/m3u length data showed exactly 2:30.
   def test_metadata_duration_is_nil_when_gme_has_no_real_length
-    meta = @gme.metadata(File.join(FIXTURES, 'mega-man-2.nsf'), 0)
+    meta = @gme.metadata(File.join(FIXTURES, 'nsf', 'mega-man-2.nsf'), 0)
 
     assert_nil meta[:duration_ms]
   end
@@ -82,24 +82,24 @@ class GmeBackendTest < Minitest::Test
   # GME real per-track lengths and titles instead of generic "Track NN"
   # placeholders and the 150000ms fallback.
   def test_metadata_reads_real_length_and_title_from_a_sibling_m3u
-    red = @gme.metadata(File.join(FIXTURES, 'air-zonk.hes'), 0)
+    red = @gme.metadata(File.join(FIXTURES, 'hes', 'air-zonk.hes'), 0)
 
     assert_equal 'Red', red[:title]
     assert_equal 2_000, red[:duration_ms] # m3u: "$42,Red,2,,0" -> 2 seconds
 
-    opening = @gme.metadata(File.join(FIXTURES, 'air-zonk.hes'), 1)
+    opening = @gme.metadata(File.join(FIXTURES, 'hes', 'air-zonk.hes'), 1)
 
     assert_equal 'Opening', opening[:title]
     assert_equal 110_000, opening[:duration_ms] # m3u: "$12,Opening,1:50,,0"
   end
 
   def test_open_duration_ms_also_uses_the_m3u_length_not_gmes_default
-    h = @gme.open(File.join(FIXTURES, 'air-zonk.hes'), 1, sample_rate: 44_100)
+    h = @gme.open(File.join(FIXTURES, 'hes', 'air-zonk.hes'), 1, sample_rate: 44_100)
 
     assert_equal 110_000, h.duration_ms
     h.close
 
-    h = @gme.open(File.join(FIXTURES, 'mega-man-2.nsf'), 0, sample_rate: 44_100)
+    h = @gme.open(File.join(FIXTURES, 'nsf', 'mega-man-2.nsf'), 0, sample_rate: 44_100)
 
     assert_nil h.duration_ms
     h.close
@@ -125,7 +125,7 @@ class GmeBackendTest < Minitest::Test
 
   # A muted non-VGM track must not end on libgme's silence detection.
   def test_muting_every_voice_does_not_end_the_track
-    handle = RubyPlayer::Backends::Gme.new.open(File.join(FIXTURES, 'mega-man-2.nsf'), 0, sample_rate: 44_100)
+    handle = RubyPlayer::Backends::Gme.new.open(File.join(FIXTURES, 'nsf', 'mega-man-2.nsf'), 0, sample_rate: 44_100)
     handle.mute(0xff)
 
     assert_predicate(Array.new(30) { handle.read(16_384) }, :all?)
@@ -146,7 +146,7 @@ class GmeBackendTest < Minitest::Test
   end
 
   def test_seek_and_position
-    h = @gme.open(File.join(FIXTURES, 'mega-man-2.nsf'), 1, sample_rate: 44_100)
+    h = @gme.open(File.join(FIXTURES, 'nsf', 'mega-man-2.nsf'), 1, sample_rate: 44_100)
     h.read(1024)
 
     assert h.seek(5_000)
