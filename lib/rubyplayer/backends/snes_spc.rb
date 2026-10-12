@@ -49,6 +49,9 @@ module RubyPlayer
 
       # Same contract as Gme::Handle: packed float32 stereo until the track ends.
       class Handle
+        RAM_BYTES = 0x10000
+        private_constant :RAM_BYTES
+
         attr_reader :duration_ms
 
         def initialize(bytes, sample_rate:, duration_ms:, play_length_ms:)
@@ -88,6 +91,27 @@ module RubyPlayer
           return 0 if @spc.nil?
 
           SnesSpcLib.rp_spc_tell_ms(@spc)
+        end
+
+        # DSP snapshots from the latest read as [packed records, count]; decode
+        # with Spc::Snapshot.unpack. Packed so only displayed records pay for
+        # unpacking.
+        def take_snapshots
+          return ['', 0] if @spc.nil?
+
+          count = SnesSpcLib.rp_spc_snapshot_count(@spc)
+          return ['', 0] if count.zero?
+
+          [SnesSpcLib.rp_spc_snapshots(@spc).read_bytes(count * SnesSpcLib.rp_spc_snapshot_size), count]
+        end
+
+        # The SPC700's 64 KB RAM (samples, directory, echo buffer) right now.
+        def copy_ram
+          return nil if @spc.nil?
+
+          @ram ||= FFI::MemoryPointer.new(:uchar, RAM_BYTES)
+          SnesSpcLib.rp_spc_copy_ram(@spc, @ram)
+          @ram.read_bytes(RAM_BYTES).freeze
         end
 
         def close

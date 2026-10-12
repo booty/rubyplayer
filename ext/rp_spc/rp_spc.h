@@ -9,11 +9,29 @@
 #ifndef RP_SPC_H
 #define RP_SPC_H
 
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 typedef struct rp_spc rp_spc;
+
+/* S-DSP state at one moment. 176 bytes, no implicit padding; Ruby unpacks it
+ * with 'L<C128S<8C8S<8Cx3'. */
+typedef struct {
+	uint32_t frame;        /* output frame, relative to the first frame of the
+	                          rp_spc_play call that returned it, at which this
+	                          state is heard (may exceed that call's length) */
+	uint8_t  regs[128];    /* DSP registers, including live ENVX/OUTX */
+	uint16_t env[8];       /* envelope level, 0..0x7FF */
+	uint8_t  env_mode[8];  /* 0 release, 1 attack, 2 decay, 3 sustain */
+	uint16_t brr_addr[8];  /* address of the BRR block being decoded */
+	uint8_t  attack_edges; /* bit v: voice v started a note since the previous
+	                          snapshot (approximate: entered attack, left release,
+	                          or changed sample) */
+	uint8_t  pad[3];
+} rp_spc_snapshot;
 
 /* Returns NULL when the data is not a loadable SPC file. */
 rp_spc* rp_spc_open(const void* data, long size, int out_rate);
@@ -33,10 +51,13 @@ int  rp_spc_seek(rp_spc*, long ms);   /* 1 on success */
 long rp_spc_tell_ms(rp_spc*);
 void rp_spc_mute_voices(rp_spc*, int mask);
 
-/* Live state snapshots (filled in by later work; see tmp/snes_spc.md T6). */
+/* Snapshots recorded during the most recent rp_spc_play call, in order: one
+ * per emulator call, about every 50 ms when resampling (at a 32 kHz output
+ * rate, one per libgme-sized play block). Denser capture would change the
+ * audio; see play_and_filter. Valid until the next rp_spc_play. */
 int  rp_spc_snapshot_size(void);
 int  rp_spc_snapshot_count(rp_spc*);
-const void* rp_spc_snapshots(rp_spc*);
+const rp_spc_snapshot* rp_spc_snapshots(rp_spc*);
 void rp_spc_copy_ram(rp_spc*, unsigned char* out);   /* copies 0x10000 bytes */
 
 #ifdef __cplusplus

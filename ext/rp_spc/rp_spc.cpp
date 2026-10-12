@@ -35,6 +35,10 @@ const int silence_lookahead = 3;
 const double spc_gain = 1.4;                      // Spc_Emu constructor
 const double resampler_rolloff = 0.9965;          // Spc_Emu::set_sample_rate_
 const int resampler_latency = 64;                 // Spc_Emu::skip_
+const int voice_count = Snes_Spc::voice_count;
+const int dsp_register_count = 128;
+
+static_assert(sizeof(rp_spc_snapshot) == 176, "rp_spc_snapshot layout is part of the Ruby ABI");
 
 }  // namespace
 
@@ -53,6 +57,12 @@ struct rp_spc {
 	// back to Spc_Emu's (length, 50 ms) default after a restart.
 	long user_fade_start_ms;
 	long user_fade_length_ms;
+
+	std::vector<rp_spc_snapshot> snapshots;
+	long call_origin;               // out_time at the start of the current rp_spc_play
+	long capture_base;              // output sample position the next native block feeds
+	int previous_env_mode[8];
+	int previous_srcn[8];
 
 	long out_time;
 	long emu_time;
@@ -100,28 +110,39 @@ void end_track_if_error(rp_spc* s, blargg_err_t err)
 		s->emu_track_ended = true;
 }
 
-// Spc_Emu::play_and_filter
-blargg_err_t play_and_filter(rp_spc* s, long count, sample_t* out)
+void capture_snapshot(rp_spc* s, long ahead);
+
+// Spc_Emu::play_and_filter, plus one snapshot per emulator call. Snapshots
+// cannot be denser without changing the audio: Snes_Spc lets the DSP run
+// ahead of the CPU at call boundaries, so splitting a call shifts what driver
+// code reads back from the DSP (it changed last-battle.spc by up to 5175 LSB).
+// With resampling, libgme emulates ~50 ms per call. `buffered` is native
+// input already waiting in the resampler ahead of capture_base.
+blargg_err_t play_and_filter(rp_spc* s, long count, sample_t* out, long buffered)
 {
 	blargg_err_t err = s->apu.play((int) count, out);
 	if (err)
 		return err;
 	s->filter.run(out, (int) count);
+	capture_snapshot(s, buffered + count);
 	return 0;
 }
 
-// Spc_Emu::play_
-blargg_err_t play_raw(rp_spc* s, long count, sample_t* out)
+// Spc_Emu::play_. `position` is the output sample position of out[0].
+blargg_err_t play_raw(rp_spc* s, long count, sample_t* out, long position)
 {
-	if (!s->resample)
-		return play_and_filter(s, count, out);
+	if (!s->resample) {
+		s->capture_base = position;
+		return play_and_filter(s, count, out, 0);
+	}
 
 	long remain = count;
 	while (remain > 0) {
 		remain -= s->resampler.read(&out[count - remain], (int) remain);
 		if (remain > 0) {
 			long n = s->resampler.max_write();
-			blargg_err_t err = play_and_filter(s, n, s->resampler.buffer());
+			s->capture_base = position + (count - remain);
+			blargg_err_t err = play_and_filter(s, n, s->resampler.buffer(), s->resampler.written());
 			if (err)
 				return err;
 			s->resampler.write(n);
@@ -145,15 +166,50 @@ blargg_err_t skip_raw(rp_spc* s, long count)
 	}
 	// Eliminates a pop from the resampler.
 	sample_t discard[resampler_latency];
-	return play_raw(s, resampler_latency, discard);
+	return play_raw(s, resampler_latency, discard, s->emu_time);
+}
+
+// Records DSP state tagged with the output frame (relative to the current
+// rp_spc_play call) at which it will be heard. `ahead` is how many native
+// samples the emulator has produced beyond capture_base's output position.
+void capture_snapshot(rp_spc* s, long ahead)
+{
+	double ahead_out = s->resample ? ahead / s->resampler.ratio() : (double) ahead;
+	long frame = (long) ((s->capture_base + ahead_out - s->call_origin) / out_channels);
+
+	rp_spc_snapshot snap;
+	memset(&snap, 0, sizeof snap);
+	snap.frame = (uint32_t) (frame > 0 ? frame : 0);
+	Spc_Dsp const& dsp = s->apu.rp_dsp();
+	for (int i = 0; i < dsp_register_count; i++)
+		snap.regs[i] = (uint8_t) dsp.read(i);
+	for (int v = 0; v < voice_count; v++) {
+		int mode = dsp.rp_voice_env_mode(v);
+		int srcn = snap.regs[v * 0x10 + 4];
+		snap.env[v] = (uint16_t) dsp.rp_voice_env(v);
+		snap.env_mode[v] = (uint8_t) mode;
+		snap.brr_addr[v] = (uint16_t) dsp.rp_voice_brr_addr(v);
+		// Snapshots are ~50 ms apart, so a short attack can fall between two.
+		// Also count leaving release, or switching samples, as a new note.
+		int previous = s->previous_env_mode[v];
+		bool attacked = mode == Spc_Dsp::env_attack && previous != Spc_Dsp::env_attack;
+		bool released_to_sounding = previous == Spc_Dsp::env_release && mode != Spc_Dsp::env_release;
+		bool new_sample = mode != Spc_Dsp::env_release && srcn != s->previous_srcn[v];
+		if (attacked || released_to_sounding || new_sample)
+			snap.attack_edges |= (uint8_t) (1 << v);
+		s->previous_env_mode[v] = mode;
+		s->previous_srcn[v] = srcn;
+	}
+	s->snapshots.push_back(snap);
 }
 
 // Music_Emu::emu_play
 void emu_play(rp_spc* s, long count, sample_t* out)
 {
+	long position = s->emu_time;
 	s->emu_time += count;
 	if (!s->emu_track_ended)
-		end_track_if_error(s, play_raw(s, count, out));
+		end_track_if_error(s, play_raw(s, count, out, position));
 	else
 		memset(out, 0, count * sizeof *out);
 }
@@ -341,6 +397,12 @@ rp_spc* rp_spc_open(const void* data, long size, int out_rate)
 	s->mute_mask = 0;
 	s->user_fade_start_ms = -1;
 	s->user_fade_length_ms = -1;
+	s->call_origin = 0;
+	s->capture_base = 0;
+	for (int v = 0; v < voice_count; v++) {
+		s->previous_env_mode[v] = Spc_Dsp::env_release;
+		s->previous_srcn[v] = -1;
+	}
 	clear_track_vars(s);
 
 	if (s->apu.init()) {
@@ -395,6 +457,8 @@ long rp_spc_play(rp_spc* s, float* out, long frames)
 	long count = frames * out_channels;
 	if ((long) s->scratch.size() < count)
 		s->scratch.resize(count);
+	s->snapshots.clear();
+	s->call_origin = s->out_time;
 	play(s, count, s->scratch.data());
 	for (long i = 0; i < count; i++)
 		out[i] = s->scratch[i] / 32768.0f;
@@ -436,9 +500,25 @@ void rp_spc_mute_voices(rp_spc* s, int mask)
 	s->apu.mute_voices(mask);
 }
 
-int rp_spc_snapshot_size(void) { return 0; }
-int rp_spc_snapshot_count(rp_spc*) { return 0; }
-const void* rp_spc_snapshots(rp_spc*) { return NULL; }
-void rp_spc_copy_ram(rp_spc*, unsigned char*) { }
+int rp_spc_snapshot_size(void)
+{
+	return (int) sizeof(rp_spc_snapshot);
+}
+
+int rp_spc_snapshot_count(rp_spc* s)
+{
+	return s ? (int) s->snapshots.size() : 0;
+}
+
+const rp_spc_snapshot* rp_spc_snapshots(rp_spc* s)
+{
+	return s && !s->snapshots.empty() ? s->snapshots.data() : NULL;
+}
+
+void rp_spc_copy_ram(rp_spc* s, unsigned char* out)
+{
+	if (s && out)
+		memcpy(out, s->apu.smp_ram(), 0x10000);
+}
 
 }  // extern "C"
