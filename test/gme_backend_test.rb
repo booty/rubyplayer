@@ -1,7 +1,13 @@
 require 'test_helper'
 require 'rubyplayer/backends/gme'
+require_relative 'support/rip_fixtures'
 
 class GmeBackendTest < Minitest::Test
+  Rips = TestSupport::RipFixtures
+  # sound_chips and voice_layout fragments per rip format.
+  HES_HARDWARE = ['HuC6280', '6 wavetable'].freeze
+  NSF_HARDWARE = ['NES APU', '2 pulse'].freeze
+
   def setup
     @gme = RubyPlayer::Backends::Gme.new
   end
@@ -24,18 +30,23 @@ class GmeBackendTest < Minitest::Test
   end
 
   def test_metadata_includes_static_hardware_and_timing_for_real_chiptunes
+    rips = Rips.names('hes').to_h { |name| [Rips.path(name), HES_HARDWARE] }
+    Rips.names('nsf').each { |name| rips[Rips.path(name)] = NSF_HARDWARE }
+    # Expansion chips add to the NES APU's own voices.
+    { castlevania_3_japan: 'VRC6', lagrange_point: 'VRC7', metroid_fds: 'FDS', just_breed: 'MMC5',
+      erika_to_satoru: 'N163', rolling_thunder_japan: 'N163', gimmick: 'S5B' }.each do |name, chip|
+      rips[Rips.path(name)] = ["NES APU + #{chip}", 'expansion voices']
+    end
     {
       'alisa-dragoon-introduction.vgm' => ['YM2612', '6 FM'],
-      'nsf/mega-man-2.nsf' => ['NES APU', '2 pulse'],
       'shantae.gbs' => ['Game Boy APU', '1 wave'],
-      'spc/earthbound-megaton-walk.spc' => ['S-DSP', '8 sample'],
-      'hes/air-zonk.hes' => ['HuC6280', '6 wavetable']
-    }.each do |file, expected|
-      extras = @gme.metadata(File.join(FIXTURES, file), 0).fetch(:extra)
+      'spc/earthbound-megaton-walk.spc' => ['S-DSP', '8 sample']
+    }.transform_keys { |file| File.join(FIXTURES, file) }.merge(rips).each do |path, expected|
+      extras = @gme.metadata(path, 0).fetch(:extra)
 
-      refute_empty extras.fetch('system')
-      assert_includes extras.fetch('sound_chips'), expected.first
-      assert_includes extras.fetch('voice_layout'), expected.last
+      refute_empty extras.fetch('system'), path
+      assert_includes extras.fetch('sound_chips'), expected.first, path
+      assert_includes extras.fetch('voice_layout'), expected.last, path
     end
     extras = @gme.metadata(File.join(FIXTURES, 'alisa-dragoon-introduction.vgm'), 0).fetch(:extra)
 
@@ -45,7 +56,7 @@ class GmeBackendTest < Minitest::Test
   end
 
   def test_each_metadata_opens_once_and_preserves_subtune_metadata
-    path = File.join(FIXTURES, 'hes', 'air-zonk.hes')
+    path = Rips.path(:dungeon_explorer)
     expected = Array.new(@gme.track_count(path)) { |i| @gme.metadata(path, i) }
     opens = 0
     original = @gme.method(:open_emu)
@@ -77,26 +88,56 @@ class GmeBackendTest < Minitest::Test
     assert_nil meta[:duration_ms]
   end
 
-  # air-zonk.hes ships with a sibling air-zonk.m3u (a genre convention for
-  # NSF/HES rips that don't embed real lengths themselves); loading it gives
-  # GME real per-track lengths and titles instead of generic "Track NN"
-  # placeholders and the 150000ms fallback.
+  # Every HES rip, and Lagrange Point, ships with a sibling .m3u (a genre
+  # convention for NSF/HES rips that don't embed real lengths themselves);
+  # loading it gives GME real per-track lengths, titles, and album tags
+  # instead of generic "Track NN" placeholders and the 150000ms fallback.
+  # Lengths are the m3u's, whether or not it also names a loop ("41,36,10":
+  # 41 s long, loops at 36 s).
   def test_metadata_reads_real_length_and_title_from_a_sibling_m3u
-    red = @gme.metadata(File.join(FIXTURES, 'hes', 'air-zonk.hes'), 0)
+    {
+      air_zonk: ['Air Zonk', 21, [['Red', 2_000], ['Opening', 110_000]]],
+      alien_crush: ['Alien Crush', 17, [['Title', 41_000], ['Lunar Eclipse', 50_000]]],
+      blazing_lazers: ['Blazing Lazers', 20, [['Opening', 55_000], ['Thunder Blaze [Area 1]', 38_000]]],
+      dungeon_explorer: ['Dungeon Explorer', 21, [['Title', 91_000], ['Opening', 16_000]]],
+      lagrange_point: ['Lagrange Point', 31, [['Theme of Isis', 104_409], ['Find Shutolte', 115_553]]]
+    }.each do |name, (album, count, tracks)|
+      path = Rips.path(name)
 
-    assert_equal 'Red', red[:title]
-    assert_equal 2_000, red[:duration_ms] # m3u: "$42,Red,2,,0" -> 2 seconds
+      assert_equal count, @gme.track_count(path), name
+      tracks.each_with_index do |(title, duration_ms), index|
+        meta = @gme.metadata(path, index)
 
-    opening = @gme.metadata(File.join(FIXTURES, 'hes', 'air-zonk.hes'), 1)
+        assert_equal [album, title, duration_ms], meta.values_at(:album, :title, :duration_ms), name
+      end
+    end
+  end
 
-    assert_equal 'Opening', opening[:title]
-    assert_equal 110_000, opening[:duration_ms] # m3u: "$12,Opening,1:50,,0"
+  # NSF rips without a playlist get libgme's generic titles and no length.
+  def test_nsf_rips_without_an_m3u_have_no_real_lengths
+    %i[mega_man_2 castlevania silver_surfer castlevania_3_japan].each do |name|
+      meta = @gme.metadata(Rips.path(name), 1)
+
+      assert_equal ['Track 02', nil], meta.values_at(:title, :duration_ms), name
+    end
+  end
+
+  # Expansion audio (VRC6 pulses and sawtooth, VRC7 FM) is libgme's to play.
+  def test_every_nsf_rip_plays_audibly
+    Rips.names('nsf').each do |name|
+      handle = @gme.open(Rips.path(name), 0, sample_rate: 44_100)
+      peak = handle.read(2 * 44_100).unpack('e*').map(&:abs).max
+
+      assert_operator peak, :>, 0.1, name
+    ensure
+      handle&.close
+    end
   end
 
   def test_open_duration_ms_also_uses_the_m3u_length_not_gmes_default
-    h = @gme.open(File.join(FIXTURES, 'hes', 'air-zonk.hes'), 1, sample_rate: 44_100)
+    h = @gme.open(Rips.path(:alien_crush), 1, sample_rate: 44_100)
 
-    assert_equal 110_000, h.duration_ms
+    assert_equal 50_000, h.duration_ms
     h.close
 
     h = @gme.open(File.join(FIXTURES, 'nsf', 'mega-man-2.nsf'), 0, sample_rate: 44_100)

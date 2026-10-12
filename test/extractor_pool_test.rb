@@ -1,6 +1,7 @@
 require 'test_helper'
 require 'tmpdir'
 require 'fileutils'
+require_relative 'support/rip_fixtures'
 
 # Minimal stand-ins for Backends::Registry / a backend instance so album
 # fallback and KV-persistence tests can control #metadata precisely without
@@ -160,6 +161,27 @@ class ExtractorPoolTest < Minitest::Test
     assert_equal [stat.mtime.to_f], rows.map { |r| r['file_mtime'] }.uniq
     # idempotency: rescan after extraction finds nothing to do
     assert_empty @scanner.reconcile(@music)
+  end
+
+  # Rips often come as zips of the rip plus its .m3u; the playlist extracted
+  # beside it must still name and time every subtune.
+  def test_zipped_rips_scan_titles_and_lengths_from_their_m3u
+    {
+      alien_crush: ['gme', 'Alien Crush', 17, [['Title', 41_000], ['Lunar Eclipse', 50_000]]],
+      lagrange_point: ['gme', 'Lagrange Point', 31, [['Theme of Isis', 104_409], ['Find Shutolte', 115_553]]]
+    }.each do |name, (backend, album, count, first_tracks)|
+      FileUtils.cp(TestSupport::RipFixtures.zip(name), @music)
+      zip = File.join(@music, File.basename(TestSupport::RipFixtures.zip(name)))
+      archive_pool.process(@scanner.reconcile(@music))
+      rows = @db.read do |s|
+        s.execute('SELECT * FROM tracks WHERE physical_path = ? ORDER BY subtune_index', [zip])
+      end
+
+      assert_equal count, rows.size, name
+      assert_equal [File.basename(TestSupport::RipFixtures.path(name))], rows.map { |r| r['archive_entry'] }.uniq
+      assert_equal [[backend, album]], rows.map { |r| [r['backend'], r['album']] }.uniq, name
+      assert_equal(first_tracks, rows.first(2).map { |r| [r['title'], r['duration_ms']] }, name)
+    end
   end
 
   def test_rar_and_7z_archives_extract_too
