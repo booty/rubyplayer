@@ -172,8 +172,11 @@ module RubyPlayer
       end
 
       # Screen rectangle coordinates use the Screen API's short x/y names.
-      # rubocop:disable Naming/MethodParameterName
-      def render(screen, x:, y:, width:, height:, theme:, track_title: '', now_sample: nil, mute_mask: 0)
+      # rubocop:disable Naming/MethodParameterName, Metrics/ParameterLists
+      # `position_ms` is the track position for the header clock, when
+      # now_sample counts something else (GBS: output frames since launch).
+      def render(screen, x:, y:, width:, height:, theme:, track_title: '', now_sample: nil, mute_mask: 0,
+                 position_ms: nil)
         return if width <= 0 || height <= 0
 
         @screen = screen
@@ -184,13 +187,14 @@ module RubyPlayer
         @theme = theme
         @mute_mask = mute_mask || 0
         @now = [now_sample || 0, @snapshot&.sample || 0].max
+        @clock = position_ms ? position_ms * Vgm::SAMPLE_RATE / 1000 : @now
         put(0, header(sanitize(track_title)), fg: theme[:accent], bold: true)
         return put(1, status_message(:loading), fg: theme[:text_muted]) unless @snapshot
         return render_empty if @rows.empty?
 
         render_state
       end
-      # rubocop:enable Naming/MethodParameterName
+      # rubocop:enable Naming/MethodParameterName, Metrics/ParameterLists
 
       private
 
@@ -296,7 +300,7 @@ module RubyPlayer
 
       def header(track_title)
         chips = Array(@snapshot&.chips).map(&:name).uniq.join(' + ')
-        parts = [track_title, "#{@source} LIVE", chips, format_time(@now)]
+        parts = [track_title, "#{@source} LIVE", chips, format_time(@clock)]
         parts << "Loop #{@snapshot.loop_count}" if @snapshot&.loop_count.to_i.positive?
         parts << (@paused ? 'PAUSED' : 'PLAYING')
         parts << @snapshot.message if @snapshot&.message

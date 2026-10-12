@@ -106,6 +106,17 @@ class GbsLiveViewTest < Minitest::Test
     lanes.each { |lane| assert_operator lane[2..].strip.length, :>, 10, lane }
   end
 
+  # Snapshot times count output frames across the session; the header shows
+  # where the track is.
+  def test_header_shows_the_track_position_not_the_output_clock
+    screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 48, cols: 160)
+    @view.render(screen, x: 0, y: 0, width: 160, height: 48, theme: THEME, track_title: 'Shantae',
+                         now_sample: self.class.tracker.now_sample + (60 * 44_100), position_ms: 3_250)
+    header = screen.instance_variable_get(:@back).first.map(&:ch).join
+
+    assert_includes header, '· 0:03 ·'
+  end
+
   def test_waiting_message_names_the_source
     view = RubyPlayer::UI::VgmLiveView.new(source: 'GBS')
     screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 10, cols: 80)

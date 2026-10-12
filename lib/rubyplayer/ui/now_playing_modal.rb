@@ -50,9 +50,11 @@ module RubyPlayer
 
       # The App hands over the sample being heard and the voice mute mask
       # before each render, so VGM levels move between telemetry snapshots.
-      def update_vgm(now_sample:, mute_mask:)
+      # GBS also passes the track position for the header clock.
+      def update_vgm(now_sample:, mute_mask:, position_ms: nil)
         @now_sample = now_sample
         @mute_mask = mute_mask
+        @position_ms = position_ms
       end
 
       def page=(page)
@@ -113,7 +115,7 @@ module RubyPlayer
         frame.call(title: 'Now Playing', w: width, h: height, hint: VGM_LIVE_HINT, styled_hint: true) do |x, y|
           @vgm_view.render(screen, x: x + 2, y: y + 1, width: width - 4, height: [height - 3, 0].max,
                                    theme: theme, track_title: live_title, now_sample: @now_sample,
-                                   mute_mask: @mute_mask)
+                                   mute_mask: @mute_mask, position_ms: @position_ms)
         end
         nil
       end

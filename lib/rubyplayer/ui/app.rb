@@ -1411,7 +1411,8 @@ module RubyPlayer
 
         @gbs_live_view.update(@gbs_tracker.snapshot) if @gbs_tracker.update(live) || @gbs_live_view.snapshot.nil?
         @gbs_live_view.paused = live.paused
-        @now_playing_modal.update_vgm(now_sample: @gbs_tracker.now_sample, mute_mask: live.mute_mask)
+        @now_playing_modal.update_vgm(now_sample: @gbs_tracker.now_sample, mute_mask: live.mute_mask,
+                                      position_ms: @engine.state[:position_ms])
       end
 
       # Fills the art region when there's no image to show. While audio is
