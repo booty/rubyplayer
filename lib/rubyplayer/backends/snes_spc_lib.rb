@@ -22,6 +22,7 @@ module RubyPlayer
       attach_function :rp_spc_seek, %i[pointer long], :int, blocking: true
       attach_function :rp_spc_tell_ms, [:pointer], :long
       attach_function :rp_spc_mute_voices, %i[pointer int], :void
+      attach_function :rp_spc_pause_silence_detection, %i[pointer int], :void
       attach_function :rp_spc_snapshot_size, [], :int
       attach_function :rp_spc_snapshot_count, [:pointer], :int
       attach_function :rp_spc_snapshots, [:pointer], :pointer

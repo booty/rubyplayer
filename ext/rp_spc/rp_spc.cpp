@@ -52,6 +52,9 @@ struct rp_spc {
 	long sample_rate;
 	bool resample;
 	bool ignore_silence;
+	// While the user has voices muted, silence is not the music ending:
+	// detection pauses (like ignore_silence, but without restarting).
+	bool silence_detection_paused;
 	int mute_mask;
 	// User fade survives restarts (backward seeks); libgme would instead fall
 	// back to Spc_Emu's (length, 50 ms) default after a restart.
@@ -306,6 +309,8 @@ void play(rp_spc* s, long out_count, sample_t* out)
 	if (s->track_ended) {
 		memset(out, 0, out_count * sizeof *out);
 	} else {
+		// libgme's ignore_silence, extended to cover user muting.
+		bool detect = !s->ignore_silence && !s->silence_detection_paused;
 		long pos = 0;
 		if (s->silence_count) {
 			// During a run of silence, run the emulator ahead so it can find the end.
@@ -317,7 +322,7 @@ void play(rp_spc* s, long out_count, sample_t* out)
 			memset(out, 0, pos * sizeof *out);
 			s->silence_count -= pos;
 
-			if (!s->ignore_silence && s->emu_time - s->silence_time > (long) silence_max * out_channels * s->sample_rate) {
+			if (detect && s->emu_time - s->silence_time > (long) silence_max * out_channels * s->sample_rate) {
 				s->track_ended = s->emu_track_ended = true;
 				s->silence_count = 0;
 				s->buf_remain = 0;
@@ -336,7 +341,7 @@ void play(rp_spc* s, long out_count, sample_t* out)
 			emu_play(s, remain, out + pos);
 			s->track_ended = s->track_ended || s->emu_track_ended;
 
-			if (!s->ignore_silence || s->out_time > s->fade_start) {
+			if (detect || s->out_time > s->fade_start) {
 				// Check the end for a new run of silence.
 				long silence = count_silence(out + pos, remain);
 				if (silence < remain)
@@ -394,6 +399,7 @@ rp_spc* rp_spc_open(const void* data, long size, int out_rate)
 	s->sample_rate = out_rate;
 	s->resample = out_rate != native_rate;
 	s->ignore_silence = false;
+	s->silence_detection_paused = false;
 	s->mute_mask = 0;
 	s->user_fade_start_ms = -1;
 	s->user_fade_length_ms = -1;
@@ -490,6 +496,17 @@ long rp_spc_tell_ms(rp_spc* s)
 	long rate = s->sample_rate * out_channels;
 	long sec = s->out_time / rate;
 	return sec * 1000 + (s->out_time - sec * rate) * 1000 / rate;
+}
+
+void rp_spc_pause_silence_detection(rp_spc* s, int paused)
+{
+	if (!s)
+		return;
+	bool resuming = s->silence_detection_paused && !paused;
+	s->silence_detection_paused = paused != 0;
+	// Silence heard while paused must not count toward the 6 s window.
+	if (resuming)
+		s->silence_time = s->emu_time;
 }
 
 void rp_spc_mute_voices(rp_spc* s, int mask)

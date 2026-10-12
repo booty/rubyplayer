@@ -49,7 +49,13 @@ long rp_spc_play(rp_spc*, float* out, long frames);
 int  rp_spc_track_ended(rp_spc*);
 int  rp_spc_seek(rp_spc*, long ms);   /* 1 on success */
 long rp_spc_tell_ms(rp_spc*);
+/* Same as libgme's mute: silence detection still sees the result, so muting
+ * everything can end the track. Pair with rp_spc_pause_silence_detection
+ * for interactive muting. */
 void rp_spc_mute_voices(rp_spc*, int mask);
+/* Nonzero suspends silence-based track ending (fades still end tracks);
+ * resuming restarts the silence window. Does not restart the track. */
+void rp_spc_pause_silence_detection(rp_spc*, int paused);
 
 /* Snapshots recorded during the most recent rp_spc_play call, in order: one
  * per emulator call, about every 50 ms when resampling (at a 32 kHz output

@@ -88,10 +88,15 @@ module RubyPlayer
         end
         # rubocop:enable Naming/PredicateMethod
 
-        # Bit v silences S-DSP voice v from the next emulated block on.
+        # Bit v silences S-DSP voice v from the next emulated block on. User
+        # muting pauses silence-based track ending: silence it causes is not
+        # the music ending, and must never advance the queue.
         def mute(mask)
           @mute_mask = mask
-          SnesSpcLib.rp_spc_mute_voices(@spc, mask) if @spc
+          return unless @spc
+
+          SnesSpcLib.rp_spc_mute_voices(@spc, mask)
+          SnesSpcLib.rp_spc_pause_silence_detection(@spc, mask.zero? ? 0 : 1)
         end
 
         def position_ms

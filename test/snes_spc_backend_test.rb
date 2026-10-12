@@ -91,6 +91,21 @@ class SnesSpcBackendTest < Minitest::Test
     assert_operator data.unpack('e*').map(&:abs).max, :<, 0.05
   end
 
+  # Regression: silence detection saw the user's mute, so muting every voice
+  # (or soloing a silent one) ended the track after ~2.4 s and the queue
+  # advanced. User muting must never end a track; unmuting resumes the music.
+  def test_muting_longer_than_the_silence_window_does_not_end_the_track
+    @handle = @backend.open(SPC, 0, sample_rate: RATE)
+    @handle.mute(0xff)
+    still_playing = Array.new(30) { @handle.read(16_384) }.count { |data| !data.nil? }
+
+    assert_equal 30, still_playing
+    @handle.mute(0)
+    loudest = Array.new(3) { @handle.read(16_384).unpack('e*').map(&:abs).max }.max
+
+    assert_operator loudest, :>, 0.01
+  end
+
   def test_opening_a_non_spc_file_raises
     path = File.join(FIXTURES, 'mega-man-2.nsf')
 
