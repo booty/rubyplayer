@@ -70,6 +70,21 @@ class VgmSn76489Test < Minitest::Test
     assert_equal 'sn76489:1:0', second.snapshot(sample: 0).channels.first.id
   end
 
+  def test_history_tracks_audibility_and_period_changes
+    @chip.write(port: 0, register: :data, value: 0x80 | 0x0e, sample: 0)
+    @chip.write(port: 0, register: :data, value: 0x08, sample: 0)
+    @chip.write(port: 0, register: :data, value: 0x90 | 0x02, sample: 100)
+    @chip.write(port: 0, register: :data, value: 0x90 | 0x04, sample: 150)
+    @chip.write(port: 0, register: :data, value: 0x80 | 0x0e, sample: 200)
+    @chip.write(port: 0, register: :data, value: 0x10, sample: 200)
+    @chip.write(port: 0, register: :data, value: 0x90 | 0x0f, sample: 300)
+    snapshot = @chip.snapshot(sample: 300)
+    events = RubyPlayer::Vgm::NoteLog.decode(snapshot.details.fetch(:events))
+
+    assert_equal([[:on, 100], [:note, 200], [:off, 300]], events.map { |event| [event.kind, event.sample] })
+    assert_equal 300, snapshot.channels.first.details.fetch(:release_sample)
+  end
+
   private
 
   def write(value, register: :data)

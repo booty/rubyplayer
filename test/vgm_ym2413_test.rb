@@ -78,6 +78,21 @@ class VgmYm2413Test < Minitest::Test
                  second.snapshot(sample: 0).channels.first.patch.digest
   end
 
+  def test_history_and_rom_instrument_names
+    write(0x30, 0x30)
+    write(0x10, 0xac)
+    write(0x20, 0x18, sample: 100)
+    write(0x10, 0x20, sample: 150)
+    write(0x20, 0x08, sample: 200)
+    write(0x0e, 0x30, sample: 250)
+    snapshot = @chip.snapshot(sample: 300)
+    events = RubyPlayer::Vgm::NoteLog.decode(snapshot.details.fetch(:events))
+
+    assert_equal 'Piano', snapshot.channels.first.details.fetch(:program_name)
+    assert_equal([[0, :on, 100], [0, :note, 150], [0, :off, 200], [6, :on, 250]],
+                 events.map { |event| [event.channel, event.kind, event.sample] })
+  end
+
   private
 
   def write(register, value, sample: 64)

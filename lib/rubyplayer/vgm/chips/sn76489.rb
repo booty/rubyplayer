@@ -2,6 +2,7 @@
 
 require_relative '../snapshot'
 require_relative '../pitch'
+require_relative '../note_log'
 
 module RubyPlayer
   module Vgm
@@ -26,30 +27,28 @@ module RubyPlayer
           @latched_channel = nil
           @latched_volume = false
           @last_trigger_samples = Array.new(CHANNEL_COUNT)
+          @release_samples = Array.new(CHANNEL_COUNT)
+          @notes = NoteLog.new
         end
 
         def write(register:, value:, sample:, **_port)
           return unless value.is_a?(Integer) && value.between?(0, 0xff)
 
+          before = enabled_states
           case register
           when :stereo
-            before = enabled_states
             @stereo = value
-            record_activations(before, sample)
           when :data
             if value.anybits?(0x80)
               channel = (value >> 5) & 0x03
               @latched_channel = channel
               @latched_volume = value.anybits?(0x10)
-              before = channel_enabled?(channel)
               write_latched(channel, @latched_volume, value & 0x0f, continuation: false)
             elsif @latched_channel
-              channel = @latched_channel
-              before = channel_enabled?(channel)
-              write_latched(channel, @latched_volume, value & 0x3f, continuation: true)
+              write_latched(@latched_channel, @latched_volume, value & 0x3f, continuation: true)
             end
-            @last_trigger_samples[channel] = sample if channel && before == false && channel_enabled?(channel)
           end
+          record_transitions(before, sample)
         end
 
         def snapshot(**)
@@ -59,7 +58,8 @@ module RubyPlayer
             channels: channels,
             details: { variant: @variant, noise_feedback: @feedback,
                        shift_width: @shift_width, flags: @flags,
-                       stereo_register: @gg_stereo ? @stereo : nil }
+                       stereo_register: @gg_stereo ? @stereo : nil,
+                       events: @notes.packed }
           )
         end
 
@@ -68,7 +68,9 @@ module RubyPlayer
                                   noise_control: @noise_control, stereo: @stereo,
                                   latched_channel: @latched_channel,
                                   latched_volume: @latched_volume,
-                                  last_trigger_samples: @last_trigger_samples })
+                                  last_trigger_samples: @last_trigger_samples,
+                                  release_samples: @release_samples,
+                                  notes: @notes.dump_state })
         end
 
         def restore_state(state)
@@ -79,6 +81,8 @@ module RubyPlayer
           @latched_channel = state.fetch(:latched_channel)
           @latched_volume = state.fetch(:latched_volume)
           @last_trigger_samples = state.fetch(:last_trigger_samples).dup
+          @release_samples = state.fetch(:release_samples).dup
+          @notes = NoteLog.new.restore_state(state.fetch(:notes))
           self
         end
 
@@ -110,7 +114,7 @@ module RubyPlayer
                    else :tone_3
                    end
             details = { attenuation: @volumes[channel], route: route,
-                        noise_type: type, noise_rate: rate,
+                        release_sample: @release_samples[channel], noise_type: type, noise_rate: rate,
                         tone_3_coupled: rate == :tone_3 }
             note = "#{type} / #{rate == :tone_3 ? 'tone 3' : rate.to_s.delete_prefix('clock_')}"
             kind = :noise
@@ -121,7 +125,7 @@ module RubyPlayer
             pitch_hz = period.nil? ? nil : Pitch.psg_hz(clock_hz: @clock_hz, period: period)
             note_name, cents = Pitch.note_and_cents(pitch_hz)
             details = { period: period, attenuation: @volumes[channel], route: route,
-                        pitch_cents: cents,
+                        pitch_cents: cents, release_sample: @release_samples[channel],
                         zero_period_uses_maximum_divider: period&.zero? || false }
             note = note_name
             kind = :tone
@@ -139,10 +143,28 @@ module RubyPlayer
 
         def enabled_states = Array.new(CHANNEL_COUNT) { |channel| channel_enabled?(channel) }
 
-        def record_activations(before, sample)
+        # The PSG has no key: a channel sounds while it is audible and routed,
+        # so becoming audible is a note start, and a period change while
+        # audible is a pitch change (software envelopes rewrite volume only).
+        def record_transitions(before, sample)
           before.each_index do |channel|
-            @last_trigger_samples[channel] = sample if !before[channel] && channel_enabled?(channel)
+            now = channel_enabled?(channel)
+            if now && !before[channel]
+              @last_trigger_samples[channel] = sample
+              @notes.on(channel, sample, midi_for(channel))
+            elsif before[channel] && !now
+              @release_samples[channel] = sample
+              @notes.off(channel, sample)
+            elsif now
+              @notes.note(channel, sample, midi_for(channel))
+            end
           end
+        end
+
+        def midi_for(channel)
+          return if channel == 3 || @periods[channel].nil?
+
+          Pitch.midi(Pitch.psg_hz(clock_hz: @clock_hz, period: @periods[channel]))
         end
 
         def channel_enabled?(channel)

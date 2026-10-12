@@ -38,6 +38,16 @@ module RubyPlayer
         [nil, nil]
       end
 
+      # Nearest MIDI note number, or nil outside the MIDI range.
+      def self.midi(frequency_hz)
+        return unless valid?(frequency_hz)
+
+        note = (69 + (12 * Math.log2(frequency_hz / 440.0))).round
+        note if note.between?(0, 127)
+      end
+
+      def self.note_name(midi) = "#{NOTE_NAMES[midi % 12]}#{(midi / 12) - 1}"
+
       def self.valid?(value)
         value.is_a?(Numeric) && value.positive? && value.finite?
       end

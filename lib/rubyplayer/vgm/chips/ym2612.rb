@@ -3,6 +3,7 @@
 require_relative '../snapshot'
 require_relative '../patch'
 require_relative '../pitch'
+require_relative '../note_log'
 
 module RubyPlayer
   module Vgm
@@ -17,7 +18,10 @@ module RubyPlayer
         # drive OP1, AA/AE drive OP2, A8/AC drive OP3, and the ordinary A2/A6
         # channel 3 frequency drives OP4.
         SPECIAL_SLOT_OPERATORS = { 0 => 3, 1 => 1, 2 => 2 }.freeze
-        private_constant :SPECIAL_SLOT_OPERATORS
+        # Register 0x22 LFO rates, from the datasheet.
+        LFO_HZ = [3.98, 5.56, 6.02, 6.37, 6.88, 9.63, 48.1, 72.2].freeze
+        DAC_CHANNEL = 5
+        private_constant :SPECIAL_SLOT_OPERATORS, :DAC_CHANNEL
 
         def initialize(clock_hz:, variant: :ym2612, instance: 0)
           @clock_hz = clock_hz
@@ -26,6 +30,9 @@ module RubyPlayer
           @registers = Array.new(2) { Array.new(0x100) }
           @key_masks = Array.new(6, 0)
           @last_trigger_samples = Array.new(6)
+          @release_samples = Array.new(6)
+          @notes = NoteLog.new
+          @dac_writes = 0
           # The chip has one A4-A6 high-byte latch shared by all channels on
           # both ports, and one AC-AE latch for special mode. Only the low-byte
           # write commits a frequency; both latches reset to zero.
@@ -49,14 +56,11 @@ module RubyPlayer
           when 0x28
             key_on(value, sample) if port.zero?
           when 0x2a
-            if port.zero?
-              @dac_value = value
-              @dac_sample = sample
-            end
+            dac_write(value, sample) if port.zero?
           when 0x2b
             @dac_enabled = value.anybits?(0x80) if port.zero?
           when 0xa0..0xa2
-            @frequency[(port * 3) + register - 0xa0] = latched_frequency(@frequency_latch, value)
+            commit_frequency((port * 3) + register - 0xa0, value, sample)
           when 0xa4..0xa6
             @frequency_latch = value
           when 0xa8..0xaa
@@ -69,9 +73,7 @@ module RubyPlayer
         def snapshot(sample:)
           channels = Array.new(6) { |index| channel_snapshot(index, sample) }
           mode = @registers[0][0x27]
-          timer_a = register(0, 0x24)
-          timer_a_low = register(0, 0x25)
-          timer_b = register(0, 0x26)
+          lfo = register(0, 0x22)
           ChipSnapshot.new(
             id: "ym2612:#{@instance}",
             name: @variant == :ym3438 ? 'YM3438' : 'YM2612',
@@ -79,16 +81,18 @@ module RubyPlayer
             channels: channels,
             details: {
               variant: @variant,
-              lfo: register(0, 0x22),
-              lfo_enabled: !register(0, 0x22).nil? && register(0, 0x22).anybits?(0x08),
+              lfo: lfo,
+              lfo_enabled: !lfo.nil? && lfo.anybits?(0x08),
+              lfo_hz: lfo&.anybits?(0x08) ? LFO_HZ[lfo & 0x07] : nil,
               channel_3_special_mode: !mode.nil? && mode.anybits?(0x40),
               csm_enabled: !mode.nil? && mode.anybits?(0x80),
-              timer_a: timer_a.nil? ? nil : ((timer_a << 2) | ((timer_a_low || 0) & 3)),
-              timer_b: timer_b,
+              **timer_details(mode),
               timer_generated_key_activity: !mode.nil? && mode.anybits?(0x80) ? :unmodeled : nil,
               dac_enabled: @dac_enabled,
               dac_value: @dac_value,
-              dac_sample: @dac_sample
+              dac_sample: @dac_sample,
+              dac_writes: @dac_writes,
+              events: @notes.packed
             }
           )
         end
@@ -98,6 +102,9 @@ module RubyPlayer
                                   registers: @registers,
                                   key_masks: @key_masks,
                                   last_trigger_samples: @last_trigger_samples,
+                                  release_samples: @release_samples,
+                                  notes: @notes.dump_state,
+                                  dac_writes: @dac_writes,
                                   frequency_latch: @frequency_latch,
                                   special_latch: @special_latch,
                                   frequency: @frequency,
@@ -112,6 +119,9 @@ module RubyPlayer
           @registers = state.fetch(:registers).map(&:dup)
           @key_masks = state.fetch(:key_masks).dup
           @last_trigger_samples = state.fetch(:last_trigger_samples).dup
+          @release_samples = state.fetch(:release_samples).dup
+          @notes = NoteLog.new.restore_state(state.fetch(:notes))
+          @dac_writes = state.fetch(:dac_writes)
           @frequency_latch = state.fetch(:frequency_latch)
           @special_latch = state.fetch(:special_latch)
           @frequency = state.fetch(:frequency).dup
@@ -130,8 +140,57 @@ module RubyPlayer
 
           channel = (((value >> 2) & 1) * 3) + channel_code
           new_mask = (value >> 4) & 0x0f
-          @last_trigger_samples[channel] = sample if new_mask.anybits?(~@key_masks[channel])
+          old_mask = @key_masks[channel]
           @key_masks[channel] = new_mask
+          if new_mask.anybits?(~old_mask)
+            @last_trigger_samples[channel] = sample
+            @notes.on(channel, sample, midi_for(channel)) unless dac_channel?(channel)
+          elsif new_mask.zero? && old_mask.positive?
+            @release_samples[channel] = sample
+            @notes.off(channel, sample) unless dac_channel?(channel)
+          end
+        end
+
+        # A burst of DAC writes is one note in the history: it starts with the
+        # first write after a gap and ends at the last write before the next gap.
+        def dac_write(value, sample)
+          if @dac_enabled
+            gap = @dac_sample.nil? || sample - @dac_sample > RECENT_SAMPLES
+            @notes.off(DAC_CHANNEL, @dac_sample) if gap && @dac_sample
+            @notes.on(DAC_CHANNEL, sample, nil) if gap
+          end
+          @dac_value = value
+          @dac_sample = sample
+          @dac_writes += 1
+        end
+
+        def dac_channel?(channel) = channel == DAC_CHANNEL && @dac_enabled
+
+        def midi_for(channel)
+          special = channel == 2 && channel_3_special_mode?
+          Pitch.midi(channel_pitch(@frequency[channel], special))
+        end
+
+        def commit_frequency(channel, value, sample)
+          @frequency[channel] = latched_frequency(@frequency_latch, value)
+          @notes.note(channel, sample, midi_for(channel)) if @key_masks[channel].positive?
+        end
+
+        def timer_details(mode)
+          high = register(0, 0x24)
+          timer_a = high && ((high << 2) | (register(0, 0x25).to_i & 3))
+          timer_b = register(0, 0x26)
+          { timer_a: timer_a, timer_b: timer_b,
+            timer_a_hz: timer_a && timer_hz(1024 - timer_a),
+            timer_b_hz: timer_b && timer_hz(16 * (256 - timer_b)),
+            timers_running: mode.nil? ? [false, false] : [mode.anybits?(0x01), mode.anybits?(0x02)] }
+        end
+
+        # Timer periods count in units of 144 master clocks (one FM sample).
+        def timer_hz(ticks)
+          return unless @clock_hz.is_a?(Numeric) && @clock_hz.positive? && ticks.positive?
+
+          @clock_hz / (144.0 * ticks)
         end
 
         def latched_frequency(high, low)
@@ -161,7 +220,7 @@ module RubyPlayer
             id: "ym2612:#{@instance}:#{index}", label: 'FM 6 / DAC', kind: :pcm,
             state: recent ? :data : :idle, last_trigger_sample: @dac_sample,
             pitch_hz: nil, note: 'PCM', pan: pan_for(index), patch: nil,
-            details: { dac_enabled: true, dac_value: @dac_value, dac_sample: @dac_sample,
+            details: { dac_enabled: true, dac_value: @dac_value, dac_sample: @dac_sample, dac_writes: @dac_writes,
                        fm_key_mask: @key_masks[index], fm_patch: build_patch(index) }
           )
         end
@@ -178,6 +237,7 @@ module RubyPlayer
           ams_fms = channel_register(index, 0xb4)
           {
             key_mask: @key_masks[index], frequency: frequency, pitch_cents: cents,
+            release_sample: @release_samples[index],
             algorithm: base&.then { |value| value & 0x07 },
             feedback: base&.then { |value| (value >> 3) & 0x07 },
             ams: ams_fms&.then { |value| (value >> 4) & 0x03 },

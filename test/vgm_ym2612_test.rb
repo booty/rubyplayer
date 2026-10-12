@@ -5,6 +5,7 @@ require 'rubyplayer/vgm/snapshot'
 require 'rubyplayer/vgm/pitch'
 require 'rubyplayer/vgm/patch'
 require 'rubyplayer/vgm/chips/ym2612'
+require 'rubyplayer/vgm/note_log'
 
 class VgmYm2612Test < Minitest::Test
   def setup
@@ -193,6 +194,47 @@ class VgmYm2612Test < Minitest::Test
 
     assert_equal @chip.snapshot(sample: 123), copy.snapshot(sample: 123)
     assert_raises(FrozenError) { state[:registers][0][0x28] = 0 }
+  end
+
+  def test_history_records_note_starts_pitch_changes_and_releases
+    write(0xa4, 0x22)
+    write(0xa0, 0x69)
+    write(0x28, 0xf0, sample: 100)
+    write(0xa4, 0x22)
+    write(0xa0, 0xa0, sample: 200)
+    write(0x28, 0x00, sample: 300)
+    snapshot = @chip.snapshot(sample: 300)
+    events = RubyPlayer::Vgm::NoteLog.decode(snapshot.details.fetch(:events))
+
+    assert_equal %i[on note off], events.map(&:kind)
+    assert_equal [100, 200, 300], events.map(&:sample)
+    refute_equal events[0].midi, events[1].midi
+    assert_equal 300, snapshot.channels.first.details.fetch(:release_sample)
+  end
+
+  def test_dac_bursts_are_single_history_notes
+    write(0x2b, 0x80)
+    [10, 20, 30].each { |sample| write(0x2a, 0x90, sample: sample) }
+    write(0x2a, 0x70, sample: 30 + RubyPlayer::Vgm::Chips::Ym2612::RECENT_SAMPLES + 1)
+    snapshot = @chip.snapshot(sample: 10_000)
+    events = RubyPlayer::Vgm::NoteLog.decode(snapshot.details.fetch(:events))
+
+    assert_equal([[:on, 10], [:off, 30], [:on, 4_441]], events.map { |event| [event.kind, event.sample] })
+    assert_equal 4, snapshot.details.fetch(:dac_writes)
+  end
+
+  def test_lfo_and_timer_rates
+    write(0x22, 0x0b)
+    write(0x24, 0xff)
+    write(0x25, 0x03)
+    write(0x26, 0xf0)
+    write(0x27, 0x03)
+    details = @chip.snapshot(sample: 0).details
+
+    assert_in_delta 6.37, details.fetch(:lfo_hz), 0.001
+    assert_in_delta 7_670_454 / 144.0, details.fetch(:timer_a_hz), 0.01
+    assert_in_delta 7_670_454 / (144.0 * 16 * 16), details.fetch(:timer_b_hz), 0.01
+    assert_equal [true, true], details.fetch(:timers_running)
   end
 
   private
