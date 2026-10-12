@@ -92,3 +92,14 @@ the authority for workflow and invariants.
   output (a joined index list "135" was misread as a bitmask). Full-screen
   views redrawn at 30 fps must memoize derived graphs and avoid per-cell
   allocation (`Screen#fill`, shared frozen cells in `Screen#put`).
+- Live GBS view (gbs_native backend): vendor libgme's own `gme.cpp` and
+  build the emulator through `gme_new_emu` with a copied type whose
+  `new_emu` returns a subclass; that reproduced libgme bit for bit with no
+  port. libgme's instrumentation macros (`GME_APU_HOOK`, `GME_FRAME_HOOK`)
+  capture state without editing the core. Map emulator clocks to output
+  frames with `frames emulated - emu_time` (the leading-silence lead), and
+  record during `start_track` too: the silence search emulates the first
+  heard note. Check timing against audio onsets with other voices muted
+  *before* start_track, or the search sees unmuted audio. Views needing
+  every state change (note history) consume all heard snapshots in order
+  (`ChipTimeline#take_through`), not just the latest.

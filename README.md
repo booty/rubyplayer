@@ -126,6 +126,21 @@ sample-for-sample against libgme; `config.backends[".spc"] = :gme` switches
 back to libgme playback (no live page), and the app does so automatically if
 `librp_spc.dylib` is missing.
 
+For GBS (Game Boy) tracks, Now Playing opens on a full-screen **GBS** live page
+with the same layout as the VGM page: the APU line (power, master volume,
+music-driver rate), all four channels (note and cents, frequency, level, pan,
+instrument, state), a keyboard, the selected channel's detail (square duty
+cycle and sweep, wave output level, noise LFSR width and clock, volume
+envelope and length counter), its volume envelope drawn from the last trigger
+(or, for the wave channel, the 32-sample wave RAM), and per-channel note
+history. Unlike VGM, every value is read from the emulator, so levels and
+envelopes are exact. `M` mutes or unmutes the selected channel and `S` solos
+it. `.gbs` playback uses libgme's own GBS emulator, vendored with hooks that
+record APU state at each music-driver call (`ext/rp_gbs`), verified
+sample-for-sample against Homebrew libgme; `config.backends[".gbs"] = :gme`
+switches back to libgme playback (no live page), and the app does so
+automatically if `librp_gbs.dylib` is missing.
+
 Artwork comes from embedded pictures in FFmpeg-backed files, falling back to
 images in the track's folder (such as `cover.jpg` or `folder.png`). Archived
 tracks use the folder containing the on-disk archive. Loading and image
@@ -214,7 +229,7 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | `chip_timeline.rb` | `ChipTimeline`: packed native snapshots (any record class) indexed by output-timeline frame: the latest heard (`at`) or each heard record once, in order (`take_through`). |
 | `playback_engine/voice_muting.rb` | `PlaybackEngine::VoiceMuting`: user voice muting for any handle with `#mute` (native SPC, libgme), queued for the decoder thread and tied to the track it targets. |
 | `spc/snapshot.rb` | `Spc::Snapshot` (one decoded S-DSP state record) and `Spc::LiveState`. |
-| `gbs/snapshot.rb` | `Gbs::Snapshot` (one decoded Game Boy APU record) and `Gbs::LiveState`. |
+| `gbs/snapshot.rb`, `gbs/tracker.rb` | `Gbs::Snapshot` (one decoded Game Boy APU record), `Gbs::LiveState`, and `Gbs::Tracker`, which turns the snapshot stream into the VGM live page's channel model and note history. |
 | `spc/dsp.rb`, `spc/brr.rb`, `spc/fir.rb`, `spc/ram_map.rb` | Pure decoders for the live page: DSP registers, sample directory and BRR samples, echo FIR frequency response, and SPC RAM layout. |
 | `track_formatter.rb` | `TrackFormatter`: runs configured formatter lambdas against a track and helper context, then normalizes strings and conditional fragments into validated styled segments. |
 | `keymap.rb` | `Keymap`: maps normalized key names to action symbols, merging Ruby-config overrides over sensible single-letter defaults. Matching is case-insensitive. Pane-local bindings shadow global bindings. |
@@ -238,7 +253,8 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 |---|---|
 | `app.rb` | `UI::App`: wires every other component together and owns the main loop — key dispatch, event handling, config hot-reload, and the top-level `render`. This is the natural place to look first to see how a keypress becomes an action and how state changes reach the screen. |
 | `spc_live_view.rb` | `SpcLiveView`: the full-modal SPC live page. Renders a `Spc::LiveState` into a rectangle, choosing three-column, two-column, or stacked panels by size; graphs are memoized per input. |
-| `vgm_live_view.rb`, `vgm_telemetry_controller.rb` | `VgmLiveView`: the full-modal VGM live page, rendering snapshots into a rectangle with three-column, two-column, or stacked panels by size; and the visible-consumer refresh controller. The view does not read files, query the engine, or depend on the Now Playing modal. |
+| `vgm_live_view.rb`, `vgm_telemetry_controller.rb` | `VgmLiveView`: the full-modal VGM (and GBS) live page, rendering snapshots into a rectangle with three-column, two-column, or stacked panels by size; and the visible-consumer refresh controller. The view does not read files, query the engine, or depend on the Now Playing modal. |
+| `gb_live_panels.rb` | `GbLivePanels`: the Game Boy APU parts of `VgmLiveView` (chip line, instrument text, exact levels, voice panel, volume envelope and wave RAM). |
 | `live_glyphs.rb` | Block-character level bars and graphs shared by the live pages. |
 | `screen.rb` | `Screen`: the double-buffered renderer described above (`put`/`clear_back`/`flush`), plus truecolor and named ANSI color support. Has no knowledge of panes, tracks, or layout — purely a drawing primitive. |
 | `library_pane.rb` | `LibraryPane`: left-hand source tree with queue/history/favorites/Focus, five smart views, and folder hierarchy. Owns folder breadcrumbs, selection, scrolling, and overflow indicator. |

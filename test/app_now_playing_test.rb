@@ -15,6 +15,8 @@ class AppNowPlayingTest < Minitest::Test
     @app.handle_events
     use_screen(rows: 40, cols: 110)
     @app.handle_key('o')
+    # GBS opens on the live page; the refreshed details are on Info.
+    @app.handle_key('tab') if @app.instance_variable_get(:@now_playing_page) == :live
 
     assert_equal :info, @app.instance_variable_get(:@now_playing_page)
     wait_until do
@@ -26,6 +28,19 @@ class AppNowPlayingTest < Minitest::Test
     assert_includes back_buffer_text, 'Voices: 2 pulse + 1 wave + 1 noise'
     assert_includes back_buffer_text, 'System:'
     refute_includes back_buffer_text, 'Bit rate:'
+  end
+
+  # Formats without a live page keep the plain Info popup.
+  def test_tracks_without_live_state_have_no_live_page
+    library = @app.instance_variable_get(:@library)
+    track = library.all_tracks.find { |entry| entry.format == 'mod' }
+    @app.engine.enqueue_now([track])
+    wait_until { @app.engine.state[:track]&.id == track.id }
+    @app.handle_events
+    use_screen(rows: 40, cols: 110)
+    @app.handle_key('o')
+    @app.render
+
     refute_includes back_buffer_text, 'Info / Live'
     @app.handle_key('tab')
 
@@ -104,7 +119,10 @@ class AppNowPlayingTest < Minitest::Test
 
     assert_includes back_buffer_text, @app.engine.state[:track].title[0, 20]
     refute_includes back_buffer_text, 'Stale metadata'
-    assert_includes back_buffer_text, 'Technical'
+    # GBS tracks open on their live page; others on Info.
+    live = @app.instance_variable_get(:@now_playing_page) == :live
+
+    assert_includes back_buffer_text, live ? 'GBS LIVE' : 'Technical'
   end
 
   def test_short_popup_keeps_technical_rows_above_the_real_close_hint_and_border

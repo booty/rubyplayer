@@ -629,6 +629,15 @@ class AppRenderingThemeConfigTest < Minitest::Test
   def test_now_playing_modal_shows_art_and_metadata
     play_with_cover_art
     @app.handle_key('o')
+    # Art is on the Info page; GBS tracks open on Live, which drops the art
+    # until Info fetches it again.
+    if @app.instance_variable_get(:@now_playing_page) == :live
+      @app.handle_key('tab')
+      wait_until(timeout: 2, interval: 0.01, failure_message: 'art did not reload') do
+        @app.handle_events
+        @app.instance_variable_get(:@art_bytes)
+      end
+    end
 
     assert @app.show_now_playing
 

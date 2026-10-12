@@ -5,22 +5,25 @@ require_relative '../vgm/envelope'
 require_relative '../vgm/note_log'
 require_relative '../vgm/pitch'
 require_relative 'live_glyphs'
+require_relative 'gb_live_panels'
 
 module RubyPlayer
   module UI
-    # Renders live VGM chip state inside a caller-owned rectangle, using all
-    # of it: header, one line per chip, every channel with an estimated level,
-    # then a keyboard and voice, envelope, and note-history panels as space
-    # allows. Like SpcLiveView, the layout is chosen from the rectangle.
+    # Renders live chip state inside a caller-owned rectangle, using all of
+    # it: header, one line per chip, every channel with its level, then a
+    # keyboard and voice, envelope, and note-history panels as space allows.
+    # Like SpcLiveView, the layout is chosen from the rectangle.
     #
-    # Snapshots arrive at the telemetry rate (~15 Hz) and lag the audio a
-    # little; levels and history are drawn against `now_sample`, the sample
-    # being heard, so they move smoothly between snapshots.
+    # VGM snapshots come from register replay at the telemetry rate (~15 Hz)
+    # and lag the audio a little; GBS snapshots come from Gbs::Tracker. Levels
+    # and history are drawn against `now_sample`, the sample being heard, so
+    # they move smoothly between snapshots.
     class VgmLiveView
       include LiveGlyphs
+      include GbLivePanels
 
       CHANNEL_KEYS = [*'1'..'9', *'a'..'z'].freeze
-      CHIP_ORDER = { 'ym2612' => 0, 'sn76489' => 1, 'ym2413' => 2 }.freeze
+      CHIP_ORDER = { 'ym2612' => 0, 'sn76489' => 1, 'ym2413' => 2, 'gb_dmg' => 3 }.freeze
       THREE_COLUMN_WIDTH = 150
       TWO_COLUMN_WIDTH = 100
       WIDE_TABLE_WIDTH = 110
@@ -45,7 +48,7 @@ module RubyPlayer
       HOLD_AXIS = [0.001, 2.0].freeze
       RELEASE_AXIS = [0.001, 1.0].freeze
       PAN_LABELS = { lr: 'L R', l: 'L  ', r: '  R', none: '---' }.freeze
-      STATE_LABELS = { key_on: 'key on', key_off: 'key off', enabled: 'on', muted: 'off', data: 'data',
+      STATE_LABELS = { key_on: 'key on', key_off: 'key off', enabled: 'on', muted: 'off', off: 'off', data: 'data',
                        idle: 'idle' }.freeze
       ACTIVE_STATES = %i[key_on enabled data].freeze
       # YM2612 algorithms. Operator 1 has feedback; ▶ is the output. All
@@ -97,7 +100,9 @@ module RubyPlayer
       attr_reader :selected_channel_id, :snapshot
       attr_accessor :paused
 
-      def initialize
+      # `source` names the format in the header ("VGM LIVE", "GBS LIVE").
+      def initialize(source: 'VGM')
+        @source = source
         @snapshot = nil
         @rows = []
         @selected_channel_id = nil
@@ -291,7 +296,7 @@ module RubyPlayer
 
       def header(track_title)
         chips = Array(@snapshot&.chips).map(&:name).uniq.join(' + ')
-        parts = [track_title, 'VGM LIVE', chips, format_time(@now)]
+        parts = [track_title, "#{@source} LIVE", chips, format_time(@now)]
         parts << "Loop #{@snapshot.loop_count}" if @snapshot&.loop_count.to_i.positive?
         parts << (@paused ? 'PAUSED' : 'PLAYING')
         parts << @snapshot.message if @snapshot&.message
@@ -304,6 +309,7 @@ module RubyPlayer
           when 'ym2612' then line(ym2612_summary(chip))
           when 'sn76489' then line(sn76489_summary(chip))
           when 'ym2413' then line(ym2413_summary(chip))
+          when 'gb_dmg' then line(gb_summary(chip))
           else line("#{chip.name} · #{format_clock(chip.clock_hz)} · live detail unavailable", color: :text_muted)
           end
         end
@@ -375,11 +381,15 @@ module RubyPlayer
       def table_heading
         if wide_table?
           format('%-1s %-14s %-4s %-7s %8s %-*s %-3s %-*s %s', 'K', 'Channel', 'Keys', 'Note', 'Hz', bar_width,
-                 'Level (est.)', 'Pan', instrument_width, 'Instrument', 'State')
+                 level_heading, 'Pan', instrument_width, 'Instrument', 'State')
         else
           format('%-1s %-14s %-7s %-*s %s', 'K', 'Channel', 'Note', bar_width, 'Level', 'State')
         end
       end
+
+      # Register replay estimates FM and PSG levels; Game Boy levels are read
+      # from the emulator.
+      def level_heading = @rows.all? { |row| gb_kind?(row.channel) } ? 'Level' : 'Level (est.)'
 
       def render_channel_rows(first_row, rows)
         @visible_rows = [rows, 0].max
@@ -447,6 +457,8 @@ module RubyPlayer
       def instrument_texts(row)
         channel = row.channel
         details = channel.details
+        return gb_instrument_texts(channel) if gb_kind?(channel)
+
         case channel.kind
         when :fm then fm_instrument_texts(channel.patch)
         when :pcm
@@ -518,6 +530,7 @@ module RubyPlayer
         when :fm then fm_attenuation(row)
         when :pcm then pcm_attenuation(channel)
         when :tone, :noise then tone_attenuation(row, *key_timing(channel))
+        when *GB_KINDS then gb_attenuation(channel)
         when :percussion
           held, released = key_timing(channel)
           held ? Vgm::Envelope.opll_rom(volume: 0, released: released) : Vgm::Envelope::MAX_ATTENUATION
@@ -672,6 +685,7 @@ module RubyPlayer
 
         channel = row.channel
         lines = case channel.kind
+                when *GB_KINDS then gb_voice_lines(row, width)
                 when :fm then fm_voice_lines(row, width)
                 when :pcm then pcm_voice_lines(row)
                 when :noise then noise_voice_lines(row, width)
@@ -856,10 +870,13 @@ module RubyPlayer
 
       # -- envelope panel ---------------------------------------------------------
 
-      # Whether the selected channel has operator envelopes to draw. Without
-      # them a wide layout gives the envelope column to the history.
+      # Whether the selected channel has envelopes (or, for the Game Boy wave
+      # channel, a waveform) to draw. Without them a wide layout gives the
+      # envelope column to the history.
       def envelope?
         row = @rows[@selected_index]
+        return true if row && gb_kind?(row.channel)
+
         patch = row&.channel&.patch
         !!(patch && !patch.operators.empty? && %i[fm tone].include?(row.channel.kind))
       end
@@ -867,6 +884,7 @@ module RubyPlayer
       def envelope_panel(width, rows)
         row = @rows[@selected_index]
         return [] unless row && rows >= 4
+        return gb_envelope_panel(row, width, rows) if gb_kind?(row.channel)
 
         patch = row.channel.patch
         heading = title('Envelopes (estimated)')
@@ -1053,7 +1071,7 @@ module RubyPlayer
 
       # libgme's VGM voices: FM 1-6 and PCM (the DAC); then the PSG as one voice when
       # an FM chip is present, else one per PSG channel. OPLL channels 6-9
-      # share a voice, and so do its rhythm instruments.
+      # share a voice, and so do its rhythm instruments. GBS: one per channel.
       def mute_bits(row)
         voice = row.voice
         case row.chip.id.split(':').first
@@ -1064,6 +1082,7 @@ module RubyPlayer
           return 1 << 6 if row.channel.kind == :percussion
 
           1 << [voice, 5].min
+        when 'gb_dmg' then 1 << voice
         else 0
         end
       end
@@ -1089,7 +1108,8 @@ module RubyPlayer
 
       def status_message(status)
         {
-          loading: 'Waiting for VGM telemetry', ready: 'No channel state available',
+          loading: @source == 'VGM' ? 'Waiting for VGM telemetry' : "Waiting for #{@source} state",
+          ready: 'No channel state available',
           partial: 'Partial register information', unsupported: 'Live detail unsupported',
           error: 'Unable to read VGM telemetry', ended: 'VGM playback ended'
         }.fetch(status, 'No live channel data')
@@ -1107,6 +1127,7 @@ module RubyPlayer
       end
 
       def format_value(value) = value.nil? ? '--' : value.to_s
+      def pan_label(channel) = PAN_LABELS.fetch(channel.pan, '--').strip
       def format_clock(frequency) = frequency ? format('%.2f MHz', frequency / 1_000_000.0) : '-- MHz'
 
       def format_hz(frequency)
