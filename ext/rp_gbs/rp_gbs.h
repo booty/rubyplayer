@@ -1,5 +1,5 @@
 /* rp_gbs: Game Boy Sound (.gbs) playback for rubyplayer on the vendored
- * libgme GBS core (ext/gme_gbs).
+ * libgme GBS core (ext/gme).
  *
  * Builds the emulator through libgme's own gme_open_data path, so output
  * matches Homebrew libgme sample for sample, and records Game Boy APU state

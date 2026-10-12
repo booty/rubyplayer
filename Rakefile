@@ -27,19 +27,30 @@ file SPC_DYLIB => SPC_SOURCES + SPC_HEADERS do
      "-o #{SPC_DYLIB} #{SPC_SOURCES.join(' ')}"
 end
 
-GBS_DYLIB = 'lib/rubyplayer/native/librp_gbs.dylib'
-GBS_SOURCES = ['ext/rp_gbs/rp_gbs.cpp', *Dir['ext/gme_gbs/*.cpp']].freeze
-GBS_HEADERS = ['ext/rp_gbs/rp_gbs.h', 'ext/rp_gbs/rp_gbs_hooks.h', *Dir['ext/gme_gbs/*.h']].freeze
+# Vendored libgme (see ext/gme/VENDOR.md for the flags). Each native player
+# links the shared framework plus only its own format's emulator, enabled
+# with -DUSE_GME_*. Hidden visibility keeps these libgme symbols from
+# colliding with Homebrew libgme, loaded into the same process for every
+# other format.
+GME_FRAMEWORK = %w[Blip_Buffer Classic_Emu Data_Reader Effects_Buffer Gme_File M3u_Playlist Multi_Buffer
+                   Music_Emu gme].map { |name| "ext/gme/#{name}.cpp" }.freeze
+GME_HEADERS = Dir['ext/gme/**/*.h'].freeze
+GME_FLAGS = '-O2 -DNDEBUG -DBLARGG_LITTLE_ENDIAN=1 -fvisibility=hidden'
 
-# Vendored libgme GBS core (see ext/gme_gbs/VENDOR.md for the flags). Hidden
-# visibility keeps its libgme symbols from colliding with Homebrew libgme,
-# which is loaded into the same process for every other format.
-file GBS_DYLIB => GBS_SOURCES + GBS_HEADERS do
-  mkdir_p 'lib/rubyplayer/native'
-  sh 'clang++ -std=c++11 -O2 -DNDEBUG -DBLARGG_LITTLE_ENDIAN=1 -fvisibility=hidden -fvisibility-inlines-hidden ' \
-     '-include ext/rp_gbs/rp_gbs_hooks.h -dynamiclib -I ext/gme_gbs -I ext/rp_gbs ' \
-     "-o #{GBS_DYLIB} #{GBS_SOURCES.join(' ')}"
+def gme_player(dylib, sources:, hooks:, types:, objects: [])
+  headers = [*GME_HEADERS, hooks, *Dir["#{File.dirname(hooks)}/*.h"], *Dir['ext/rp_gme/*.h']]
+  defines = types.map { |type| "-DUSE_GME_#{type}" }.join(' ')
+  file dylib => sources + objects + headers do
+    mkdir_p 'lib/rubyplayer/native'
+    sh "clang++ -std=c++11 #{GME_FLAGS} -fvisibility-inlines-hidden #{defines} -include #{hooks} -dynamiclib " \
+       "-I ext/gme -I ext/rp_gme -I #{File.dirname(hooks)} -o #{dylib} #{(sources + objects).join(' ')}"
+  end
 end
+
+GBS_DYLIB = 'lib/rubyplayer/native/librp_gbs.dylib'
+gme_player GBS_DYLIB, hooks: 'ext/rp_gbs/rp_gbs_hooks.h', types: %w[GBS],
+                      sources: ['ext/rp_gbs/rp_gbs.cpp', *GME_FRAMEWORK,
+                                *%w[Gb_Apu Gb_Cpu Gb_Oscs Gbs_Emu].map { |name| "ext/gme/#{name}.cpp" }]
 
 desc 'Build the native audio shim, SPC player, and GBS player'
 task compile: [NATIVE_DYLIB, SPC_DYLIB, GBS_DYLIB]

@@ -93,7 +93,7 @@ Ruby comes from mise. Plain `bundle exec` may select wrong Ruby.
   libgme's own `gme_new_emu`), checked bit-exact by
   `test/gbs_native_parity_test.rb`. APU state is captured by libgme's
   `GME_APU_HOOK`/`GME_FRAME_HOOK` macros, not by editing the emulator;
-  vendored files change only per `ext/gme_gbs/VENDOR.md`. Keep the dylib's
+  vendored files change only per `ext/gme/VENDOR.md`. Keep the dylib's
   symbols hidden: Homebrew libgme, with the same classes, shares the process.
 
 ## Refactor seams

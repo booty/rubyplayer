@@ -250,7 +250,8 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | `gme.rb` | `Backends::Gme`: FFI bindings to libgme, plus `Handle` (an open, playable track) and metadata extraction for chiptune formats. Converts libgme's 16-bit PCM output to the app's canonical float32 format. |
 | `openmpt.rb` | `Backends::Openmpt`: FFI bindings to libopenmpt, plus `Handle` and metadata extraction for tracker module formats. libopenmpt renders float natively, so no format conversion is needed. |
 | `snes_spc.rb`, `snes_spc_lib.rb` | `Backends::SnesSpc`: plays `.spc` through `librp_spc` (handles also expose DSP snapshots, RAM, and voice muting); scanning and metadata stay on libgme. Requiring `snes_spc_lib.rb` loads the dylib and doubles as the availability check. |
-| `gbs_native.rb`, `gbs_native_lib.rb` | `Backends::GbsNative`: plays `.gbs` through `librp_gbs` (handles also expose APU snapshots and voice muting, and load a sibling `.m3u` as libgme does); scanning and metadata stay on libgme. Requiring `gbs_native_lib.rb` doubles as the availability check. |
+| `native_gme.rb`, `gzip_content.rb` | `Backends::NativeGme`: the shared backend and handle for native libgme players (snapshots, voice muting, a sibling `.m3u` as libgme loads it); scanning and metadata stay on libgme. `GzipContent` inflates gzip content (with a size limit) as libgme's file loader does. |
+| `gbs_native.rb`, `gbs_native_lib.rb` | `Backends::GbsNative`: plays `.gbs` through `librp_gbs`. Requiring `gbs_native_lib.rb` doubles as the availability check. |
 | `ffmpeg.rb` | `Backends::Ffmpeg`: probes ordinary audio files with ffprobe and decodes through an FFmpeg subprocess to float32 stereo PCM; supports seeking by restarting decoding at the requested offset. |
 
 ### Terminal UI (`lib/rubyplayer/ui/`)
@@ -287,12 +288,13 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | `ext/snes_spc/` | Vendored SPC700 + S-DSP core, output filter, and resampler from libgme 0.6.5 (LGPL 2.1; see `ext/snes_spc/VENDOR.md` for files, build flags, and the one read-only accessor patch). |
 | `ext/rp_spc/rp_spc.{h,cpp}` | C API over that core: a faithful port of libgme's SPC playback control (resampling, gain, fade, silence handling) so output matches libgme exactly, plus S-DSP snapshots recorded once per emulator call (~50 ms). Compiled to `lib/rubyplayer/native/librp_spc.dylib` by `mise exec -- bundle exec rake compile`. `test/snes_spc_parity_test.rb` requires bit-exact output against libgme on every SPC fixture. |
 
-### Native GBS player (`ext/rp_gbs/`, `ext/gme_gbs/`)
+### Native GBS player (`ext/gme/`, `ext/rp_gme/`, `ext/rp_gbs/`)
 
 | File | Purpose |
 |---|---|
-| `ext/gme_gbs/` | Vendored libgme 0.6.5 GBS emulator and the playback framework, effects buffer, and C API it plays through (LGPL 2.1; see `ext/gme_gbs/VENDOR.md` for files, build flags, and the read-only accessor patch). |
-| `ext/rp_gbs/rp_gbs.{h,cpp}`, `rp_gbs_hooks.h` | C API that builds the emulator through libgme's own `gme_new_emu` path (so output is libgme's), plus APU snapshots taken through libgme's `GME_APU_HOOK`/`GME_FRAME_HOOK` macros at each trigger, length or envelope change, and driver call, mapped to output frames across leading-silence skipping and kept so a seek shows the state heard at its target. Compiled with hidden symbols to `lib/rubyplayer/native/librp_gbs.dylib`. `test/gbs_native_parity_test.rb` requires bit-exact output against libgme. |
+| `ext/gme/` | Vendored libgme 0.6.5 GBS emulator and the playback framework, effects buffer, and C API it plays through (LGPL 2.1; see `ext/gme/VENDOR.md` for files, build flags, and the accessor and hook patch). Each native player compiles the framework plus only its own format. |
+| `ext/rp_gme/rp_recorder.h` | What native libgme players share: an emulator subclass that records snapshots from libgme's hooks and maps them from emulator clocks to output frames across leading-silence skipping, keeping those ahead of output so a seek shows the state heard at its target; and the C API plumbing built on it. |
+| `ext/rp_gbs/rp_gbs.{h,cpp}`, `rp_gbs_hooks.h` | C API that builds the GBS emulator through libgme's own `gme_new_emu` path (so output is libgme's), plus APU snapshots taken through libgme's `GME_APU_HOOK`/`GME_FRAME_HOOK` macros at each trigger, length or envelope change, and driver call. Compiled with hidden symbols to `lib/rubyplayer/native/librp_gbs.dylib`. `test/gbs_native_parity_test.rb` requires bit-exact output against libgme. |
 
 ### Other directories
 
