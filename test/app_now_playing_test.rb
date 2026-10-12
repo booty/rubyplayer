@@ -30,6 +30,26 @@ class AppNowPlayingTest < Minitest::Test
     refute_includes back_buffer_text, 'Bit rate:'
   end
 
+  # Play/pause, next, previous, and seek work from Now Playing (Info or
+  # Live) without closing it; the popup follows the new track.
+  def test_playback_keys_work_without_closing_now_playing
+    tracks = open_now_playing_on_two_gbs_tracks
+    @app.handle_key('space')
+    wait_until { @app.engine.state[:paused] }
+
+    assert @app.instance_variable_get(:@show_now_playing)
+    @app.handle_key('space')
+    wait_until { !@app.engine.state[:paused] }
+    @app.handle_key(']')
+    wait_until { @app.engine.state[:position_ms].to_i >= 5_000 }
+    @app.handle_key('>')
+    wait_until { @app.engine.state[:track]&.id == tracks.last.id }
+    @app.handle_events
+
+    assert @app.instance_variable_get(:@show_now_playing)
+    assert @app.instance_variable_get(:@now_playing_modal).matches?(tracks.last)
+  end
+
   # Formats without a live page keep the plain Info popup.
   def test_tracks_without_live_state_have_no_live_page
     library = @app.instance_variable_get(:@library)
@@ -256,5 +276,18 @@ class AppNowPlayingTest < Minitest::Test
       @app.render
       back_buffer_text.include?('FM 1')
     end
+  end
+
+  private
+
+  def open_now_playing_on_two_gbs_tracks
+    library = @app.instance_variable_get(:@library)
+    tracks = library.all_tracks.select { |entry| entry.format == 'gbs' }.first(2)
+    @app.engine.enqueue_now(tracks)
+    wait_until { @app.engine.state[:track]&.id == tracks.first.id }
+    @app.handle_events
+    use_screen(rows: 40, cols: 110)
+    @app.handle_key('o')
+    tracks
   end
 end

@@ -259,8 +259,17 @@ module RubyPlayer
         end
       end
 
+      # Playback actions Now Playing passes through to the engine (it stays
+      # open and follows the track). Ratings and skip-disliked stay out: their
+      # keys (digits, s) mute and solo channels on the live pages.
+      NOW_PLAYING_PLAYBACK_ACTIONS = %i[toggle_play next_track previous_track seek_back seek_forward].freeze
+      private_constant :NOW_PLAYING_PLAYBACK_ACTIONS
+
       def handle_now_playing_key(key)
-        if %w[o escape enter].include?(key)
+        action = @keymap.action_for(key, pane: @active_pane)
+        if NOW_PLAYING_PLAYBACK_ACTIONS.include?(action)
+          dispatch(action)
+        elsif %w[o escape enter].include?(key)
           close_now_playing
         elsif key == 'tab'
           toggle_now_playing_page if live_kind

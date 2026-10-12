@@ -79,6 +79,9 @@ now-playing view. Other terminals show an artwork placeholder while track
 information remains available.
 
 Now Playing separates artist and album information from technical file details.
+Playback keys keep working while it is open, on either page: Space plays or
+pauses, `<`/`>` go to the previous or next track (the popup follows), and
+`[`/`]` seek.
 Track numbers show `N of M` when the file tags include a total. The technical
 section shows file type, codec, bitrate, sample rate, channels, and bit depth
 where available. Chiptunes show system, sound chips, static voice capabilities,
