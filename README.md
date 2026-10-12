@@ -21,8 +21,28 @@ mise exec -- bundle install
 
 ## Running
 
+Install commands that work from any directory with YJIT enabled:
+
 ```sh
-bin/rubyplayer [path ...]
+bin/install
+rubyplayer [path ...]
+rp [path ...]
+```
+
+The installer creates `~/.local/bin/rubyplayer` and an `rp` alias. If that
+directory is absent from `PATH`, it prints the line to add to your shell
+configuration (usually `~/.zshrc`). Use `bin/install --bin-dir DIR` for another
+location. Existing unrelated commands are preserved. Rerun the installer if
+you move the checkout; remove both installed commands to uninstall.
+
+Both commands use the checkout's mise Ruby version and Gemfile, preserve your
+current directory for relative music paths, and forward all arguments. Install
+dependencies and compile the audio shim as described above/below first.
+
+To run directly from the checkout:
+
+```sh
+mise exec -- bundle exec ruby --yjit bin/rubyplayer [path ...]
 ```
 
 `mise exec -- bundle exec rake compile` builds the native audio shim (`lib/rubyplayer/native/librp_audio.dylib`) automatically as a prerequisite of `mise exec -- bundle exec rake test`; `bin/rubyplayer` expects it to already exist, so run `mise exec -- bundle exec rake compile` (or `mise exec -- bundle exec rake test`) at least once after a fresh checkout.

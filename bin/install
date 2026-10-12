@@ -1,0 +1,71 @@
+#!/bin/bash
+set -euo pipefail
+
+usage() {
+  echo "Usage: bin/install [--bin-dir DIR]"
+  echo "Install rubyplayer and rp launchers (default: ~/.local/bin)."
+}
+
+destination="${HOME}/.local/bin"
+if [[ $# -eq 1 && ( "$1" == --help || "$1" == -h ) ]]; then
+  usage
+  exit 0
+elif [[ $# -eq 2 && "$1" == --bin-dir && -n "$2" ]]; then
+  destination="$2"
+elif [[ $# -ne 0 ]]; then
+  usage >&2
+  exit 1
+fi
+
+project_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+mise_bin=$(type -P mise) || { echo 'Install mise before running bin/install.' >&2; exit 1; }
+# Store an absolute executable path so shell activation is unnecessary at launch.
+mise_bin=$(cd "$(dirname "$mise_bin")" && printf '%s/%s' "$(pwd -P)" "$(basename "$mise_bin")")
+marker='# rubyplayer launcher (managed by bin/install)'
+
+mkdir -p "$destination"
+destination=$(cd "$destination" && pwd -P)
+launcher="$destination/rubyplayer"
+alias_path="$destination/rp"
+
+# Check both names before writing either; never replace another application's command.
+if [[ -e "$launcher" || -L "$launcher" ]]; then
+  if [[ -L "$launcher" || ! -f "$launcher" ]] || ! grep -Fxq "$marker" "$launcher"; then
+    echo "Refusing to overwrite existing command: $launcher" >&2
+    exit 1
+  fi
+fi
+if [[ -e "$alias_path" || -L "$alias_path" ]]; then
+  if [[ ! -L "$alias_path" ]] || [[ $(readlink "$alias_path") != rubyplayer ]]; then
+    echo "Refusing to overwrite existing command: $alias_path" >&2
+    exit 1
+  fi
+fi
+
+# Keep the previous launcher usable if generating its replacement is interrupted.
+temporary=$(mktemp "$destination/.rubyplayer.XXXXXX")
+trap 'rm -f "$temporary"' EXIT
+{
+  printf '#!/bin/bash\n%s\nset -euo pipefail\n' "$marker"
+  printf 'project_dir=%q\nmise_bin=%q\n' "$project_dir" "$mise_bin"
+  cat <<'LAUNCHER'
+caller_dir=$(pwd -P)
+read -r ruby_version < "$project_dir/.ruby-version"
+export BUNDLE_GEMFILE="$project_dir/Gemfile"
+export BUNDLE_LOCKFILE="$project_dir/Gemfile.lock"
+# mise selects this checkout's tools; restore the caller's cwd for relative music paths.
+exec "$mise_bin" exec --cd "$project_dir" "ruby@$ruby_version" -- /bin/bash -c '
+  cd "$1" || exit
+  shift
+  exec bundle exec ruby --yjit "$@"
+' rubyplayer "$caller_dir" "$project_dir/bin/rubyplayer" "$@"
+LAUNCHER
+} > "$temporary"
+chmod 755 "$temporary"
+mv -f "$temporary" "$launcher"
+ln -sfn rubyplayer "$alias_path"
+printf 'Installed %s and %s (YJIT enabled).\n' "$launcher" "$alias_path"
+case ":$PATH:" in
+  *":$destination:"*) ;;
+  *) printf 'Add this directory to your shell PATH:\n  export PATH=%q:"$PATH"\n' "$destination" ;;
+esac

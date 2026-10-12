@@ -3,6 +3,10 @@
 Current as of 2026-10-11. Supplementary implementation notes; AGENTS.md remains
 the authority for workflow and invariants.
 
+- Installed launchers select the checkout's explicit mise Ruby version, then
+  restore the caller's directory so relative music paths retain their meaning.
+  Pin both `BUNDLE_GEMFILE` and `BUNDLE_LOCKFILE`: Bundler 4 exports the latter
+  independently, so inheriting another bundle can otherwise modify its lockfile.
 - Scan paths need literal, case-sensitive matching. Binary directory-prefix
   ranges avoid SQL wildcard interpretation while allowing indexed comparisons.
 - SQLite backups must include committed WAL pages. Use the backup API and
