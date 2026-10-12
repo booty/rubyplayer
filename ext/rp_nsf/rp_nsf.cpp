@@ -27,6 +27,12 @@ namespace {
 const long MIN_SNAPSHOTS_PER_SECOND = 240;
 const int CLOCK_DIVISOR = 12;   // Nsf_Emu's play_period unit, 1/12 CPU clock
 const uint64_t UNKNOWN = ~(uint64_t) 0;
+// A simulated event that will not happen.
+const nes_time_t NEVER = 0x3FFFFFFF;
+// MMC5 PCM counts as sounding this long after the driver last changed its
+// level: raw PCM has no enable bit or length counter, and streams change
+// it far more often than this.
+const long PCM_HOLD_PER_SECOND = 20;
 // Nsf_Emu::cpu_write_misc's VRC7 data port range.
 const unsigned VRC7_DATA_FIRST = 0x9028;
 const unsigned VRC7_DATA_LAST = 0x9030;
@@ -245,6 +251,54 @@ struct Shadow_Apu {
 	}
 };
 
+// The FDS volume envelope, simulated forward on copies for the same reason:
+// libgme runs it only when the channel runs, and Nes_Fds_Apu::run_until is
+// not split-safe either (it clocks the wave with `<=`). Mirrors its
+// envelope step: gain moves one step every env_period clocks until it
+// leaves its range, while the channel plays and the envelope is enabled.
+struct Shadow_Fds {
+	uint8_t control;   // $4080
+	int gain;
+	nes_time_t time, period;
+
+	void load(Nes_Fds_Apu const& fds)
+	{
+		uint8_t const* regs = fds.rp_regs() + 0x40;   // $4080
+		control = regs[0];
+		gain = fds.rp_env_gain();
+		int freq = (regs[3] & 0x0F) * 0x100 + regs[2];
+		bool runs = freq && fds.rp_has_output() && !((regs[9] | regs[3]) & 0x80);
+		nes_time_t lfo_period = (regs[3] & 0x40) ? 0 : regs[10] * fds.rp_lfo_tempo();
+		period = lfo_period * fds.rp_env_speed();
+		time = runs && period && !(control & 0x80) ? fds.rp_last_time() + fds.rp_env_delay() : NEVER;
+	}
+
+	void step()
+	{
+		int mode = (control >> 5) & 2;
+		int next = gain + mode - 1;
+		if ((unsigned) next <= (unsigned) 0x80 >> mode) {
+			gain = next;
+			time += period;
+		} else {
+			control |= 0x80;
+			time = NEVER;
+		}
+	}
+
+	// Writes the simulated gain (and whether it silences the channel) over
+	// a snapshot.
+	void store(rp_nsf_snapshot& snap, int voice) const
+	{
+		uint8_t const* regs = snap.fds_regs;
+		int freq = (regs[3] & 0x0F) * 0x100 + regs[2];
+		snap.fds_env_gain = (uint8_t) gain;
+		snap.playing &= ~(1u << voice);
+		if (freq && !((regs[9] | regs[3]) & 0x80) && gain)
+			snap.playing |= 1u << voice;
+	}
+};
+
 // Sound-producing voices of the real 2A03, from bit 0, by the same rules.
 uint32_t apu_playing(Nes_Apu const& apu)
 {
@@ -257,13 +311,14 @@ uint32_t apu_playing(Nes_Apu const& apu)
 	return bits;
 }
 
-// What is heard: which voices sound, and the envelope volumes of those with
-// frame-counter envelopes.
+// What is heard: which voices sound, and the volumes of those with
+// envelopes (the FDS's above 32 all play at full volume).
 uint64_t audible(rp_nsf_snapshot const& snap)
 {
+	uint64_t fds_level = snap.fds_env_gain < 32 ? snap.fds_env_gain : 32;
 	return snap.playing | (uint64_t) snap.apu_volume[0] << 32 | (uint64_t) snap.apu_volume[1] << 36 |
 			(uint64_t) snap.apu_volume[2] << 40 | (uint64_t) snap.mmc5_volume[0] << 44 |
-			(uint64_t) snap.mmc5_volume[1] << 48;
+			(uint64_t) snap.mmc5_volume[1] << 48 | fds_level << 52;
 }
 
 template <class Base>
@@ -274,6 +329,10 @@ public:
 	uint64_t last_audible = UNKNOWN;
 	// Absolute clock of the latest frame-counter step simulated and recorded.
 	int64_t stepped_through = rp::NO_CLOCK;
+	// MMC5 PCM: whether it counts as sounding, and when the driver last
+	// changed its level (absolute clock).
+	bool pcm_active = false;
+	int64_t pcm_change = rp::NO_CLOCK;
 
 	int chips() const { return this->header().chip_flags & 0x3F; }
 
@@ -297,6 +356,8 @@ public:
 			}
 			snap.mmc5_status = (uint8_t) mmc5->rp_osc_enables();
 			snap.mmc5_pcm = (uint8_t) mmc5->rp_dmc().dac;
+			if (pcm_active)
+				snap.playing |= 1u << (voices.mmc5 + 2);
 		}
 		if (Nes_Vrc6_Apu const* vrc6 = this->rp_vrc6()) {
 			vrc6_apu_state_t state;
@@ -357,6 +418,10 @@ public:
 		Voices voices(chips());
 		if (voices.mmc5 >= 0 && (addr == 0x5003 || addr == 0x5007))
 			triggers |= 1u << (voices.mmc5 + (addr == 0x5007));
+		if (voices.mmc5 >= 0 && addr == 0x5011 && data != this->rp_mmc5()->rp_dmc().dac) {
+			pcm_active = true;
+			pcm_change = this->absolute(clock);
+		}
 		if (voices.vrc7 >= 0 && addr >= VRC7_DATA_FIRST && addr <= VRC7_DATA_LAST) {
 			// Key on (bit 4 of $20-$25) rising: the note restarts.
 			vrc7_snapshot_t state;
@@ -397,34 +462,58 @@ protected:
 		triggers = 0;
 		last_audible = UNKNOWN;
 		stepped_through = rp::NO_CLOCK;
+		pcm_active = false;
+		pcm_change = rp::NO_CLOCK;
 	}
 
 private:
-	// The frame counters of the 2A03 and (when present) MMC5, simulated
-	// from the chips' current state: the chips themselves run lazily, so
+	// What changes between writes, simulated from the chips' current state:
+	// the frame counters of the 2A03 and (when present) MMC5, the FDS volume
+	// envelope, and MMC5 PCM going quiet. The chips themselves run lazily, so
 	// steps since their last run are still to come.
 	struct Steps {
 		Shadow_Apu apu, mmc5;
-		bool has_mmc5;
-		int mmc5_voice;
+		Shadow_Fds fds;
+		bool has_mmc5, has_fds;
+		Voices voices;
+		nes_time_t pcm_quiet;   // when MMC5 PCM stops counting as sounding
+		bool pcm_expired = false;
 
-		explicit Steps(Rp_Nsf const& emu)
+		explicit Steps(Rp_Nsf const& emu) : voices(emu.chips())
 		{
 			apu.load(emu.rp_apu());
 			has_mmc5 = emu.rp_mmc5() != NULL;
-			mmc5_voice = Voices(emu.chips()).mmc5;
 			if (has_mmc5)
 				mmc5.load(*emu.rp_mmc5());
+			has_fds = emu.rp_fds() != NULL;
+			if (has_fds)
+				fds.load(*emu.rp_fds());
+			int64_t hold = (int64_t) emu.rp_clock_rate() / PCM_HOLD_PER_SECOND;
+			pcm_quiet = emu.pcm_active ? (nes_time_t) (emu.pcm_change + hold - emu.absolute(0)) : NEVER;
 		}
 
-		nes_time_t next() const { return has_mmc5 && mmc5.time < apu.time ? mmc5.time : apu.time; }
+		nes_time_t next() const
+		{
+			nes_time_t time = apu.time;
+			if (has_mmc5 && mmc5.time < time)
+				time = mmc5.time;
+			if (has_fds && fds.time < time)
+				time = fds.time;
+			return pcm_quiet < time ? pcm_quiet : time;
+		}
 
-		// Runs the earlier counter's next step; returns its time.
+		// Runs every simulation due at the earliest time; returns it.
 		nes_time_t step()
 		{
 			nes_time_t time = next();
 			if (has_mmc5 && mmc5.time == time)
 				mmc5.step();
+			if (has_fds && fds.time == time)
+				fds.step();
+			if (pcm_quiet == time) {
+				pcm_expired = true;
+				pcm_quiet = NEVER;
+			}
 			if (apu.time == time)
 				apu.step();
 			return time;
@@ -437,7 +526,11 @@ private:
 			emu.fill(snap);
 			apu.store_apu(snap);
 			if (has_mmc5)
-				mmc5.store_mmc5(snap, mmc5_voice);
+				mmc5.store_mmc5(snap, voices.mmc5);
+			if (has_fds)
+				fds.store(snap, voices.fds);
+			if (pcm_expired)
+				snap.playing &= ~(1u << (voices.mmc5 + 2));
 			return snap;
 		}
 	};
@@ -555,7 +648,7 @@ private:
 		return steps;
 	}
 
-	// A driver's writes for one note land together, so only a frame-counter
+	// A driver's writes for one note land together, so only a simulated
 	// step due before this write, which would change the state they leave,
 	// records it now; the driver call after them does otherwise.
 	void before_write(long clock)
@@ -575,9 +668,10 @@ private:
 		this->wrote = true;
 	}
 
-	// Simulates the frame-counter steps due before `clock` (the only moments
-	// length counters, envelopes, the linear counter, and sweep act),
-	// recording each that changes what is heard.
+	// Simulates what is due before `clock` (frame-counter steps, the only
+	// moments length counters, envelopes, the linear counter, and sweep act;
+	// FDS envelope steps; MMC5 PCM going quiet), recording each step that
+	// changes what is heard.
 	void step_to(Steps& steps, long clock)
 	{
 		while (steps.next() < clock) {
@@ -587,6 +681,9 @@ private:
 			if (audible(snap) != last_audible)
 				push(snap, time);
 		}
+		// PCM quiet is our own state, not the chips': keep it once reached.
+		if (steps.pcm_expired)
+			pcm_active = false;
 	}
 };
 

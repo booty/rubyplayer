@@ -145,6 +145,12 @@ frame's last stretch is observed before the APU runs it unseen:
 	int rp_env_gain() const { return env_gain; }
 	int rp_sweep_gain() const { return sweep_gain; }
 	unsigned char const* rp_mod_wave() const { return mod_wave; }
+	// Envelope timing, as of rp_last_time() (the channel runs lazily).
+	int rp_env_delay() const { return env_delay; }
+	int rp_env_speed() const { return env_speed; }
+	int rp_lfo_tempo() const { return lfo_tempo; }
+	blip_time_t rp_last_time() const { return last_time; }
+	bool rp_has_output() const { return output_ != 0; }
 ```
 
 `Nsf_Emu.cpp`: at the top of `Nsf_Emu::cpu_write_misc`, so expansion chip writes are seen, and

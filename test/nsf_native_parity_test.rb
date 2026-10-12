@@ -2,9 +2,11 @@
 
 require 'test_helper'
 require 'ffi'
+require 'tmpdir'
 require 'rubyplayer/backends/gme'
 require 'rubyplayer/backends/nsf_native_lib'
 require_relative 'support/rip_fixtures'
+require_relative 'support/nsf_builder'
 
 # librp_nsf builds libgme's own NSF emulator (vendored, plus snapshot hooks),
 # so .nsf playback can leave Homebrew libgme without changing a sample, for
@@ -60,6 +62,18 @@ class NsfNativeParityTest < Minitest::Test
     [0, 2].each { |track| compare(:gimmick, track, seconds: 2, m3u: true) }
   end
 
+  # The hand-built NSFs drive the FDS envelope and MMC5 PCM, whose
+  # snapshots are simulated between writes.
+  def test_built_nsfs_match_libgme
+    Dir.mktmpdir do |dir|
+      %i[short_note_nsf mmc5_pcm_nsf fds_fade_nsf].each do |builder|
+        path = File.join(dir, "#{builder}.nsf")
+        File.binwrite(path, TestSupport::NsfBuilder.public_send(builder))
+        compare(path, 0, seconds: 2)
+      end
+    end
+  end
+
   def test_snapshot_layout_matches_the_ruby_record
     assert_equal 380, Lib.rp_nsf_snapshot_size
   end
@@ -68,7 +82,7 @@ class NsfNativeParityTest < Minitest::Test
 
   def compare(name, track, seconds:, ignore_silence: false, fade_ms: nil, seek_ms: nil, then_seek_ms: nil, mute: 0,
               m3u: false)
-    path = Rips.path(name)
+    path = name.is_a?(Symbol) ? Rips.path(name) : name
     gme = open_gme(path, track, ignore_silence: ignore_silence, fade_ms: fade_ms, m3u: m3u)
     ours = open_ours(path, track, ignore_silence: ignore_silence, fade_ms: fade_ms, m3u: m3u)
     Gme.gme_mute_voices(gme, mute)

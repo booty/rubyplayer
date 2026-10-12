@@ -32,6 +32,42 @@ class NsfNativeSnapshotTest < Minitest::Test
     end
   end
 
+  # Raw PCM has no enable or length counter: it sounds while the driver keeps
+  # changing the level, and stops when the writes do.
+  def test_mmc5_pcm_plays_while_its_level_changes
+    audio, snapshots = play_built(TestSupport::NsfBuilder.mmc5_pcm_nsf, chunks: 6)
+    pcm = 1 << 7 # 2A03 voices 0-4, MMC5 pulses 5-6, PCM 7
+    sounding = snapshots.select { |snapshot| snapshot.playing.anybits?(pcm) }
+    stopped = snapshots.find { |snapshot| snapshot.frame > sounding.last.frame }
+
+    assert_operator audio.unpack('e*').map(&:abs).max, :>, 0.1
+    assert_operator sounding.first.frame, :<, RATE / 10
+    # 64 driver calls (~1.07 s) of writes, then off within a short hold.
+    assert_in_delta 1.07 * RATE, sounding.last.frame, 0.05 * RATE
+    refute stopped.playing.anybits?(pcm)
+    assert_in_delta sounding.last.frame + (RATE / 20), stopped.frame, 0.02 * RATE
+  end
+
+  # The FDS volume envelope runs on its own between driver writes; each
+  # audible gain step must be recorded when it happens.
+  def test_fds_envelope_steps_are_recorded_as_they_happen
+    audio, snapshots = play_built(TestSupport::NsfBuilder.fds_fade_nsf, chunks: 2)
+    gains = snapshots.map(&:fds_env_gain)
+    fading = snapshots.each_cons(2).select { |before, after| after.fds_env_gain < before.fds_env_gain }
+
+    assert_operator audio.unpack('e*').map(&:abs).max, :>, 0.05
+    assert_equal 32, gains.first
+    assert_equal 0, gains.last
+    assert_equal gains.sort.reverse, gains
+    assert_operator fading.size, :>=, 30
+    # Steps of 232 × 8 × 11 clocks (~11.4 ms) each, after one at once (libgme
+    # starts the envelope's delay at 0).
+    step = 232 * 8 * 11 * RATE / 1_789_773.0
+
+    fading.drop(1).each { |before, after| assert_in_delta step, after.frame - before.frame, step / 4 }
+    refute snapshots.last.playing.anybits?(1 << 5)
+  end
+
   # After a seek, the state shown must be the state heard at the new
   # position, even when libgme has emulated past it, and later states must
   # arrive when they are heard.
@@ -58,6 +94,22 @@ class NsfNativeSnapshotTest < Minitest::Test
   end
 
   private
+
+  # `chunks` reads of an NSF built in memory: [audio, absolute-frame snapshots].
+  def play_built(bytes, chunks:)
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, 'built.nsf')
+      File.binwrite(path, bytes)
+      handle = RubyPlayer::Backends::NsfNative.new.open(path, 0, sample_rate: RATE)
+      audio = +''.b
+      snapshots = Array.new(chunks) do |chunk|
+        audio << handle.read(CHUNK)
+        absolute(handle, chunk)
+      end
+      handle.close
+      [audio, snapshots.flatten]
+    end
+  end
 
   # 10 chunks of the short-note NSF through the native player and tracker:
   # [audio, absolute-frame snapshots, tracker].

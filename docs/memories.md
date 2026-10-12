@@ -110,6 +110,9 @@ the authority for workflow and invariants.
   driver calls. Stepping must be simulated on copies for the 2A03: advancing
   the real APU adds time splits, and libgme's muted triangle (all voices
   are muted during long seeks) keeps phase differently across them, which
-  broke parity only after seeks over ~0.3 s. VRC7 reuses the YM2413 model
+  broke parity only after seeks over ~0.3 s. The FDS envelope is the same
+  case (libgme's FDS clocks its wave with a `<=` it flags as wrong), and
+  raw PCM ($5011) has no enable bit: count it as sounding while its level
+  keeps changing. VRC7 reuses the YM2413 model
   (register writes rebuilt from snapshot diffs). libgme numbers voices APU,
   VRC6 (saw first), N163, 5B, FDS, MMC5, VRC7; the page mutes by that.
