@@ -3,6 +3,7 @@
 require_relative '../audio_format'
 require_relative '../gbs/snapshot'
 require_relative 'gme'
+require_relative 'gzip_content'
 
 module RubyPlayer
   module Backends
@@ -44,11 +45,12 @@ module RubyPlayer
 
       def open(path, subtune_index, sample_rate:)
         raise Error, 'native GBS player is unavailable' unless self.class.available?
-        raise Error, 'GBS file is too large' if File.size(path) > MAX_GBS_BYTES
 
+        # Read first: an unplayable file should fail here, not in libgme.
+        bytes = GzipContent.read(path, max_bytes: MAX_GBS_BYTES, error: Error, label: 'GBS')
         lengths = @gme.playback_lengths(path, subtune_index)
-        Handle.new(File.binread(path), m3u: sibling_m3u(path), subtune_index: subtune_index,
-                                       sample_rate: sample_rate, **lengths)
+        Handle.new(bytes, m3u: sibling_m3u(path), subtune_index: subtune_index,
+                          sample_rate: sample_rate, **lengths)
       end
 
       # Same contract as Gme::Handle: packed float32 stereo until the track ends.

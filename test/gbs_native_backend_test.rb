@@ -4,6 +4,7 @@ require 'test_helper'
 require 'minitest/mock'
 require 'fileutils'
 require 'tmpdir'
+require 'zlib'
 require 'rubyplayer/backends/registry'
 require 'rubyplayer/backends/gme'
 require 'rubyplayer/backends/gbs_native'
@@ -105,6 +106,33 @@ class GbsNativeBackendTest < Minitest::Test
 
     20.times { refute_nil @handle.read(16_384) }
     assert_equal 0b1111, @handle.mute_mask
+  end
+
+  # Regression: libgme plays gzip-compressed content under a .gbs name, so
+  # such files scanned fine but failed to open once playback moved here.
+  def test_gzip_compressed_gbs_content_plays_like_the_plain_file
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, 'compressed.gbs')
+      Zlib::GzipWriter.open(path) { |gzip| gzip.write(File.binread(GBS)) }
+      plain = @backend.open(GBS, 1, sample_rate: RATE)
+      @handle = @backend.open(path, 1, sample_rate: RATE)
+
+      expected = plain.read(16_384)
+
+      refute_nil expected
+      assert_equal expected, @handle.read(16_384)
+    ensure
+      plain&.close
+    end
+  end
+
+  def test_oversized_compressed_content_is_refused
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, 'huge.gbs')
+      Zlib::GzipWriter.open(path) { |gzip| gzip.write("\0" * (17 * 1024 * 1024)) }
+
+      assert_raises(RubyPlayer::Backends::GbsNative::Error) { @backend.open(path, 0, sample_rate: RATE) }
+    end
   end
 
   def test_garbage_is_rejected
