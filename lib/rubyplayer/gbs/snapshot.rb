@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative '../chip_timeline'
+
 module RubyPlayer
   module Gbs
     VOICES = 4
@@ -33,13 +35,6 @@ module RubyPlayer
       FORMAT = 'l<C48C4CCCxS<4S<x2L<L<'
     end
 
-    # What the Now Playing live page consumes: every snapshot heard since the
-    # previous call, oldest first (so short notes are not lost between
-    # renders), the newest of them, a generation that changes whenever
-    # playback jumps (seek, new track) and history must restart, one that
-    # changes only per track (the page keeps its selection across seeks),
-    # and the output frame being heard at `sample_rate`.
-    LiveState = Data.define(:snapshots, :latest, :generation, :track_generation, :frame, :sample_rate, :paused,
-                            :mute_mask)
+    LiveState = ChipLiveState
   end
 end

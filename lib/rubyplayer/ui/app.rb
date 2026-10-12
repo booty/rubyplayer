@@ -1406,7 +1406,7 @@ module RubyPlayer
       # Feeds every APU snapshot heard since the last frame to the tracker,
       # even on the Info page, so note history stays continuous.
       def update_gbs_live
-        live = @engine.gbs_live
+        live = @engine.chip_live
         return unless live
 
         @gbs_live_view.update(@gbs_tracker.snapshot) if @gbs_tracker.update(live) || @gbs_live_view.snapshot.nil?

@@ -25,7 +25,7 @@ class SnesSpcBackendTest < Minitest::Test
 
     assert_equal :snes_spc, registry.backend_name_for('/x/a.spc')
     assert_equal 'snes_spc', registry.backend_for('/x/a.spc').name
-    assert_equal 'gme', registry.backend_for('/x/a.nsf').name
+    assert_equal 'gme', registry.backend_for('/x/a.vgm').name
   end
 
   def test_backends_config_override_restores_libgme_playback

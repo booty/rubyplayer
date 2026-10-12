@@ -21,8 +21,9 @@ module RubyPlayer
         # libgme still scans .spc; playback moves to the native SPC player,
         # which falls back to libgme itself when its dylib is missing.
         @map['.spc'] = :snes_spc
-        # Likewise .gbs moves to the native GBS player (live APU state).
+        # Likewise .gbs and .nsf/.nsfe move to native players (live chip state).
         @map['.gbs'] = :gbs_native
+        @map['.nsf'] = @map['.nsfe'] = :nsf_native
         (overrides || {}).each do |ext, name|
           e = ext.start_with?('.') ? ext.downcase : ".#{ext.downcase}"
           @map[e] = name.to_sym
@@ -43,6 +44,7 @@ module RubyPlayer
         when :gme then gme_backend
         when :snes_spc then snes_spc_backend
         when :gbs_native then gbs_native_backend
+        when :nsf_native then nsf_native_backend
         when :openmpt
           @instances[:openmpt] ||= begin
             require_relative 'openmpt'
@@ -80,6 +82,13 @@ module RubyPlayer
         return gme_backend unless GbsNative.available?
 
         @instances[:gbs_native] ||= GbsNative.new(gme: gme_backend)
+      end
+
+      def nsf_native_backend
+        require_relative 'nsf_native'
+        return gme_backend unless NsfNative.available?
+
+        @instances[:nsf_native] ||= NsfNative.new(gme: gme_backend)
       end
 
       def ext_of(path) = File.extname(path).downcase

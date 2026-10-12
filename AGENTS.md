@@ -19,7 +19,7 @@ Work on git branch `main`
 ```sh
 mise exec -- bundle exec rake test                    # full suite
 mise exec -- bundle exec ruby -Itest test/foo_test.rb # one test file
-mise exec -- bundle exec rake compile                 # native audio shim + SPC and GBS players (C++)
+mise exec -- bundle exec rake compile                 # native audio shim + SPC, GBS, and NSF players (C++)
 ```
 
 Ruby comes from mise. Plain `bundle exec` may select wrong Ruby.
@@ -89,12 +89,16 @@ Ruby comes from mise. Plain `bundle exec` may select wrong Ruby.
   change `Snes_Spc::play` call sizes (e.g. to densify DSP snapshots): the DSP
   runs ahead of the CPU at call boundaries, so splitting calls changes audio.
   Vendored files change only per `ext/snes_spc/VENDOR.md`.
-- `.gbs` plays through `ext/rp_gbs` (vendored libgme GBS core, built through
-  libgme's own `gme_new_emu`), checked bit-exact by
-  `test/gbs_native_parity_test.rb`. APU state is captured by libgme's
-  `GME_APU_HOOK`/`GME_FRAME_HOOK` macros, not by editing the emulator;
-  vendored files change only per `ext/gme/VENDOR.md`. Keep the dylib's
-  symbols hidden: Homebrew libgme, with the same classes, shares the process.
+- `.gbs` and `.nsf`/`.nsfe` play through `ext/rp_gbs` and `ext/rp_nsf`
+  (vendored libgme cores in `ext/gme`, built through libgme's own
+  `gme_new_emu`), checked bit-exact by `test/gbs_native_parity_test.rb` and
+  `test/nsf_native_parity_test.rb`. Chip state is captured by libgme's
+  `GME_APU_HOOK`/`GME_FRAME_HOOK` macros plus a few patched hook calls, not
+  by changing emulation; vendored files change only per `ext/gme/VENDOR.md`.
+  Snapshot hooks must never add time splits to libgme's oscillators (the NES
+  triangle's muted phase depends on them): simulate state on copies instead.
+  Keep the dylibs' symbols hidden: Homebrew libgme, with the same classes,
+  shares the process.
 
 ## Refactor seams
 
@@ -113,6 +117,8 @@ Ruby comes from mise. Plain `bundle exec` may select wrong Ruby.
 ## Testing
 
 - Fixtures are real: vgm/nsf/gbs/spc/mod/xm/s3m/mp3 plus zip/7z/rar.
+  `test/support/rip_fixtures.rb` names the HES and NSF rips (one per NSF
+  expansion chip) and extracts the zipped ones.
 - Scanner tests may use empty fake files; scanner stats only.
 - Engine tests use `null_backend: true`; no audio device.
 - UI tests render into `Screen.new(out: StringIO.new, ...)`; inspect

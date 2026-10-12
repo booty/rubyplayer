@@ -52,8 +52,21 @@ gme_player GBS_DYLIB, hooks: 'ext/rp_gbs/rp_gbs_hooks.h', types: %w[GBS],
                       sources: ['ext/rp_gbs/rp_gbs.cpp', *GME_FRAMEWORK,
                                 *%w[Gb_Apu Gb_Cpu Gb_Oscs Gbs_Emu].map { |name| "ext/gme/#{name}.cpp" }]
 
-desc 'Build the native audio shim, SPC player, and GBS player'
-task compile: [NATIVE_DYLIB, SPC_DYLIB, GBS_DYLIB]
+# emu2413 (the VRC7's FM core) is C, so it is compiled on its own.
+EMU2413_OBJECT = 'tmp/native/emu2413.o'
+file EMU2413_OBJECT => ['ext/gme/ext/emu2413.c', 'ext/gme/ext/emu2413.h'] do
+  mkdir_p 'tmp/native'
+  sh "clang #{GME_FLAGS} -c -o #{EMU2413_OBJECT} ext/gme/ext/emu2413.c"
+end
+
+NSF_DYLIB = 'lib/rubyplayer/native/librp_nsf.dylib'
+gme_player NSF_DYLIB, hooks: 'ext/rp_nsf/rp_nsf_hooks.h', types: %w[NSF NSFE], objects: [EMU2413_OBJECT],
+                      sources: ['ext/rp_nsf/rp_nsf.cpp', *GME_FRAMEWORK,
+                                *%w[Nes_Apu Nes_Cpu Nes_Oscs Nes_Fme7_Apu Nes_Namco_Apu Nes_Vrc6_Apu Nes_Fds_Apu
+                                    Nes_Vrc7_Apu Nsf_Emu Nsfe_Emu].map { |name| "ext/gme/#{name}.cpp" }]
+
+desc 'Build the native audio shim and the SPC, GBS, and NSF players'
+task compile: [NATIVE_DYLIB, SPC_DYLIB, GBS_DYLIB, NSF_DYLIB]
 
 task test: :compile
 

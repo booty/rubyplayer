@@ -228,7 +228,7 @@ class PlaybackEngineSpcTest < Minitest::Test
 
   # The GBS page must see every heard snapshot once, in order: notes come
   # from consecutive states.
-  def test_gbs_live_returns_each_heard_snapshot_once
+  def test_chip_live_returns_each_heard_gbs_snapshot_once
     start(GbsHandle)
 
     assert_equal :gbs, @engine.chip_live_kind
@@ -244,12 +244,12 @@ class PlaybackEngineSpcTest < Minitest::Test
   # A seek restarts note history (new generation) but is the same track.
   def test_gbs_seek_changes_the_history_generation_only
     start(GbsHandle)
-    before = @engine.gbs_live
+    before = @engine.chip_live
     @engine.toggle_play
     wait_until { @engine.state[:paused] }
     @engine.seek(30_000)
     wait_until { gbs_records_with_state.last&.first == [99, 0] }
-    after = @engine.gbs_live
+    after = @engine.chip_live
 
     refute_equal before.generation, after.generation
     assert_equal before.track_generation, after.track_generation
@@ -272,11 +272,11 @@ class PlaybackEngineSpcTest < Minitest::Test
 
   private
 
-  def gbs_records = @engine.gbs_live.snapshots.map { |snapshot| snapshot.regs.first(2) }
+  def gbs_records = @engine.chip_live.snapshots.map { |snapshot| snapshot.regs.first(2) }
 
   # [[read, record]] of each snapshot handed over, collected across calls.
   def gbs_records_with_state
-    (@gbs_seen ||= []).concat(@engine.gbs_live.snapshots.map { |snapshot| [snapshot.regs.first(2)] })
+    (@gbs_seen ||= []).concat(@engine.chip_live.snapshots.map { |snapshot| [snapshot.regs.first(2)] })
   end
 
   def build_engine(handle_class)

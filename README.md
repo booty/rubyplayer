@@ -50,7 +50,7 @@ To run directly from the checkout:
 mise exec -- bundle exec ruby --yjit bin/rubyplayer [path ...]
 ```
 
-`mise exec -- bundle exec rake compile` builds the native audio shim (`lib/rubyplayer/native/librp_audio.dylib`), the SPC player (`lib/rubyplayer/native/librp_spc.dylib`), and the GBS player (`lib/rubyplayer/native/librp_gbs.dylib`; both C++, needing `clang++`) automatically as a prerequisite of `mise exec -- bundle exec rake test`; `bin/rubyplayer` expects it to already exist, so run `mise exec -- bundle exec rake compile` (or `mise exec -- bundle exec rake test`) at least once after a fresh checkout.
+`mise exec -- bundle exec rake compile` builds the native audio shim (`lib/rubyplayer/native/librp_audio.dylib`), the SPC player (`lib/rubyplayer/native/librp_spc.dylib`), and the GBS and NSF players (`lib/rubyplayer/native/librp_gbs.dylib`, `librp_nsf.dylib`; all C++, needing `clang++`) automatically as a prerequisite of `mise exec -- bundle exec rake test`; `bin/rubyplayer` expects it to already exist, so run `mise exec -- bundle exec rake compile` (or `mise exec -- bundle exec rake test`) at least once after a fresh checkout.
 
 Startup checks every supported runtime dependency before taking over the terminal. Missing Homebrew packages are reported together with one `brew install ...` command. If only the bundled audio shim is missing, run `mise exec -- bundle exec rake compile`.
 
@@ -231,11 +231,12 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | `runtime_dependencies.rb` | `RuntimeDependencies`: checks native libraries, command-line tools, and the audio shim before App loads, with actionable startup diagnostics. |
 | `event_bus.rb` | `EventBus`: thread-safe event queue with a self-pipe wakeup, so the main loop's `IO.select` can block on stdin *and* background events simultaneously instead of polling. |
 | `level_tap.rb` | `LevelTap`: feeds the bottom-line EQ animation. Runs a Goertzel-algorithm frequency analysis at log-spaced band frequencies over the window of audio the device is playing: `push` (decoder thread) tags audio with its output-timeline frame as it enters the ring; `levels` (UI thread) reads the window ending at `frames_played`. |
-| `playback_engine/chip_state.rb` | `PlaybackEngine::ChipState`: live chip state for handles that record native snapshots — pushes each chunk's snapshots into a `ChipTimeline` at the chunk's output frame; returns the SPC snapshot being heard (`spc_live`) or every GBS snapshot heard since the last call (`gbs_live`), and which kind the track has (`chip_live_kind`). |
+| `playback_engine/chip_state.rb` | `PlaybackEngine::ChipState`: live chip state for handles that record native snapshots — pushes each chunk's snapshots into a `ChipTimeline` at the chunk's output frame; returns the SPC snapshot being heard (`spc_live`) or every GBS or NSF snapshot heard since the last call (`chip_live`), and which kind the track has (`chip_live_kind`). |
 | `chip_timeline.rb` | `ChipTimeline`: packed native snapshots (any record class) indexed by output-timeline frame: the latest heard (`at`) or each heard record once, in order (`take_through`). |
 | `playback_engine/voice_muting.rb` | `PlaybackEngine::VoiceMuting`: user voice muting for any handle with `#mute` (native SPC, libgme), queued for the decoder thread and tied to the track it targets. |
 | `spc/snapshot.rb` | `Spc::Snapshot` (one decoded S-DSP state record) and `Spc::LiveState`. |
-| `gbs/snapshot.rb`, `gbs/tracker.rb` | `Gbs::Snapshot` (one decoded Game Boy APU record), `Gbs::LiveState`, and `Gbs::Tracker`, which turns the snapshot stream into the VGM live page's channel model and note history. |
+| `gbs/snapshot.rb`, `gbs/tracker.rb` | `Gbs::Snapshot` (one decoded Game Boy APU record) and `Gbs::Tracker`, which turns the snapshot stream into the VGM live page's channel model and note history. |
+| `nsf/snapshot.rb` | `Nsf::Snapshot` (one decoded 2A03-plus-expansion record) and `Nsf::Voices` (libgme's voice numbering per chip set). |
 | `spc/dsp.rb`, `spc/brr.rb`, `spc/fir.rb`, `spc/ram_map.rb` | Pure decoders for the live page: DSP registers, sample directory and BRR samples, echo FIR frequency response, and SPC RAM layout. |
 | `track_formatter.rb` | `TrackFormatter`: runs configured formatter lambdas against a track and helper context, then normalizes strings and conditional fragments into validated styled segments. |
 | `keymap.rb` | `Keymap`: maps normalized key names to action symbols, merging Ruby-config overrides over sensible single-letter defaults. Matching is case-insensitive. Pane-local bindings shadow global bindings. |
@@ -251,7 +252,7 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | `openmpt.rb` | `Backends::Openmpt`: FFI bindings to libopenmpt, plus `Handle` and metadata extraction for tracker module formats. libopenmpt renders float natively, so no format conversion is needed. |
 | `snes_spc.rb`, `snes_spc_lib.rb` | `Backends::SnesSpc`: plays `.spc` through `librp_spc` (handles also expose DSP snapshots, RAM, and voice muting); scanning and metadata stay on libgme. Requiring `snes_spc_lib.rb` loads the dylib and doubles as the availability check. |
 | `native_gme.rb`, `gzip_content.rb` | `Backends::NativeGme`: the shared backend and handle for native libgme players (snapshots, voice muting, a sibling `.m3u` as libgme loads it); scanning and metadata stay on libgme. `GzipContent` inflates gzip content (with a size limit) as libgme's file loader does. |
-| `gbs_native.rb`, `gbs_native_lib.rb` | `Backends::GbsNative`: plays `.gbs` through `librp_gbs`. Requiring `gbs_native_lib.rb` doubles as the availability check. |
+| `gbs_native.rb`, `gbs_native_lib.rb`, `nsf_native.rb`, `nsf_native_lib.rb` | `Backends::GbsNative` and `NsfNative`: `.gbs` through `librp_gbs`, `.nsf`/`.nsfe` through `librp_nsf`. Requiring a `*_lib.rb` binding doubles as the availability check. |
 | `ffmpeg.rb` | `Backends::Ffmpeg`: probes ordinary audio files with ffprobe and decodes through an FFmpeg subprocess to float32 stereo PCM; supports seeking by restarting decoding at the requested offset. |
 
 ### Terminal UI (`lib/rubyplayer/ui/`)
@@ -288,13 +289,14 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | `ext/snes_spc/` | Vendored SPC700 + S-DSP core, output filter, and resampler from libgme 0.6.5 (LGPL 2.1; see `ext/snes_spc/VENDOR.md` for files, build flags, and the one read-only accessor patch). |
 | `ext/rp_spc/rp_spc.{h,cpp}` | C API over that core: a faithful port of libgme's SPC playback control (resampling, gain, fade, silence handling) so output matches libgme exactly, plus S-DSP snapshots recorded once per emulator call (~50 ms). Compiled to `lib/rubyplayer/native/librp_spc.dylib` by `mise exec -- bundle exec rake compile`. `test/snes_spc_parity_test.rb` requires bit-exact output against libgme on every SPC fixture. |
 
-### Native GBS player (`ext/gme/`, `ext/rp_gme/`, `ext/rp_gbs/`)
+### Native GBS and NSF players (`ext/gme/`, `ext/rp_gme/`, `ext/rp_gbs/`, `ext/rp_nsf/`)
 
 | File | Purpose |
 |---|---|
-| `ext/gme/` | Vendored libgme 0.6.5 GBS emulator and the playback framework, effects buffer, and C API it plays through (LGPL 2.1; see `ext/gme/VENDOR.md` for files, build flags, and the accessor and hook patch). Each native player compiles the framework plus only its own format. |
-| `ext/rp_gme/rp_recorder.h` | What native libgme players share: an emulator subclass that records snapshots from libgme's hooks and maps them from emulator clocks to output frames across leading-silence skipping, keeping those ahead of output so a seek shows the state heard at its target; and the C API plumbing built on it. |
+| `ext/gme/` | Vendored libgme 0.6.5 GBS and NSF emulators (with every NSF expansion chip and emu2413 for VRC7) and the playback framework, effects buffer, and C API they play through (LGPL 2.1, emu2413 MIT; see `ext/gme/VENDOR.md` for files, build flags, and the accessor and hook patch). Each player compiles the framework plus only its own format. |
+| `ext/rp_gme/rp_recorder.h` | What both players share: an emulator subclass that records snapshots from libgme's hooks and maps them from emulator clocks to output frames across leading-silence skipping, keeping those ahead of output so a seek shows the state heard at its target; and the C API plumbing built on it. |
 | `ext/rp_gbs/rp_gbs.{h,cpp}`, `rp_gbs_hooks.h` | C API that builds the GBS emulator through libgme's own `gme_new_emu` path (so output is libgme's), plus APU snapshots taken through libgme's `GME_APU_HOOK`/`GME_FRAME_HOOK` macros at each trigger, length or envelope change, and driver call. Compiled with hidden symbols to `lib/rubyplayer/native/librp_gbs.dylib`. `test/gbs_native_parity_test.rb` requires bit-exact output against libgme. |
+| `ext/rp_nsf/rp_nsf.{h,cpp}`, `rp_nsf_hooks.h` | The same for NSF and NSFe: 2A03 and expansion chip snapshots at each trigger, key on, length or envelope change, and driver call. The 2A03 and MMC5 frame counters are simulated on copies between hooks rather than advanced (libgme's triangle keeps phase differently across extra time splits while muted). Compiled to `lib/rubyplayer/native/librp_nsf.dylib`; `test/nsf_native_parity_test.rb` requires bit-exact output against libgme on every NSF fixture. |
 
 ### Other directories
 
@@ -425,7 +427,7 @@ restart.
 | `config.keymap.global` | `{}` | Global key/action overrides. |
 | `config.keymap.library` | `{}` | Library overrides; beat global bindings. |
 | `config.keymap.tracks` | `{}` | Tracks overrides; beat global bindings. |
-| `config.backends` | `{}` | Extension/backend overrides; dot optional. `.spc` and `.gbs` default to the native SPC and GBS players; `".spc" => :gme` or `".gbs" => :gme` restores libgme playback. |
+| `config.backends` | `{}` | Extension/backend overrides; dot optional. `.spc`, `.gbs`, and `.nsf`/`.nsfe` default to the native SPC, GBS, and NSF players; for example `".nsf" => :gme` restores libgme playback. |
 
 Map settings use bracket assignment:
 

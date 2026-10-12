@@ -1,14 +1,16 @@
-# Vendored: libgme cores (from libgme 0.6.5)
+# Vendored: libgme GBS and NSF cores (from libgme 0.6.5)
 
 Source: <https://github.com/libgme/game-music-emu>, tag `0.6.5`, directory `gme/`.
-These are the files libgme needs to play `.gbs` through its own C API: the Game Boy CPU and
-APU, the `Music_Emu`/`Classic_Emu` playback framework (fades, silence handling), the
-`Effects_Buffer` libgme builds these emulators with, and `gme.cpp` itself. The framework is
-shared, so other formats' emulators can be added beside it. The version matches the Homebrew
-libgme rubyplayer links for every other format, so playback through `rp_gbs` matches libgme
-sample for sample (`test/gbs_native_parity_test.rb`).
+These are the files libgme needs to play `.gbs`, `.nsf`, and `.nsfe` through its own C API: the
+Game Boy and NES CPUs and sound chips (the 2A03 and every NSF expansion chip libgme emulates),
+the `Music_Emu`/`Classic_Emu` playback framework (fades, silence handling), the
+`Effects_Buffer` libgme builds these emulators with, and `gme.cpp` itself. The version matches
+the Homebrew libgme rubyplayer links for every other format, so playback through `rp_gbs` and
+`rp_nsf` matches libgme sample for sample (`test/gbs_native_parity_test.rb`,
+`test/nsf_native_parity_test.rb`).
 
-License: GNU LGPL 2.1 (`COPYING`, copied from libgme's `license.txt`).
+License: GNU LGPL 2.1 (`COPYING`, copied from libgme's `license.txt`); `ext/emu2413.{c,h}`
+(Mitsutaka Okazaki's YM2413 emulator, used for the VRC7) is MIT (`ext/LICENSE-emu2413`).
 
 ## Files
 
@@ -22,20 +24,27 @@ License: GNU LGPL 2.1 (`COPYING`, copied from libgme's `license.txt`).
 | `blargg_common.h`, `blargg_config.h`, `blargg_endian.h`, `blargg_source.h` | Shared support headers |
 | `Gbs_Emu.{h,cpp}`, `Gb_Cpu.{h,cpp}`, `gb_cpu_io.h` | GBS loading, LR35902 CPU, driver timing |
 | `Gb_Apu.{h,cpp}`, `Gb_Oscs.{h,cpp}` | Game Boy APU (2 squares, wave, noise) |
+| `Nsf_Emu.{h,cpp}`, `Nsfe_Emu.{h,cpp}`, `Nes_Cpu.{h,cpp}`, `nes_cpu_io.h` | NSF and NSFe loading, 6502 CPU, driver timing |
+| `Nes_Apu.{h,cpp}`, `Nes_Oscs.{h,cpp}` | 2A03 APU (2 pulses, triangle, noise, DMC); MMC5 reuses it |
+| `Nes_Vrc6_Apu`, `Nes_Vrc7_Apu`, `Nes_Fds_Apu`, `Nes_Mmc5_Apu.h`, `Nes_Namco_Apu`, `Nes_Fme7_Apu` | Expansion chips: VRC6, VRC7, FDS, MMC5, Namco 163, Sunsoft 5B |
+| `ext/emu2413.{c,h}` | YM2413 core behind the VRC7 |
 
 ## Build flags (required)
 
-Each player (`ext/rp_gbs`) compiles the framework files plus only its format's emulator files
-into its own dylib (see the Rakefile's `gme_player`):
+Each player (`ext/rp_gbs`, `ext/rp_nsf`) compiles the framework files plus only its format's
+emulator files into its own dylib (see the Rakefile's `gme_player`):
 
 - `-DBLARGG_LITTLE_ENDIAN=1`, `-DNDEBUG`, `-std=c++11`: as for `ext/snes_spc`.
-- `-DUSE_GME_GBS`: which types `gme.cpp` registers.
-- `-include ext/rp_gbs/rp_gbs_hooks.h`: defines libgme's `GME_APU_HOOK`
+- `-DUSE_GME_GBS`, or `-DUSE_GME_NSF -DUSE_GME_NSFE`: which types `gme.cpp` registers.
+- `-include ext/rp_gbs/rp_gbs_hooks.h` (or `rp_nsf_hooks.h`): defines libgme's `GME_APU_HOOK`
   and `GME_FRAME_HOOK` instrumentation macros (empty by default in `Classic_Emu.h`) so the
   player sees every sound-chip write and music-driver call, plus the `RP_*` hooks the patch
   below calls.
 - `-fvisibility=hidden -fvisibility-inlines-hidden`: these classes and `gme_*` functions also
-  exist in Homebrew libgme, loaded into the same process; only `rp_gbs_*` is exported.
+  exist in Homebrew libgme, loaded into the same process; only `rp_gbs_*` and `rp_nsf_*` are
+  exported.
+- `ext/emu2413.c` is C: it is compiled on its own (same optimization and visibility flags) and
+  linked into the NSF player.
 
 ## Local patch (the only source changes)
 
@@ -85,5 +94,71 @@ frame's last stretch is observed before the APU runs it unseen:
 	RP_GBS_FRAME_END_HOOK( this, cpu_time );
 ```
 
+### NSF
+
+`Nsf_Emu.h`, public, after `apu_()`:
+
+```cpp
+	// rubyplayer patch: read-only chips and driver timing for live state
+	// snapshots.
+	Nes_Apu const& rp_apu() const { return apu; }
+	class Nes_Vrc6_Apu const* rp_vrc6() const { return vrc6; }
+	class Nes_Namco_Apu const* rp_namco() const { return namco; }
+	class Nes_Fme7_Apu const* rp_fme7() const { return fme7; }
+	class Nes_Fds_Apu const* rp_fds() const { return fds; }
+	class Nes_Mmc5_Apu const* rp_mmc5() const { return mmc5; }
+	class Nes_Vrc7_Apu const* rp_vrc7() const { return vrc7; }
+	long rp_play_period() const { return play_period; } // in 1/12 CPU clocks
+	double rp_clock_rate() const { return clock_rate_; }
+	bool rp_pal() const { return pal_only; }
+```
+
+`Nes_Apu.h`, public, after `run_until()`:
+
+```cpp
+	// rubyplayer patch: read-only state for live state snapshots.
+	Nes_Square const& rp_square( int i ) const { return i ? square2 : square1; }
+	Nes_Triangle const& rp_triangle() const { return triangle; }
+	Nes_Noise const& rp_noise() const { return noise; }
+	Nes_Dmc const& rp_dmc() const { return dmc; }
+	int rp_osc_enables() const { return osc_enables; }
+	int rp_frame_mode() const { return frame_mode; }
+	// Frame counter position, as of rp_last_time() (oscillators run lazily).
+	nes_time_t rp_last_time() const { return last_time; }
+	int rp_frame() const { return frame; }
+	int rp_frame_delay() const { return frame_delay; }
+	int rp_frame_period() const { return frame_period; }
+```
+
+`Nes_Namco_Apu.h`, before `public: Nes_Namco_Apu();`:
+
+```cpp
+	// rubyplayer patch: read-only sound RAM for live state snapshots.
+	uint8_t const* rp_regs() const { return reg; }
+```
+
+`Nes_Fds_Apu.h`, public, after `write_()`:
+
+```cpp
+	// rubyplayer patch: read-only state for live state snapshots.
+	unsigned char const* rp_regs() const { return regs_; }
+	int rp_env_gain() const { return env_gain; }
+	int rp_sweep_gain() const { return sweep_gain; }
+	unsigned char const* rp_mod_wave() const { return mod_wave; }
+```
+
+`Nsf_Emu.cpp`: at the top of `Nsf_Emu::cpu_write_misc`, so expansion chip writes are seen, and
+in `Nsf_Emu::run_clocks` just before `apu.end_frame( duration );`:
+
+```cpp
+	// rubyplayer patch: see ext/rp_nsf/rp_nsf_hooks.h.
+	RP_NSF_EXPANSION_WRITE_HOOK( this, addr, data );
+```
+
+```cpp
+	// rubyplayer patch: see ext/rp_nsf/rp_nsf_hooks.h.
+	RP_NSF_FRAME_END_HOOK( this, duration );
+```
+
 To update: re-download the files from the new tag, keep the empty `gme_types.h`, re-apply this
-patch, and rerun the parity tests.
+patch, and rerun both parity tests.

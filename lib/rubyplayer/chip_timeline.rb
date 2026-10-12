@@ -1,6 +1,16 @@
 # frozen_string_literal: true
 
 module RubyPlayer
+  # What a Now Playing live page that must see every chip state (GBS, NSF)
+  # consumes: every snapshot heard since the previous call, oldest first (so
+  # short notes are not lost between renders), the newest of them, a
+  # generation that changes whenever playback jumps (seek, new track) and
+  # history must restart, one that changes only per track (the page keeps
+  # its selection across seeks), and the output frame being heard at
+  # `sample_rate`.
+  ChipLiveState = Data.define(:snapshots, :latest, :generation, :track_generation, :frame, :sample_rate, :paused,
+                              :mute_mask)
+
   # Native chip-state snapshots (S-DSP for SPC, APU for GBS) indexed by
   # output-timeline frame, so the UI shows the state being heard rather than
   # the decoder's (up to ~0.85 s ahead).

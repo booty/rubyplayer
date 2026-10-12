@@ -7,13 +7,16 @@ require_relative '../gbs/snapshot'
 module RubyPlayer
   class PlaybackEngine
     # Live chip state for handles that record native snapshots (SPC S-DSP,
-    # GBS APU): which snapshot is being heard, plus SPC RAM. Split out of
+    # GBS APU, NSF chips): which snapshot is being heard, plus SPC RAM. Split out of
     # PlaybackEngine as one concern; it relies on the engine's @mutex,
     # @audio, @handle, @commands, and playback flags.
     module ChipState
       # Keeps a long-closed live page from replaying minutes of snapshots on
       # reopen; the page's history only spans seconds.
-      MAX_GBS_SNAPSHOTS_PER_CALL = 2_048
+      MAX_CHIP_SNAPSHOTS_PER_CALL = 2_048
+      # Native records each live kind is named by. NSF records are served by
+      # chip_live but have no live page yet.
+      CHIP_LIVE_KINDS = { Spc::Snapshot => :spc, Gbs::Snapshot => :gbs }.freeze
 
       # S-DSP state at the frame the device is playing, for SPC handles;
       # nil otherwise.
@@ -25,23 +28,27 @@ module RubyPlayer
                            mute_mask: mute_mask)
       end
 
-      # GBS APU snapshots heard since the previous call, for GBS handles; nil
-      # otherwise. Consumes them: one caller (the live page) only.
-      def gbs_live
-        live, paused, mute_mask, generation, track_generation = live_flags(Gbs::Snapshot)
+      # GBS or NSF snapshots heard since the previous call, for handles that
+      # record them; nil otherwise. Consumes them: one caller (the live page)
+      # only.
+      def chip_live
+        record = @chip_record
+        return if record.nil? || record == Spc::Snapshot
+
+        live, paused, mute_mask, generation, track_generation = live_flags(record)
         return unless live
 
         frame = @audio.frames_played
-        snapshots = @chip_timeline.take_through(frame, limit: MAX_GBS_SNAPSHOTS_PER_CALL)
-        Gbs::LiveState.new(snapshots: snapshots, latest: snapshots.last, generation: generation,
-                           track_generation: track_generation, frame: frame, sample_rate: @audio.sample_rate,
-                           paused: paused, mute_mask: mute_mask)
+        snapshots = @chip_timeline.take_through(frame, limit: MAX_CHIP_SNAPSHOTS_PER_CALL)
+        ChipLiveState.new(snapshots: snapshots, latest: snapshots.last, generation: generation,
+                          track_generation: track_generation, frame: frame, sample_rate: @audio.sample_rate,
+                          paused: paused, mute_mask: mute_mask)
       end
 
       # Which native live state the current track records (:spc, :gbs), or
-      # nil. Unlike gbs_live it consumes nothing.
+      # nil. Unlike chip_live it consumes nothing.
       def chip_live_kind
-        kind = { Spc::Snapshot => :spc, Gbs::Snapshot => :gbs }.fetch(@chip_record, nil)
+        kind = CHIP_LIVE_KINDS.fetch(@chip_record, nil)
         live, = live_flags(@chip_record)
         kind if live
       end
@@ -92,7 +99,7 @@ module RubyPlayer
 
       # Discontinuities (seek, track change, stop) drop everything: the
       # timeline only appends, and flushed positions get reused. The new
-      # generation tells the GBS page to restart its note history.
+      # generation tells the GBS and NSF pages to restart their note history.
       def reset_chip_state
         @pending_snapshots = nil
         @chip_timeline.reset
