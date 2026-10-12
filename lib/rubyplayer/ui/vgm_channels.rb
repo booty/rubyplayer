@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative '../vgm/snapshot'
+
 module RubyPlayer
   module UI
     # Renders immutable VGM channel snapshots inside a caller-owned rectangle.
@@ -15,8 +17,13 @@ module RubyPlayer
                               noise_feedback shift_width flags stereo_register].freeze
       CHIP_ORDER = { 'ym2612' => 0, 'sn76489' => 1, 'ym2413' => 2 }.freeze
       PAN_LABELS = { lr: 'L/R', l: 'L', r: 'R', none: '--' }.freeze
+      # Key handling can arrive before the first render records real
+      # dimensions; assume a typical full-size modal until then.
+      FALLBACK_WIDTH = 100
+      FALLBACK_HEIGHT = 28
       private_constant :RECENT_TRIGGER_SAMPLES, :OPERATOR_LABELS,
-                       :CHIP_DETAIL_FIELDS, :CHIP_ORDER, :PAN_LABELS
+                       :CHIP_DETAIL_FIELDS, :CHIP_ORDER, :PAN_LABELS,
+                       :FALLBACK_WIDTH, :FALLBACK_HEIGHT
 
       attr_reader :selected_channel_id, :snapshot
       attr_accessor :paused
@@ -190,8 +197,8 @@ module RubyPlayer
       end
 
       def cycle_detail?(direction)
-        maximum = detail_capacity(@last_height || 28)
-        pages = detail_pages(maximum, @last_width || 100)
+        maximum = detail_capacity(@last_height || FALLBACK_HEIGHT)
+        pages = detail_pages(maximum, @last_width || FALLBACK_WIDTH)
         return false if pages.empty?
 
         index = pages.index { |page, page_index, _lines| [page, page_index] == [@detail_page, @detail_page_index] } || 0
@@ -268,7 +275,7 @@ module RubyPlayer
         operators = patch.operators
         return [[heading]] if operators.empty?
 
-        compact = width < 72 || (@last_height || 28) < 20
+        compact = width < 72 || (@last_height || FALLBACK_HEIGHT) < 20
         if compact
           operators.flat_map do |operator|
             operator_lines(operator, width).each_slice([maximum - 1, 1].max).map do |lines|
@@ -470,7 +477,7 @@ module RubyPlayer
       end
 
       def format_time(sample)
-        seconds = sample.to_i / 44_100
+        seconds = sample.to_i / Vgm::SAMPLE_RATE
         format('%d:%02d', seconds / 60, seconds % 60)
       end
 

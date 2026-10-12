@@ -36,7 +36,7 @@ class VgmChipsTest < Minitest::Test
   end
 
   def test_unsupported_ym2151_and_t6w28_are_visible_without_interpreting_writes
-    vgm = VgmBuilder.new(sn76489_clock: 0x8000_0000 | 3_579_545,
+    vgm = VgmBuilder.new(sn76489_clock: 0xc000_0000 | 3_579_545,
                          ym2151_clock: 4_000_000)
                     .raw_command("\x54\x08\x78".b).end.bytes
     reader = reader_for(vgm)
@@ -49,6 +49,43 @@ class VgmChipsTest < Minitest::Test
     assert_includes result.fetch(:warnings).join(' '), 'YM2151'
     assert_includes result.fetch(:warnings).join(' '), 'T6W28'
     assert_empty result.fetch(:chips).flat_map(&:channels)
+    # A declared-but-unsupported chip already explains itself; its writes must
+    # not add a second "undeclared" warning.
+    refute_includes result.fetch(:warnings).join(' '), 'undeclared'
+  end
+
+  # The specification marks T6W28 with bit 31 *and* the dual-chip bit 30. Bit
+  # 31 alone is an unrecognised variant: neither T6W28 nor a plain SN76489.
+  def test_psg_variant_bit_without_dual_bit_is_unsupported_but_not_t6w28
+    reader = reader_for(VgmBuilder.new(sn76489_clock: 0x8000_0000 | 3_579_545).psg(0x90).end.bytes)
+    chips = RubyPlayer::Vgm::ChipRegistry.new(header: reader.header)
+    read_commands(reader).each { |command| chips.write(command: command, sample: 0) }
+    result = chips.snapshot(sample: 0)
+
+    assert_equal([:unsupported], result.fetch(:chips).map { |chip| chip.details[:status] })
+    refute_includes result.fetch(:warnings).join(' '), 'T6W28'
+    assert_includes result.fetch(:warnings).join(' '), 'variant flag'
+  end
+
+  def test_t6w28_pair_is_reported_as_one_chip
+    reader = reader_for(VgmBuilder.new(sn76489_clock: 0xc000_0000 | 3_579_545).end.bytes)
+    result = RubyPlayer::Vgm::ChipRegistry.new(header: reader.header).snapshot(sample: 0)
+
+    assert_equal ['T6W28'], result.fetch(:chips).map(&:name)
+  end
+
+  def test_t6w28_second_half_and_legacy_fm_writes_do_not_warn_undeclared
+    t6w28 = reader_for(VgmBuilder.new(sn76489_clock: 0xc000_0000 | 3_579_545)
+      .raw_command("\x30\x90".b).end.bytes)
+    legacy = VgmBuilder.new(sn76489_clock: nil, ym2413_clock: 3_579_545).ym2413(0x20, 0x10).end.bytes
+    legacy[8, 4] = [0x101].pack('V')
+    warnings = [t6w28, reader_for(legacy)].flat_map do |reader|
+      chips = RubyPlayer::Vgm::ChipRegistry.new(header: reader.header)
+      read_commands(reader).each { |command| chips.write(command: command, sample: 0) }
+      chips.snapshot(sample: 0).fetch(:warnings)
+    end
+
+    refute_includes warnings.join(' '), 'undeclared'
   end
 
   def test_mixed_opll_and_ym2612_reports_libgme_coverage_limit

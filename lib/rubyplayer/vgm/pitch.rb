@@ -4,13 +4,14 @@ module RubyPlayer
   module Vgm
     # Converts register frequencies to approximate pitch labels for channel rows.
     module Pitch
-      VGM_RATE = 44_100.0
       NOTE_NAMES = %w[C C# D D# E F F# G G# A A# B].freeze
 
+      # OPN2 datasheet: fnote = fnum * clock * 2^(block - 1) / (144 * 2^20).
+      # The -1 is folded into 2^21 so the block exponent stays a plain integer.
       def self.ym2612_hz(clock_hz:, fnum:, block:)
         return unless valid?(clock_hz) && fnum.is_a?(Integer) && fnum.positive? && block.is_a?(Integer)
 
-        clock_hz * fnum * (2**block) / (144.0 * (2**20))
+        clock_hz * fnum * (2**block) / (144.0 * (2**21))
       end
 
       def self.psg_hz(clock_hz:, period:, zero_period: 1024)

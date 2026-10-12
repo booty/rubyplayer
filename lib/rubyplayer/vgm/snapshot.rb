@@ -2,6 +2,9 @@
 
 module RubyPlayer
   module Vgm
+    # VGM command time is always 44.1 kHz samples, independent of output rate.
+    SAMPLE_RATE = 44_100
+
     # Freezes nested public values so snapshots can cross worker and UI threads safely.
     module Immutable
       def self.deep_freeze(value)

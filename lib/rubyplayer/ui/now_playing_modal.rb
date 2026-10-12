@@ -31,7 +31,6 @@ module RubyPlayer
         @page = %i[info live].include?(page) ? page : :info
       end
 
-      def update_live(snapshot) = @channels.update(snapshot)
       def handle_live_key(key) = @channels.handle_key(key)
 
       def matches?(track)
@@ -83,11 +82,11 @@ module RubyPlayer
         height = screen.rows - 2
         hint = '[Tab] Info/Live [↑/↓] Select [PgUp/PgDn] Scroll [←/→] Detail [o/esc/enter] Close'
         if height < 6
-          frame.call(title: 'Now Playing', w: width, h: height, hint: hint)
+          frame.call(title: 'Now Playing', w: width, h: height, hint: hint, styled_hint: true)
           return nil
         end
 
-        frame.call(title: 'Now Playing', w: width, h: height, hint: hint) do |x, y|
+        frame.call(title: 'Now Playing', w: width, h: height, hint: hint, styled_hint: true) do |x, y|
           track_title = [value(:title), value(:artist)].compact.reject(&:empty?).join(' — ')
           summary = ['VGM', @extras['sound_chips'], 'Info / Live'].compact.join(' · ')
           screen.put(y + 1, x + 2, track_title[0, width - 4], fg: theme[:primary], bold: true)

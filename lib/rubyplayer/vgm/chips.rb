@@ -31,6 +31,7 @@ module RubyPlayer
         @header = header
         @adapters = {}
         @unsupported = []
+        @unsupported_keys = Set.new
         @warnings = []
         @warned = Set.new
         declarations = header.chip_clocks
@@ -48,7 +49,11 @@ module RubyPlayer
 
         instance = command.arguments.fetch(:instance, 0)
         adapter = @adapters[[chip_id, instance]]
-        return warn_once(undeclared_message(chip_id, instance)) unless adapter
+        unless adapter
+          # Declared-but-unsupported chips already carry their own warning.
+          warn_once(undeclared_message(chip_id, instance)) unless @unsupported_keys.include?([chip_id, instance])
+          return
+        end
 
         write_to_adapter(chip_id, adapter, command, sample)
       end
@@ -62,7 +67,7 @@ module RubyPlayer
         when :ym2612
           if command.kind == :dac_write
             unavailable_dac_warning
-          elsif command.kind == :ym2612_write
+          elsif command.kind == :register_write
             adapter.write(port: command.arguments.fetch(:port),
                           register: command.arguments.fetch(:register),
                           value: command.arguments.fetch(:value), sample: sample)
@@ -125,8 +130,18 @@ module RubyPlayer
           instances = clock.fetch(:dual, false) ? 2 : 1
           name = CHIP_NAMES.fetch(chip, chip.to_s)
           if chip == :sn76489 && clock.fetch(:variant_flag, false)
-            unsupported(chip, name: 'T6W28', clock_hz: clock[:clock_hz], instances: instances,
-                              message: 'Live detail unavailable: T6W28')
+            # The spec marks T6W28 with the variant *and* dual bits, and that
+            # pair is one chip. The variant bit alone is unrecognised, so it
+            # is neither labelled T6W28 nor modeled as a plain SN76489.
+            if clock.fetch(:dual, false)
+              unsupported(chip, name: 'T6W28', clock_hz: clock[:clock_hz], instances: 1,
+                                message: 'Live detail unavailable: T6W28')
+              # Its second half arrives as instance-1 (0x30) writes.
+              @unsupported_keys << [chip, 1]
+            else
+              unsupported(chip, name: name, clock_hz: clock[:clock_hz], instances: 1,
+                                message: 'Live detail unavailable: SN76489 with unrecognized variant flag')
+            end
             next
           end
 
@@ -150,6 +165,8 @@ module RubyPlayer
           unsupported(:legacy_fm, name: 'Legacy FM',
                                   clock_hz: @header.legacy_fm_clock[:clock_hz], instances: 1,
                                   message: 'Live detail unavailable: ambiguous legacy FM clock')
+          # The pre-1.10 clock field covers whichever of these the stream writes.
+          %i[ym2413 ym2612 ym2151].each { |chip| @unsupported_keys << [chip, 0] }
         end
         warn_once('VGM header declares no supported chip clocks') if @adapters.empty? && @unsupported.empty?
       end
@@ -172,6 +189,7 @@ module RubyPlayer
       def unsupported(chip, name:, clock_hz:, instances:, message:)
         instances.times do |instance|
           @unsupported << [chip, instance, name, clock_hz, message]
+          @unsupported_keys << [chip, instance]
         end
         warn_once(message)
       end

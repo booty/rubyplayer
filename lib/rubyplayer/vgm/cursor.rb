@@ -7,18 +7,25 @@ module RubyPlayer
   module Vgm
     # Replays register writes against source samples and bounded state checkpoints.
     class Cursor
-      CHECKPOINT_INTERVAL = 44_100
+      CHECKPOINT_INTERVAL = SAMPLE_RATE # one second of source time
       MAX_COMMANDS_PER_SLICE = 4_096
-      MAX_COMMANDS_PER_TARGET = 5_000_000
+      # Roughly 0.15 s of Ruby replay. Catching up minutes into a DAC-heavy
+      # track takes millions of commands, so each request does a bounded slice
+      # and the next request resumes from the same cursor.
+      DEFAULT_COMMANDS_PER_CALL = 100_000
+      # Guards against streams that never advance time (beyond the zero-time
+      # loop check), which a per-call budget alone would not catch.
+      MAX_COMMANDS_WITHOUT_PROGRESS = 5_000_000
       DEFAULT_CHECKPOINT_LIMIT = 128
       # VGM opcodes are exact specification identifiers.
       DEFAULT_WAIT_62 = 735
       DEFAULT_WAIT_63 = 882
       # rubocop:disable Naming/VariableNumber
       private_constant :CHECKPOINT_INTERVAL, :MAX_COMMANDS_PER_SLICE,
-                       :MAX_COMMANDS_PER_TARGET, :DEFAULT_WAIT_62,
-                       :DEFAULT_WAIT_63
+                       :DEFAULT_COMMANDS_PER_CALL, :MAX_COMMANDS_WITHOUT_PROGRESS,
+                       :DEFAULT_WAIT_62, :DEFAULT_WAIT_63
       # rubocop:enable Naming/VariableNumber
+      DAC_UNAVAILABLE_WARNING = 'YM2612 DAC data unavailable: PCM bank is missing or compressed'
 
       class ReplayError < StandardError; end
       class Cancelled < StandardError; end
@@ -26,8 +33,11 @@ module RubyPlayer
       attr_reader :commands_processed
 
       def initialize(reader:, checkpoint_limit: DEFAULT_CHECKPOINT_LIMIT,
-                     decoder_capabilities: nil)
+                     decoder_capabilities: nil, commands_per_call: DEFAULT_COMMANDS_PER_CALL)
         raise ArgumentError, 'checkpoint_limit must be an Integer of at least 2' unless checkpoint_limit.is_a?(Integer) && checkpoint_limit >= 2
+        raise ArgumentError, 'commands_per_call must be a positive Integer' unless commands_per_call.is_a?(Integer) && commands_per_call.positive?
+
+        @commands_per_call = commands_per_call
 
         @reader = reader
         @chips = ChipRegistry.new(header: reader.header,
@@ -51,28 +61,39 @@ module RubyPlayer
         save_checkpoint
       end
 
+      # Returns a snapshot at the target, or earlier when the per-call budget
+      # runs out; callers repeat the request to keep catching up.
       def advance_to(sample:, cancel: -> { false })
         raise ArgumentError, 'sample must be a nonnegative Integer' unless sample.is_a?(Integer) && sample >= 0
 
         restore_nearest_checkpoint(sample) if sample < @sample
-        processed_for_target = 0
+        processed_for_call = 0
         processed_in_slice = 0
+        processed_without_progress = 0
 
         until @ended
           raise Cancelled, 'VGM replay was cancelled' if cancel.call
 
           if @pending_wait.positive?
+            # Stop only between timestamps, so a partial snapshot never shows
+            # half of the writes that share one sample.
+            break if processed_for_call >= @commands_per_call
             break unless advance_wait(sample)
 
+            processed_without_progress = 0
             next
           end
           break if @sample > sample
 
           command = @reader.command_at(@offset)
           @commands_processed += 1
-          processed_for_target += 1
+          processed_for_call += 1
           processed_in_slice += 1
-          raise ReplayError, "VGM replay exceeded #{MAX_COMMANDS_PER_TARGET} commands for one target" if processed_for_target > MAX_COMMANDS_PER_TARGET
+          processed_without_progress += 1
+          if processed_without_progress > MAX_COMMANDS_WITHOUT_PROGRESS
+            raise ReplayError,
+                  "VGM replay exceeded #{MAX_COMMANDS_WITHOUT_PROGRESS} commands without advancing time"
+          end
 
           @offset = command.next_offset
           apply(command)
@@ -113,21 +134,15 @@ module RubyPlayer
           else
             add_warning(format('Ignored invalid VGM wait override for 0x%02x', opcode))
           end
-        when :ym2612_write, :ym2413_write, :psg_write, :stereo_write, :skip
+        when :register_write, :psg_write, :stereo_write, :skip
           @chips.write(command: command, sample: @sample)
         when :data_block
           remember_data_block(command)
         when :pcm_seek
           @pcm_pointer = command.arguments.fetch(:address)
-          validate_pcm_pointer!
+          add_warning(DAC_UNAVAILABLE_WARNING) if @pcm_pointer > pcm_bank_size
         when :dac_write
-          value = pcm_byte_at(@pcm_pointer)
-          raise ReplayError, "YM2612 DAC read exceeds PCM bank at byte #{@pcm_pointer}" if value.nil?
-
-          @chips.write_dac(instance: 0, value: value, sample: @sample)
-          @pcm_pointer += 1
-          @pending_wait += command.arguments.fetch(:wait_samples)
-          save_due_checkpoint if @pending_wait.positive?
+          apply_dac_write(command)
         when :pcm_ram_write
           add_warning('PCM RAM writes are skipped; register state may be partial')
         when :stream_command
@@ -159,6 +174,20 @@ module RubyPlayer
       end
       # rubocop:enable Naming/PredicateMethod
 
+      # Bank 0 may be absent or compressed (type 0x40); only the DAC row is
+      # unknowable then, so keep FM/PSG replay and the command's timing.
+      def apply_dac_write(command)
+        value = pcm_byte_at(@pcm_pointer)
+        if value.nil?
+          add_warning(DAC_UNAVAILABLE_WARNING)
+        else
+          @chips.write_dac(instance: 0, value: value, sample: @sample)
+        end
+        @pcm_pointer += 1
+        @pending_wait += command.arguments.fetch(:wait_samples)
+        save_due_checkpoint if @pending_wait.positive?
+      end
+
       def finish_or_loop
         loop_offset = @reader.header.loop_offset
         unless loop_offset
@@ -186,12 +215,6 @@ module RubyPlayer
 
       def pcm_bank_size
         @pcm_banks.fetch(0, []).sum(&:last)
-      end
-
-      def validate_pcm_pointer!
-        return unless @pcm_pointer.negative? || @pcm_pointer > pcm_bank_size
-
-        raise ReplayError, "YM2612 PCM seek exceeds bank at byte #{@pcm_pointer}"
       end
 
       def pcm_byte_at(pointer)
@@ -230,21 +253,34 @@ module RubyPlayer
                                              warnings: @warnings.to_a,
                                              chips: @chips.dump_state
                                            })
-        if (existing = @checkpoints.index { |item| item[:sample] == @sample })
-          @checkpoints[existing] = checkpoint
+        # Kept sorted by sample: backward seeks replay forward and save
+        # checkpoints earlier than ones already stored.
+        index = @checkpoints.bsearch_index { |item| item[:sample] >= @sample } || @checkpoints.size
+        if @checkpoints[index]&.fetch(:sample) == @sample
+          @checkpoints[index] = checkpoint
         else
-          @checkpoints << checkpoint
+          @checkpoints.insert(index, checkpoint)
         end
-        while @checkpoints.size > @checkpoint_limit
-          removable = @checkpoints.index { |item| item[:sample] != 0 }
-          @checkpoints.delete_at(removable || 0)
-        end
+        evict_farthest_checkpoint while @checkpoints.size > @checkpoint_limit
         @next_checkpoint_sample = ((@sample / CHECKPOINT_INTERVAL) + 1) * CHECKPOINT_INTERVAL
       end
 
+      # The initial checkpoint is never evicted, so the first entry is a safe
+      # fallback for any target.
+      def evict_farthest_checkpoint
+        farthest = (1...@checkpoints.size).max_by { |index| (@checkpoints[index][:sample] - @sample).abs }
+        @checkpoints.delete_at(farthest)
+      end
+
+      # Greatest checkpoint at or before the target; the sorted list always
+      # starts with the initial state.
+      def nearest_checkpoint(target)
+        after = @checkpoints.bsearch_index { |item| item[:sample] > target } || @checkpoints.size
+        @checkpoints[[after - 1, 0].max]
+      end
+
       def restore_nearest_checkpoint(target)
-        checkpoint = @checkpoints.rfind { |item| item[:sample] <= target }
-        checkpoint ||= @checkpoints.first
+        checkpoint = nearest_checkpoint(target)
         @sample = checkpoint.fetch(:sample)
         @offset = checkpoint.fetch(:offset)
         @pending_wait = checkpoint.fetch(:pending_wait)

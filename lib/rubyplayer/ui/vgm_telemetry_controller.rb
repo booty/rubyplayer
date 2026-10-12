@@ -6,25 +6,17 @@ module RubyPlayer
     class VgmTelemetryController
       CATCH_UP_THRESHOLD_SAMPLES = 6_615
       TERMINAL_STATUSES = %i[error unsupported ended].freeze
-      private_constant :CATCH_UP_THRESHOLD_SAMPLES, :TERMINAL_STATUSES
+      REFRESH_HZ_RANGE = (1..30)
+      private_constant :CATCH_UP_THRESHOLD_SAMPLES, :TERMINAL_STATUSES, :REFRESH_HZ_RANGE
 
       def initialize(engine:, telemetry:, refresh_hz:, clock:)
-        unless refresh_hz.is_a?(Integer) && refresh_hz.between?(1, 30)
-          raise ArgumentError, 'refresh_hz must be an Integer from 1 to 30'
-        end
-
         @engine = engine
         @telemetry = telemetry
-        @interval = 1.0 / refresh_hz
+        @interval = interval_for(refresh_hz)
         @clock = clock
         @visible = false
         @suspended = true
-        @identity = nil
-        @target_sample = nil
-        @last_accepted_sample = nil
-        @snapshot = nil
-        @terminal = false
-        @next_request_at = nil
+        clear_session
       end
 
       def visible=(visible)
@@ -33,32 +25,19 @@ module RubyPlayer
 
         @visible = visible
         if visible
-          @identity = nil
-          @target_sample = nil
-          @last_accepted_sample = nil
-          @snapshot = nil
-          @terminal = false
-          @next_request_at = nil
+          # The worker was already suspended when the view was hidden.
           @suspended = true
+          clear_session
         else
           suspend
         end
       end
 
       def configure(refresh_hz:)
-        unless refresh_hz.is_a?(Integer) && refresh_hz.between?(1, 30)
-          raise ArgumentError, 'refresh_hz must be an Integer from 1 to 30'
-        end
-
-        @interval = 1.0 / refresh_hz
+        @interval = interval_for(refresh_hz)
         @telemetry.suspend if @visible && !@suspended
         @suspended = true
-        @identity = nil
-        @target_sample = nil
-        @last_accepted_sample = nil
-        @snapshot = nil
-        @terminal = false
-        @next_request_at = nil
+        clear_session
       end
 
       # Tick and accept are side-effecting actions that report whether they progressed.
@@ -68,7 +47,7 @@ module RubyPlayer
 
         request = @engine.vgm_telemetry_request
         unless request
-          suspend unless @suspended
+          suspend
           return false
         end
 
@@ -80,7 +59,11 @@ module RubyPlayer
 
         now = @clock.call
         immediate = changed || @suspended || @next_request_at.nil?
-        return false unless immediate || (!request.paused && now >= @next_request_at)
+        # Replay may stop short of a target to stay responsive; a paused
+        # engine never moves the target, so behind-target results still need
+        # follow-up requests at the refresh rate.
+        recurring = !request.paused || catching_up?
+        return false unless immediate || (recurring && now >= @next_request_at)
 
         @telemetry.request(request)
         @suspended = false
@@ -109,6 +92,14 @@ module RubyPlayer
         @snapshot.with(message: 'Catching up')
       end
 
+      # Lets an idle main loop wake for catch-up requests instead of waiting
+      # for its slower idle poll; nil when no follow-up is due.
+      def seconds_until_due
+        return unless @visible && !@terminal && @next_request_at && catching_up?
+
+        [@next_request_at - @clock.call, 0].max
+      end
+
       def shutdown
         @visible = false
         @telemetry.shutdown
@@ -116,8 +107,32 @@ module RubyPlayer
 
       private
 
+      def interval_for(refresh_hz)
+        unless refresh_hz.is_a?(Integer) && REFRESH_HZ_RANGE.cover?(refresh_hz)
+          raise ArgumentError, "refresh_hz must be an Integer from #{REFRESH_HZ_RANGE.min} to #{REFRESH_HZ_RANGE.max}"
+        end
+
+        1.0 / refresh_hz
+      end
+
+      def catching_up?
+        @snapshot && @target_sample && @snapshot.sample < @target_sample
+      end
+
+      # Identity change keeps the target sample it is about to overwrite;
+      # visibility, configuration, and suspend forget the whole session.
       def reset_for(identity)
+        clear_results
         @identity = identity
+      end
+
+      def clear_session
+        clear_results
+        @identity = nil
+        @target_sample = nil
+      end
+
+      def clear_results
         @snapshot = nil
         @last_accepted_sample = nil
         @terminal = false
@@ -129,12 +144,7 @@ module RubyPlayer
 
         @telemetry.suspend
         @suspended = true
-        @identity = nil
-        @target_sample = nil
-        @last_accepted_sample = nil
-        @snapshot = nil
-        @terminal = false
-        @next_request_at = nil
+        clear_session
       end
     end
   end

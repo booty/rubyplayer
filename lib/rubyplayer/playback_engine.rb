@@ -16,13 +16,12 @@ module RubyPlayer
     ACTIVE_COMMAND_POLL_TIMEOUT_SECONDS = 0
     BUFFER_FULL_POLL_INTERVAL_SECONDS = 0.005
     MILLISECONDS_PER_SECOND = 1000
-    VGM_SAMPLE_RATE = 44_100
     VGM_DECODER_CAPABILITIES = { sn76489: true, ym2612: true, ym2413: true }.freeze
     PREVIOUS_TRACK_THRESHOLD_MS = 3_000
     PREVIOUS_TRACK_LIMIT = 100
     private_constant :THREAD_JOIN_TIMEOUT_SECONDS, :ACTIVE_COMMAND_POLL_TIMEOUT_SECONDS,
                      :BUFFER_FULL_POLL_INTERVAL_SECONDS,
-                     :MILLISECONDS_PER_SECOND, :VGM_SAMPLE_RATE,
+                     :MILLISECONDS_PER_SECOND,
                      :VGM_DECODER_CAPABILITIES, :PREVIOUS_TRACK_THRESHOLD_MS,
                      :PREVIOUS_TRACK_LIMIT
 
@@ -205,8 +204,8 @@ module RubyPlayer
         return unless @playing && @vgm_source && !@focus_sound
 
         consumed_frames = [@audio.frames_played - @frames_base, 0].max
-        seek_samples = [@seek_offset_ms, 0].max * VGM_SAMPLE_RATE / MILLISECONDS_PER_SECOND
-        elapsed_samples = consumed_frames * VGM_SAMPLE_RATE / @audio.sample_rate
+        seek_samples = [@seek_offset_ms, 0].max * Vgm::SAMPLE_RATE / MILLISECONDS_PER_SECOND
+        elapsed_samples = consumed_frames * Vgm::SAMPLE_RATE / @audio.sample_rate
         Vgm::Request.new(source: @vgm_source, revision: @vgm_revision,
                          sample: seek_samples + elapsed_samples, paused: @paused)
       end

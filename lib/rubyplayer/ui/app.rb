@@ -542,10 +542,9 @@ module RubyPlayer
           @status_line.set_message('Nothing playing')
           return
         end
+        # prepare_now_playing owns telemetry visibility and art once shown.
         @show_now_playing = true
         prepare_now_playing(track)
-        @vgm_telemetry_controller.visible = (@now_playing_page == :live)
-        set_art(nil) if @now_playing_page == :live
         invalidate_screen!
       end
 
@@ -1013,9 +1012,20 @@ module RubyPlayer
 
       def tick_vgm_telemetry
         visible = @show_now_playing && @now_playing_page == :live && !modal_active?
+        # Visibility handling suspends the worker and clears the controller,
+        # so stale rows must be dropped even on the hidden early return.
         @vgm_telemetry_controller.visible = visible
+        unless visible
+          clear_stale_vgm_channels
+          return
+        end
+
         @vgm_channels.paused = @engine.state[:paused]
         @vgm_telemetry_controller.tick
+        clear_stale_vgm_channels
+      end
+
+      def clear_stale_vgm_channels
         return unless @vgm_channels.snapshot && @vgm_telemetry_controller.snapshot.nil?
 
         @vgm_channels.update(nil)
@@ -1117,7 +1127,7 @@ module RubyPlayer
       def select_timeout
         return @frame_interval if animating?
 
-        [@idle_poll, @status_line.time_remaining].compact.min
+        [@idle_poll, @status_line.time_remaining, @vgm_telemetry_controller.seconds_until_due].compact.min
       end
 
       def render
@@ -1354,7 +1364,7 @@ module RubyPlayer
       # bleed through any gap between the modal's own put calls. Yields the
       # top-left corner; the optional hint is the standard muted close/confirm
       # line every modal places on its bottom inner row.
-      def render_modal(title:, w:, h:, hint: nil, hint_bg: nil)
+      def render_modal(title:, w:, h:, hint: nil, hint_bg: nil, styled_hint: false)
         x = [(@screen.cols - w) / 2, 0].max
         y = [(@screen.rows - h) / 2, 0].max
         (1...(h - 1)).each { |i| @screen.put(y + i, x + 1, ' ' * (w - 2), bg: @theme[:surface]) }
@@ -1363,14 +1373,15 @@ module RubyPlayer
         return unless hint
 
         hint_row = y + h - 2
-        if title == 'Now Playing' && @now_playing_page == :live
-          draw_live_modal_hint(hint_row, x + 2, w - 4, hint, hint_bg)
+        if styled_hint
+          draw_styled_hint(hint_row, x + 2, w - 4, hint, hint_bg)
         else
           @screen.put(hint_row, x + 2, hint[0, w - 4], fg: @theme[:text_muted], bg: hint_bg)
         end
       end
 
-      def draw_live_modal_hint(row, column, width, hint, background)
+      # Bolds each [key] so dense multi-command hints stay scannable.
+      def draw_styled_hint(row, column, width, hint, background)
         remaining = width
         hint.scan(/\[[^\]]+\]|[^\[]+/).each do |part|
           break if remaining <= 0

@@ -101,15 +101,92 @@ class VgmCursorTest < Minitest::Test
     assert_equal 0, cursor.checkpoint_samples.first
   end
 
+  # Regression: a missing or compressed bank 0 raised ReplayError on the first
+  # 0x8n command and took FM and PSG rows down with it.
+  def test_missing_pcm_bank_warns_and_preserves_dac_waits_and_fm_rows
+    builder = VgmBuilder.new(ym2612_clock: 7_670_454)
+                        .ym2612(0, 0x2b, 0x80)
+                        .data_block(type: 0x40, data: "\x08\x00\x00\x00\x00".b)
+                        .dac_wait(3).ym2612(0, 0x28, 0xf0).wait(1).end
+    cursor = cursor_for(builder.bytes)
+    before = cursor.advance_to(sample: 2)
+    after = cursor.advance_to(sample: 3)
+
+    assert_equal :key_off, ym_row(before).state
+    assert_equal :key_on, ym_row(after).state
+    assert_equal :partial, after.status
+    assert_includes after.warnings, RubyPlayer::Vgm::Cursor::DAC_UNAVAILABLE_WARNING
+  end
+
+  def test_pcm_seek_past_the_bank_warns_instead_of_failing
+    builder = VgmBuilder.new(ym2612_clock: 7_670_454)
+                        .data_block(type: 0, data: "\x12".b).pcm_seek(9)
+                        .dac_wait(1).ym2612(0, 0x28, 0xf0).wait(1).end
+    snapshot = cursor_for(builder.bytes).advance_to(sample: 1)
+
+    assert_equal :key_on, ym_row(snapshot).state
+    assert_includes snapshot.warnings, RubyPlayer::Vgm::Cursor::DAC_UNAVAILABLE_WARNING
+  end
+
+  # Regression: one catch-up request raised ReplayError after 5M commands, so
+  # opening Live minutes into a DAC-heavy track failed permanently. Replay now
+  # returns early and the next request resumes from the same cursor.
+  def test_command_budget_returns_partial_progress_and_resumes
+    builder = VgmBuilder.new
+    1_000.times { builder.raw_command("\x70".b) }
+    cursor = cursor_for(builder.end.bytes, commands_per_call: 100)
+    first = cursor.advance_to(sample: 1_000)
+    samples = [first.sample]
+    samples << cursor.advance_to(sample: 1_000).sample while samples.last < 1_000 && samples.size < 20
+
+    assert_operator first.sample, :<, 1_000
+    assert_equal 1_000, samples.last
+    assert_equal samples, samples.sort
+  end
+
+  def test_command_budget_never_splits_writes_that_share_a_sample
+    builder = VgmBuilder.new(ym2612_clock: 7_670_454)
+                        .wait(1).ym2612(0, 0xb0, 0x07).ym2612(0, 0xa4, 0x22)
+                        .ym2612(0, 0xa0, 0x60).ym2612(0, 0x28, 0xf0).wait(5).end
+    snapshot = cursor_for(builder.bytes, commands_per_call: 2).advance_to(sample: 6)
+    row = ym_row(snapshot)
+
+    assert_equal 1, snapshot.sample
+    assert_equal :key_on, row.state
+    assert_equal 7, row.patch.algorithm
+    assert_equal 0x260, row.details.fetch(:frequency).fetch(:fnum)
+  end
+
+  # Regression: checkpoints were appended after a backward seek, so the array
+  # became unsorted, rfind restored a far-earlier state, and eviction dropped
+  # the checkpoints nearest the playhead.
+  def test_checkpoints_stay_sorted_and_restore_the_nearest_after_backward_seek
+    builder = VgmBuilder.new
+    30.times { builder.wait(44_100) }
+    cursor = cursor_for(builder.end.bytes, checkpoint_limit: 6)
+    seconds = ->(count) { count * 44_100 }
+    cursor.advance_to(sample: seconds[10])
+    cursor.advance_to(sample: seconds[2])
+    cursor.advance_to(sample: seconds[4])
+    sorted = cursor.checkpoint_samples
+    processed = cursor.commands_processed
+    cursor.advance_to(sample: seconds[3] + 10)
+
+    assert_equal sorted.sort, sorted
+    assert_includes sorted, seconds[3]
+    assert_equal 0, sorted.first
+    assert_operator cursor.commands_processed - processed, :<=, 1
+  end
+
   private
 
-  def cursor_for(bytes)
+  def cursor_for(bytes, **)
     Tempfile.create(['rubyplayer-cursor', '.vgm']) do |file|
       file.binmode
       file.write(bytes)
       file.flush
       reader = RubyPlayer::Vgm::Reader.open(file.path, max_bytes: 100_000)
-      return RubyPlayer::Vgm::Cursor.new(reader: reader)
+      return RubyPlayer::Vgm::Cursor.new(reader: reader, **)
     end
   end
 

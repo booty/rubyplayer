@@ -13,6 +13,11 @@ module RubyPlayer
         OPERATOR_OFFSETS = [0, 8, 4, 12].freeze
         OPERATOR_PARAMETER_GROUPS = [0x30, 0x40, 0x50, 0x60, 0x70, 0x80, 0x90].freeze
         PARAMETER_NAMES = %i[dt mul tl rs ar am d1r d2r d1l rr ssg_eg].freeze
+        # Channel 3 special-mode registers are not in operator order: A9/AD
+        # drive OP1, AA/AE drive OP2, A8/AC drive OP3, and the ordinary A2/A6
+        # channel 3 frequency drives OP4.
+        SPECIAL_SLOT_OPERATORS = { 0 => 3, 1 => 1, 2 => 2 }.freeze
+        private_constant :SPECIAL_SLOT_OPERATORS
 
         def initialize(clock_hz:, variant: :ym2612, instance: 0)
           @clock_hz = clock_hz
@@ -21,10 +26,14 @@ module RubyPlayer
           @registers = Array.new(2) { Array.new(0x100) }
           @key_masks = Array.new(6, 0)
           @last_trigger_samples = Array.new(6)
-          @pending_frequency_high = Array.new(6)
+          # The chip has one A4-A6 high-byte latch shared by all channels on
+          # both ports, and one AC-AE latch for special mode. Only the low-byte
+          # write commits a frequency; both latches reset to zero.
+          @frequency_latch = 0
+          @special_latch = 0
           @frequency = Array.new(6)
-          @special_low = Array.new(3)
-          @special_high = Array.new(3)
+          @special_frequency = Array.new(3)
+          @patch_cache = Array.new(6)
           @dac_enabled = false
           @dac_value = nil
           @dac_sample = nil
@@ -47,14 +56,13 @@ module RubyPlayer
           when 0x2b
             @dac_enabled = value.anybits?(0x80) if port.zero?
           when 0xa0..0xa2
-            commit_frequency(port, register - 0xa0, value)
+            @frequency[(port * 3) + register - 0xa0] = latched_frequency(@frequency_latch, value)
           when 0xa4..0xa6
-            channel = (port * 3) + register - 0xa4
-            @pending_frequency_high[channel] = value
+            @frequency_latch = value
           when 0xa8..0xaa
-            @special_low[register - 0xa8] = value if port.zero?
+            @special_frequency[register - 0xa8] = latched_frequency(@special_latch, value) if port.zero?
           when 0xac..0xae
-            @special_high[register - 0xac] = value if port.zero?
+            @special_latch = value if port.zero?
           end
         end
 
@@ -90,10 +98,10 @@ module RubyPlayer
                                   registers: @registers,
                                   key_masks: @key_masks,
                                   last_trigger_samples: @last_trigger_samples,
-                                  pending_frequency_high: @pending_frequency_high,
+                                  frequency_latch: @frequency_latch,
+                                  special_latch: @special_latch,
                                   frequency: @frequency,
-                                  special_low: @special_low,
-                                  special_high: @special_high,
+                                  special_frequency: @special_frequency,
                                   dac_enabled: @dac_enabled,
                                   dac_value: @dac_value,
                                   dac_sample: @dac_sample
@@ -104,10 +112,10 @@ module RubyPlayer
           @registers = state.fetch(:registers).map(&:dup)
           @key_masks = state.fetch(:key_masks).dup
           @last_trigger_samples = state.fetch(:last_trigger_samples).dup
-          @pending_frequency_high = state.fetch(:pending_frequency_high).dup
-          @frequency = state.fetch(:frequency).map { |item| item&.dup }
-          @special_low = state.fetch(:special_low).dup
-          @special_high = state.fetch(:special_high).dup
+          @frequency_latch = state.fetch(:frequency_latch)
+          @special_latch = state.fetch(:special_latch)
+          @frequency = state.fetch(:frequency).dup
+          @special_frequency = state.fetch(:special_frequency).dup
           @dac_enabled = state.fetch(:dac_enabled)
           @dac_value = state.fetch(:dac_value)
           @dac_sample = state.fetch(:dac_sample)
@@ -126,14 +134,8 @@ module RubyPlayer
           @key_masks[channel] = new_mask
         end
 
-        def commit_frequency(port, local_channel, low)
-          channel = (port * 3) + local_channel
-          high = @pending_frequency_high[channel] || @frequency[channel]&.fetch(:high, 0) || 0
-          @frequency[channel] = {
-            high: high,
-            fnum: ((high & 0x07) << 8) | low,
-            block: (high >> 3) & 0x07
-          }
+        def latched_frequency(high, low)
+          { fnum: ((high & 0x07) << 8) | low, block: (high >> 3) & 0x07 }.freeze
         end
 
         def channel_snapshot(index, sample)
@@ -185,14 +187,25 @@ module RubyPlayer
           }
         end
 
+        # Snapshots are taken at the UI refresh rate while timbre registers
+        # rarely change, so reuse the patch (and its SHA-256) until they do.
         def build_patch(index)
           base = channel_register(index, 0xb0)
+          raw_operators = Array.new(4) { |operator| operator_register_bytes(index, operator) }
+          key = [base, raw_operators]
+          cached_key, cached_patch = @patch_cache[index]
+          return cached_patch if cached_key == key
+
+          patch = decode_patch(base, raw_operators)
+          @patch_cache[index] = [key, patch]
+          patch
+        end
+
+        def decode_patch(base, raw_operators)
           algorithm = base&.then { |value| value & 0x07 }
           feedback = base.nil? ? nil : (base >> 3) & 0x07
-          operators = Array.new(4) do |operator|
-            fields = operator_register_bytes(index, operator)
-            values = decode_operator(fields)
-            Operator.new(index: operator + 1, parameters: values)
+          operators = raw_operators.each_with_index.map do |fields, operator|
+            Operator.new(index: operator + 1, parameters: decode_operator(fields))
           end
           bytes = [algorithm || 0xff, feedback || 0xff]
           operators.each do |operator|
@@ -258,12 +271,13 @@ module RubyPlayer
         end
 
         def special_frequency_details
-          Array.new(3) do |operator|
-            high = @special_high[operator]
-            low = @special_low[operator]
-            fnum = high.nil? || low.nil? ? nil : (((high & 0x07) << 8) | low)
-            block = high.nil? ? nil : ((high >> 3) & 0x07)
-            { operator: operator + 1, fnum: fnum, block: block,
+          by_operator = SPECIAL_SLOT_OPERATORS.to_h { |slot, operator| [operator, @special_frequency[slot]] }
+          by_operator[4] = @frequency[2]
+          (1..4).map do |operator|
+            frequency = by_operator[operator]
+            fnum = frequency&.fetch(:fnum)
+            block = frequency&.fetch(:block)
+            { operator: operator, fnum: fnum, block: block,
               pitch_hz: fnum && Pitch.ym2612_hz(clock_hz: @clock_hz, fnum: fnum, block: block) }
           end
         end

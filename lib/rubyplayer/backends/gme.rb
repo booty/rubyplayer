@@ -81,6 +81,9 @@ module RubyPlayer
         emu = open_emu(path, sample_rate)
         # VGM command time includes leading silence. Keeping it prevents the
         # decoder and register telemetry from developing different time bases.
+        # The same libgme switch also disables silence-based end-of-track
+        # detection; that is intended, since VGM tracks end on their own end
+        # command or the header length and fade.
         GmeLib.gme_ignore_silence(emu, 1) if Vgm::Reader.vgm_stream?(path)
         err = GmeLib.gme_start_track(emu, subtune_index)
         if err

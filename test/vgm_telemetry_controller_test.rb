@@ -65,6 +65,32 @@ class VgmTelemetryControllerTest < Minitest::Test
     assert_equal 2, @telemetry.requests.length
   end
 
+  # Replay is resumable: a request may return short of its target. While
+  # paused the engine sample stops moving, so the controller must keep asking
+  # until the snapshot catches up, then go quiet again.
+  def test_paused_view_keeps_requesting_until_replay_catches_up
+    @engine.request = request(sample: 50_000, paused: true)
+    @controller.tick
+
+    assert @controller.accept(snapshot(sample: 10_000))
+    @now = 0.01
+    @controller.tick
+
+    assert_equal 1, @telemetry.requests.length
+
+    @now = 0.07
+    @controller.tick
+
+    assert_equal 2, @telemetry.requests.length
+    assert_in_delta 1.0 / 15, @controller.seconds_until_due, 0.0001
+    assert @controller.accept(snapshot(sample: 50_000))
+    @now = 1.0
+    @controller.tick
+
+    assert_equal 2, @telemetry.requests.length
+    assert_nil @controller.seconds_until_due
+  end
+
   def test_revision_change_clears_old_output_and_rejects_stale_results
     @controller.tick
 

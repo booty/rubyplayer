@@ -8,7 +8,6 @@ module RubyPlayer
     class Reader
       READ_CHUNK_BYTES = 64 * 1024
       HEADER_BYTES = 0x40
-      VGM_SAMPLE_RATE = 44_100
       CANCEL_CHECK_COMMAND_INTERVAL = 1_024
       private_constant :CANCEL_CHECK_COMMAND_INTERVAL
 
@@ -34,23 +33,23 @@ module RubyPlayer
                            :sn_shift_width, :sn_flags, :ym2612_variant,
                            :legacy_fm_clock)
 
-      COMMAND_LENGTHS = begin
-        lengths = {}
-        (0x30..0x3f).each { |opcode| lengths[opcode] = 1 }
-        (0x40..0x4e).each { |opcode| lengths[opcode] = :versioned_reserved }
-        lengths[0x4f] = 1
-        (0x50..0x5f).each { |opcode| lengths[opcode] = 2 }
-        lengths[0x61] = 2
-        lengths[0x64] = 3
-        (0x70..0x8f).each { |opcode| lengths[opcode] = 0 }
-        lengths.merge!(0x90 => 4, 0x91 => 4, 0x92 => 5, 0x93 => 10,
-                       0x94 => 1, 0x95 => 4)
-        (0xa0..0xbf).each { |opcode| lengths[opcode] = 2 }
-        (0xc0..0xcf).each { |opcode| lengths[opcode] = 3 }
-        (0xd0..0xdf).each { |opcode| lengths[opcode] = 3 }
-        (0xe0..0xff).each { |opcode| lengths[opcode] = 4 }
-        lengths.freeze
+      # Operand counts for commands replayed as :skip. Chip writes, waits,
+      # data blocks, stream control, and the versioned 0x40-0x4E range decode
+      # separately; an opcode found nowhere is unknown.
+      SKIP_OPERAND_COUNTS = begin
+        counts = {}
+        (0x31..0x3e).each { |opcode| counts[opcode] = 1 }
+        counts[0xa0] = 2
+        (0xb0..0xbf).each { |opcode| counts[opcode] = 2 }
+        (0xc0..0xdf).each { |opcode| counts[opcode] = 3 }
+        (0xe1..0xff).each { |opcode| counts[opcode] = 4 }
+        counts.freeze
       end
+      STREAM_OPERAND_COUNTS = { 0x90 => 4, 0x91 => 4, 0x92 => 5,
+                                0x93 => 10, 0x94 => 1, 0x95 => 4 }.freeze
+      # These chips expose two register ports; their odd base opcode
+      # (0x53, 0x57, 0x59, 0x5F) addresses port 1.
+      TWO_PORT_CHIPS = %i[ym2612 ym2608 ym2610 ymf262].freeze
 
       KNOWN_WRITE_CHIPS = {
         0x30 => :sn76489, 0x3f => :sn76489, 0x4f => :sn76489,
@@ -225,8 +224,8 @@ module RubyPlayer
           loop_offset: loop_offset,
           total_samples: version >= 0x101 ? u32(0x18) : nil,
           chip_clocks: freeze_nested(clocks.transform_values { |clock| clock && clock.except(:raw) }),
-          sn_feedback: version >= 0x151 ? u16(0x28) : nil,
-          sn_shift_width: version >= 0x151 ? byte_at(0x2a) : nil,
+          sn_feedback: version >= 0x110 ? u16(0x28) : nil,
+          sn_shift_width: version >= 0x110 ? byte_at(0x2a) : nil,
           sn_flags: version >= 0x151 ? byte_at(0x2b) : nil,
           ym2612_variant: ym2612_clock&.anybits?(0x8000_0000) ? :ym3438 : (ym2612_clock && :ym2612),
           legacy_fm_clock: legacy_fm_clock(version, data_offset)
@@ -288,16 +287,14 @@ module RubyPlayer
           return decode_skip(offset, opcode, count)
         end
 
-        count = COMMAND_LENGTHS[opcode]
-        raise CommandError.new(format('unknown command 0x%02x', opcode), offset: offset) unless count
-
-        count = nil if count == :versioned_reserved
         if (chip = KNOWN_WRITE_CHIPS[opcode])
           return decode_chip_write(offset, opcode, chip)
         end
-        return decode_skip(offset, opcode, count) if count
 
-        raise CommandError.new(format('unsupported command 0x%02x', opcode), offset: offset)
+        count = SKIP_OPERAND_COUNTS[opcode]
+        raise CommandError.new(format('unknown command 0x%02x', opcode), offset: offset) unless count
+
+        decode_skip(offset, opcode, count)
       end
 
       def decode_chip_write(offset, opcode, chip)
@@ -310,12 +307,11 @@ module RubyPlayer
 
         instance = opcode >= 0xa0 ? 1 : 0
         base_opcode = opcode >= 0xa0 ? opcode - 0x50 : opcode
-        port = base_opcode == 0x53 ? 1 : 0
+        port = TWO_PORT_CHIPS.include?(chip) && base_opcode.odd? ? 1 : 0
         register = byte_at(offset + 1)
         value = byte_at(offset + 2)
-        kind = chip == :ym2413 ? :ym2413_write : :ym2612_write
-        command(offset, 3, kind, chip, instance: instance, port: port,
-                                       register: register, value: value)
+        command(offset, 3, :register_write, chip, instance: instance, port: port,
+                                                  register: register, value: value)
       end
 
       def decode_skip(offset, opcode, count)
@@ -351,10 +347,9 @@ module RubyPlayer
       end
 
       def decode_stream_command(offset, opcode)
-        counts = { 0x90 => 4, 0x91 => 4, 0x92 => 5,
-                   0x93 => 10, 0x94 => 1, 0x95 => 4 }
-        operands = byteslice(offset + 1, counts.fetch(opcode), offset)
-        command(offset, counts.fetch(opcode) + 1, :stream_command, nil,
+        count = STREAM_OPERAND_COUNTS.fetch(opcode)
+        operands = byteslice(offset + 1, count, offset)
+        command(offset, count + 1, :stream_command, nil,
                 opcode: opcode, operands: operands)
       end
 

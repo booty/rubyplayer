@@ -59,7 +59,7 @@ class VgmReaderTest < Minitest::Test
       offset = command.next_offset
     end
 
-    assert_equal %i[stereo_write psg_write ym2413_write ym2612_write wait wait_override
+    assert_equal %i[stereo_write psg_write register_write register_write wait wait_override
                     dac_write pcm_seek data_block end], commands.map(&:kind)
     seek_addresses = commands.grep(Vgm::Reader::Command)
                              .select { |command| command.kind == :pcm_seek }
@@ -127,6 +127,38 @@ class VgmReaderTest < Minitest::Test
 
     refute reader.header.chip_clocks.key?(:ym2413)
     assert_equal 3_579_545, reader.header.legacy_fm_clock.fetch(:clock_hz)
+  end
+
+  # Regression: every non-OPLL FM write was labelled :ym2612_write and only
+  # 0x53 decoded as port 1, so YM2608/YM2610/YMF262 port-1 writes read as port 0.
+  def test_fm_writes_use_a_generic_kind_and_port_from_two_port_opcode_parity
+    bytes = VgmBuilder.new.raw_command("\x57\x10\x01\x56\x10\x02\x59\x10\x03\x5f\x10\x04" \
+                                       "\xa7\x10\x05\x54\x10\x06\x55\x10\x07\x5b\x10\x08".b).end.bytes
+    reader = reader_for(bytes)
+    writes = []
+    offset = reader.header.data_offset
+    while (command = reader.command_at(offset)).kind != :end
+      writes << command.arguments.values_at(:instance, :port).unshift(command.chip_id, command.kind)
+      offset = command.next_offset
+    end
+
+    assert_equal [[:ym2608, :register_write, 0, 1], [:ym2608, :register_write, 0, 0],
+                  [:ym2610, :register_write, 0, 1], [:ymf262, :register_write, 0, 1],
+                  [:ym2608, :register_write, 1, 1], [:ym2151, :register_write, 0, 0],
+                  [:ym2203, :register_write, 0, 0], [:ym3526, :register_write, 0, 0]], writes
+  end
+
+  # Regression: SN76489 feedback and shift width were gated at 1.51, although
+  # the specification adds them in 1.10; only the flags byte is a 1.51 field.
+  def test_sn76489_feedback_and_shift_width_are_read_from_version_1_10
+    bytes = VgmBuilder.new.psg(0x90).end.bytes
+    bytes[8, 4] = [0x110].pack('V')
+    bytes[0x28, 4] = [0x0009, 16, 0x05].pack('vCC')
+    header = reader_for(bytes).header
+
+    assert_equal 0x0009, header.sn_feedback
+    assert_equal 16, header.sn_shift_width
+    assert_nil header.sn_flags
   end
 
   private

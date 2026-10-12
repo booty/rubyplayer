@@ -18,12 +18,13 @@ class VgmPatchTest < Minitest::Test
   end
 
   def test_pitch_helpers_convert_chip_frequency_and_format_nearest_note
-    # From fnum * clock * 2^block / (144 * 2^20), using a 7,670,454 Hz clock.
+    # From fnum * clock * 2^(block - 1) / (144 * 2^20), using a 7,670,454 Hz
+    # clock. Regression: the formula once dropped the -1 and read an octave high.
     frequency = RubyPlayer::Vgm::Pitch.ym2612_hz(clock_hz: 7_670_454, fnum: 608, block: 4)
     note, cents = RubyPlayer::Vgm::Pitch.note_and_cents(frequency)
 
-    assert_in_delta 494.1767, frequency, 0.001
-    assert_equal 'B4', note
+    assert_in_delta 247.0883, frequency, 0.001
+    assert_equal 'B3', note
     assert_in_delta 0, cents, 1
     assert_nil RubyPlayer::Vgm::Pitch.psg_hz(clock_hz: 3_579_545, period: 0, zero_period: nil)
   end

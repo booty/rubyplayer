@@ -70,8 +70,12 @@ and YM2413 OPLL rows when libgme renders those chips. Up/Down selects a channel,
 PageUp/PageDown scrolls, and Left/Right changes channel, patch, and chip details.
 The Live page reads VGM commands on one bounded background worker and follows
 the sample position already consumed by the audio output, so decoder read-ahead
-does not move the display early. GME also preserves VGM leading silence so the
-audio and register timelines begin together. These rows report register state;
+does not move the display early. Opening Live deep into a dense track replays
+in bounded slices and shows **Catching up** until it reaches the playhead,
+including while paused. GME also preserves VGM leading silence so the audio and
+register timelines begin together; this also turns off libgme's silence-based
+end-of-track detection for VGM, which instead ends on its end command or
+header length. These rows report register state;
 they do not estimate envelope release tails or prove audibility. Unsupported
 chips and partial DAC/stream cases are labeled in the page; for example,
 libgme's YM2612 priority makes mixed YM2612/YM2413 files unavailable for OPLL

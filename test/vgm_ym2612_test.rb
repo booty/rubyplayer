@@ -69,8 +69,10 @@ class VgmYm2612Test < Minitest::Test
     changed_timbre = @chip.snapshot(sample: 20).channels.first
 
     assert_nil before_commit.pitch_hz
-    assert_in_delta 494.1767, first.pitch_hz, 0.001
-    assert_equal 'B4', first.note
+    # Regression: pitch used 2^block / 2^20 and labelled every FM note one
+    # octave high. The OPN2 formula is fnum * clock * 2^(block-1) / (144 * 2^20).
+    assert_in_delta 247.0883, first.pitch_hz, 0.001
+    assert_equal 'B3', first.note
     assert_equal 4, first.patch.algorithm
     assert_equal 6, first.patch.feedback
     assert_equal :lr, first.pan
@@ -80,13 +82,69 @@ class VgmYm2612Test < Minitest::Test
 
   def test_channel_three_special_mode_reports_operator_pitches
     write(0x27, 0x40)
-    write(0xa8, 0x34)
     write(0xac, 0x12)
+    write(0xa8, 0x34)
     row = @chip.snapshot(sample: 0).channels.fetch(2)
 
     assert_equal :special, row.note
     assert_nil row.pitch_hz
-    assert_equal 0x234, row.details.fetch(:special_frequencies).first.fetch(:fnum)
+    assert_equal 0x234, special_operator(row, 3).fetch(:fnum)
+  end
+
+  # Regression: A8/A9/AA were labelled OP1/OP2/OP3 and OP4 was omitted. On the
+  # chip A9 drives OP1, AA drives OP2, A8 drives OP3, and A2 (the normal channel
+  # 3 frequency) drives OP4.
+  def test_special_mode_maps_each_frequency_register_to_its_hardware_operator
+    write(0x27, 0x40)
+    { 0xa9 => [0x11, 0x01], 0xaa => [0x12, 0x02], 0xa8 => [0x13, 0x03] }.each do |register, (high, low)|
+      write(register + 4, high)
+      write(register, low)
+    end
+    write(0xa6, 0x14)
+    write(0xa2, 0x04)
+    rows = @chip.snapshot(sample: 0).channels.fetch(2).details.fetch(:special_frequencies)
+
+    assert_equal([1, 2, 3, 4], rows.map { |item| item.fetch(:operator) })
+    assert_equal([0x101, 0x202, 0x303, 0x404], rows.map { |item| item.fetch(:fnum) })
+    assert_equal([2, 2, 2, 2], rows.map { |item| item.fetch(:block) })
+    assert(rows.all? { |item| item.fetch(:pitch_hz).positive? })
+  end
+
+  # The high-byte latch is shared by every channel (and by both ports); only the
+  # low-byte write commits a frequency. Per-channel latches diverged from libgme
+  # when a driver wrote A4 for one channel and committed A1 for another.
+  def test_frequency_high_latch_is_shared_across_channels_and_ports
+    write(0xa4, 0x22)
+    write(0xa1, 0x60)
+    write(0xa5, 0x13, port: 1)
+    write(0xa0, 0x10)
+    rows = @chip.snapshot(sample: 0).channels
+
+    assert_equal({ fnum: 0x260, block: 4 }, rows.fetch(1).details.fetch(:frequency).slice(:fnum, :block))
+    assert_equal({ fnum: 0x310, block: 2 }, rows.fetch(0).details.fetch(:frequency).slice(:fnum, :block))
+    assert_nil rows.fetch(5).details.fetch(:frequency)
+  end
+
+  def test_special_frequency_high_latch_commits_only_on_low_write
+    write(0x27, 0x40)
+    write(0xa8, 0x34)
+    write(0xac, 0x12)
+    row = @chip.snapshot(sample: 0).channels.fetch(2)
+
+    assert_equal 0x034, special_operator(row, 3).fetch(:fnum)
+    assert_equal 0, special_operator(row, 3).fetch(:block)
+  end
+
+  def test_unchanged_registers_reuse_the_patch_object
+    write(0xb0, 0x34)
+    first = @chip.snapshot(sample: 0).channels.first.patch
+    write(0x28, 0xf0, sample: 1)
+    second = @chip.snapshot(sample: 1).channels.first.patch
+    write(0x40, 9)
+    third = @chip.snapshot(sample: 2).channels.first.patch
+
+    assert_same first, second
+    refute_same first, third
   end
 
   def test_dac_enable_keeps_channel_six_fm_state_and_tracks_recent_data
@@ -110,8 +168,8 @@ class VgmYm2612Test < Minitest::Test
     write(0x28, 0xf0, sample: 1)
     write(0x2b, 0x80)
     write(0x27, 0x40)
-    write(0xa8, 0x34)
     write(0xac, 0x12)
+    write(0xa8, 0x34)
     write(0x28, 0x00, sample: 2, port: 1)
     write(0x2b, 0x00, port: 1)
     write(0x27, 0x00, port: 1)
@@ -121,7 +179,7 @@ class VgmYm2612Test < Minitest::Test
 
     assert_equal :key_on, before_mode.channels.first.state
     assert before_mode.details.fetch(:dac_enabled)
-    special = before_mode.channels.fetch(2).details.fetch(:special_frequencies).first
+    special = special_operator(before_mode.channels.fetch(2), 3)
 
     assert_equal [0x234, 2], special.values_at(:fnum, :block)
     assert_equal :special, before_mode.channels.fetch(2).note
@@ -138,6 +196,10 @@ class VgmYm2612Test < Minitest::Test
   end
 
   private
+
+  def special_operator(row, operator)
+    row.details.fetch(:special_frequencies).find { |item| item.fetch(:operator) == operator }
+  end
 
   def write(register, value, sample: 0, port: 0)
     @chip.write(port: port, register: register, value: value, sample: sample)

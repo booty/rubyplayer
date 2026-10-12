@@ -56,3 +56,10 @@ the authority for workflow and invariants.
   mode writes belong to port 0; keep pre-1.10 legacy FM clocks explicitly
   ambiguous. Wrap and paginate operator fields at narrow sizes, and keep
   warnings off the patch page so they cannot hide register details.
+- VGM register-model fidelity: check chip formulas against a reference
+  emulator (Nuked-OPN2/MAME), not self-derived expectations — the YM2612 pitch
+  test once pinned an octave error. OPN2 frequency high bytes go through one
+  shared latch (A4-A6, and AC-AE for special mode) committed by the low write;
+  special-mode registers map A9→OP1, AA→OP2, A8→OP3, A2→OP4. Replay is
+  resumable per request (stop only between timestamps); never make a command
+  budget fatal, and degrade missing DAC/PCM data to a warning, not an error.
