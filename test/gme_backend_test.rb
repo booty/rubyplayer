@@ -11,7 +11,7 @@ class GmeBackendTest < Minitest::Test
   end
 
   def test_track_count_single_spc
-    assert_equal 1, @gme.track_count(File.join(FIXTURES, 'earthbound-megaton-walk.spc'))
+    assert_equal 1, @gme.track_count(File.join(FIXTURES, 'spc/earthbound-megaton-walk.spc'))
   end
 
   def test_metadata_shape
@@ -28,7 +28,7 @@ class GmeBackendTest < Minitest::Test
       'alisa-dragoon-introduction.vgm' => ['YM2612', '6 FM'],
       'mega-man-2.nsf' => ['NES APU', '2 pulse'],
       'shantae.gbs' => ['Game Boy APU', '1 wave'],
-      'earthbound-megaton-walk.spc' => ['S-DSP', '8 sample'],
+      'spc/earthbound-megaton-walk.spc' => ['S-DSP', '8 sample'],
       'air-zonk.hes' => ['HuC6280', '6 wavetable']
     }.each do |file, expected|
       extras = @gme.metadata(File.join(FIXTURES, file), 0).fetch(:extra)
