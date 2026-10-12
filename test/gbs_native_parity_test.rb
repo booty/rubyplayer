@@ -62,8 +62,9 @@ class GbsNativeParityTest < Minitest::Test
     # The first play also gets what libgme emulated ahead while skipping
     # leading silence, starting with the state its first note starts from.
     assert_equal 0, first.first
-    # ~341 ms of a 59.7 Hz VBlank driver: one snapshot per call, in order.
-    assert_includes 19..22, steady.size
+    # ~341 ms of a 59.7 Hz VBlank driver (20 calls): the registers each call
+    # that writes leaves, plus envelope and length changes, in order.
+    assert_operator steady.size, :>=, 10
     assert_equal steady.sort, steady
     assert_equal 80, Lib.rp_gbs_snapshot_size
   ensure

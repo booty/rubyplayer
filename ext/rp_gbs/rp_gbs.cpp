@@ -12,16 +12,24 @@ static_assert(sizeof(rp_gbs_snapshot) == 80, "rp_gbs_snapshot layout changed; up
 
 namespace {
 
-// Driver calls closer together than this (timer-driven drivers can run at
-// several hundred Hz) fold into one snapshot; their triggers accumulate.
+// Register-write snapshots closer together than this (timer-driven drivers
+// can run at several hundred Hz) fold into one; their triggers accumulate.
+// Changes in which voices sound, or how loud, are always recorded.
 const long MIN_SNAPSHOTS_PER_SECOND_DIVISOR = 240;
 const int TRIGGER_REGS[Gb_Apu::osc_count] = { 4, 9, 14, 19 };
 const int NR30 = 10;
 const int64_t NO_CLOCK = -1;
+const uint64_t UNKNOWN = ~(uint64_t) 0;
 
 // A snapshot recorded during emulation, before its output frame is known.
 struct Pending {
 	int64_t emulated_frame;
+	rp_gbs_snapshot snapshot;
+};
+
+// A snapshot at its absolute output frame (out_time / 2 when heard).
+struct Heard {
+	int64_t frame;
 	rp_gbs_snapshot snapshot;
 };
 
@@ -36,9 +44,19 @@ class Rp_Gbs_Emu : public Gbs_Emu {
 public:
 	bool recording = false;
 	uint8_t triggers = 0;
+	// Whether registers were written since the latest pending snapshot.
+	bool wrote = false;
 	int64_t last_write = NO_CLOCK;
-	int64_t last_snapshot = NO_CLOCK;
+	int64_t last_push = NO_CLOCK;
+	// audible() of the latest pending snapshot.
+	uint64_t last_audible = UNKNOWN;
 	std::vector<Pending> pending;
+	// Settled snapshots, oldest first, kept from the one heard at the
+	// output position onwards: libgme emulates ahead of output (silence
+	// lookahead), and a seek within that buffered audio emulates nothing.
+	std::vector<Heard> heard;
+	// heard[0, returned) were already handed out.
+	size_t returned = 0;
 	std::vector<rp_gbs_snapshot> snapshots;
 
 	// Emulated frames that libgme's leading-silence skip discarded. Only
@@ -53,28 +71,58 @@ public:
 		return absolute_clock * sample_rate() / clock_rate();
 	}
 
-	// Turns pending snapshots into play-call-relative output frames. The
+	int64_t out_frame() const { return tell_samples() / 2; }
+
+	// Moves pending snapshots to `heard`, at the output frames they play at.
+	void settle()
+	{
+		int64_t skipped = lead();
+		for (Pending const& item : pending)
+			heard.push_back({ item.emulated_frame - skipped, item.snapshot });
+		pending.clear();
+	}
+
+	// Hands out the snapshots not yet returned, relative to out_start. The
 	// leading-silence search emulates before output begins; the newest
 	// snapshot from then is the state the first heard note starts from, so it
 	// becomes frame 0 (carrying older ones' triggers) and older ones go.
 	void publish(int64_t out_start)
 	{
 		snapshots.clear();
-		int64_t skipped = lead();
 		bool clamped = false;
-		for (Pending const& item : pending) {
-			int64_t frame = item.emulated_frame - skipped - out_start;
+		for (size_t i = returned; i < heard.size(); i++) {
+			int64_t frame = heard[i].frame - out_start;
 			uint8_t carried = 0;
 			if (frame < 0 && clamped) {
 				carried = snapshots.back().triggers;
 				snapshots.pop_back();
 			}
 			clamped = frame < 0;
-			snapshots.push_back(item.snapshot);
+			snapshots.push_back(heard[i].snapshot);
 			snapshots.back().frame = clamped ? 0 : (int32_t) frame;
 			snapshots.back().triggers |= carried;
 		}
-		pending.clear();
+		returned = heard.size();
+		prune(out_frame());
+	}
+
+	// Hands out what is heard from the output position on: the state heard
+	// there at frame 0, then every later snapshot. False when none is known.
+	bool publish_from_position()
+	{
+		int64_t position = out_frame();
+		size_t at = newest_at_or_before(position);
+		if (at == heard.size())
+			return false;
+
+		snapshots.clear();
+		for (size_t i = at; i < heard.size(); i++) {
+			snapshots.push_back(heard[i].snapshot);
+			snapshots.back().frame = i == at ? 0 : (int32_t) (heard[i].frame - position);
+		}
+		returned = heard.size();
+		prune(position);
+		return true;
 	}
 
 protected:
@@ -83,9 +131,13 @@ protected:
 		clock_base = 0;
 		frames_played_ = 0;
 		triggers = 0;
+		wrote = false;
 		last_write = NO_CLOCK;
-		last_snapshot = NO_CLOCK;
+		last_push = NO_CLOCK;
+		last_audible = UNKNOWN;
 		pending.clear();
+		heard.clear();
+		returned = 0;
 		return Gbs_Emu::start_track_(track);
 	}
 
@@ -105,6 +157,27 @@ protected:
 private:
 	int64_t clock_base = 0;   // absolute clock at the start of the current frame
 	int64_t frames_played_ = 0;
+
+	// Index of the newest snapshot heard at or before `frame`, or
+	// heard.size() when there is none.
+	size_t newest_at_or_before(int64_t frame) const
+	{
+		size_t found = heard.size();
+		for (size_t i = 0; i < heard.size() && heard[i].frame <= frame; i++)
+			found = i;
+		return found;
+	}
+
+	// Drops snapshots superseded before `position`: output never goes back
+	// without start_track, which clears them all.
+	void prune(int64_t position)
+	{
+		size_t keep = newest_at_or_before(position);
+		if (keep == heard.size() || keep == 0)
+			return;
+		heard.erase(heard.begin(), heard.begin() + (long) keep);
+		returned = returned > keep ? returned - keep : 0;
+	}
 };
 
 Music_Emu* new_rp_gbs_emu() { return new Rp_Gbs_Emu; }
@@ -120,6 +193,30 @@ gme_type_t_ rp_gbs_type()
 
 const gme_type_t_ RP_GBS_TYPE = rp_gbs_type();
 
+// Bit i: oscillator i is producing sound. Gb_Apu::run_until's test, plus
+// square 1's sweep overflow silencing it.
+uint8_t playing_bits(Gb_Apu const& apu)
+{
+	uint8_t bits = 0;
+	for (int i = 0; i < Gb_Apu::osc_count; i++) {
+		Gb_Osc const& osc = apu.rp_osc(i);
+		bool length_ok = !(osc.regs[4] & Gb_Osc::len_enabled_mask) || osc.length;
+		bool silenced = i == 0 && apu.rp_sweep_freq() == 2048;
+		if (osc.enabled && osc.volume && length_ok && !silenced)
+			bits |= 1 << i;
+	}
+	return bits;
+}
+
+// What is heard: which voices sound, and how loud.
+uint64_t audible(Gb_Apu const& apu)
+{
+	uint64_t state = playing_bits(apu);
+	for (int i = 0; i < Gb_Apu::osc_count; i++)
+		state |= (uint64_t) (uint8_t) apu.rp_osc(i).volume << (8 + 8 * i);
+	return state;
+}
+
 void fill_snapshot(Rp_Gbs_Emu& emu, rp_gbs_snapshot& snap)
 {
 	memset(&snap, 0, sizeof snap);
@@ -132,14 +229,50 @@ void fill_snapshot(Rp_Gbs_Emu& emu, rp_gbs_snapshot& snap)
 		snap.length[i] = (uint16_t) osc.length;
 		if (osc.enabled && length_ok)
 			snap.enabled |= 1 << i;
-		// Gb_Apu::run_until's test, plus square 1's sweep overflow silencing it.
-		bool silenced = i == 0 && apu.rp_sweep_freq() == 2048;
-		if (osc.enabled && osc.volume && length_ok && !silenced)
-			snap.playing |= 1 << i;
 	}
+	snap.playing = playing_bits(apu);
 	snap.sweep_freq = (uint16_t) apu.rp_sweep_freq();
 	snap.play_period = (uint32_t) emu.rp_play_period();
 	snap.clock_rate = 4194304;
+}
+
+// Records the APU's current state as heard from absolute clock `label`.
+void push(Rp_Gbs_Emu& emu, int64_t label)
+{
+	Pending item;
+	fill_snapshot(emu, item.snapshot);
+	item.snapshot.triggers = emu.triggers;
+	item.emulated_frame = emu.emulated_frame(label);
+	emu.pending.push_back(item);
+	emu.triggers = 0;
+	emu.wrote = false;
+	emu.last_push = label;
+	emu.last_audible = audible(emu.rp_apu());
+}
+
+// The APU runs lazily: until something advances it, its state is the one
+// the latest write left. So at each hook, a change since the previous one
+// came from that write (a trigger, a DAC switched off) and is recorded at
+// its time, even when the note it started has already ended by now.
+void observe_writes(Rp_Gbs_Emu& emu, long clock)
+{
+	if (audible(emu.rp_apu()) != emu.last_audible)
+		push(emu, emu.wrote ? emu.last_write : emu.absolute(clock));
+}
+
+// Advances the APU to `clock` one frame-sequencer step at a time, the only
+// moments length counters, envelopes, and sweep act, recording each step
+// that changes what is heard. Output is unchanged: register writes run the
+// APU to arbitrary times the same way.
+void step_to(Rp_Gbs_Emu& emu, long clock)
+{
+	Gb_Apu const& apu = emu.rp_apu();
+	while (apu.rp_next_frame_time() < clock) {
+		long step = apu.rp_next_frame_time();
+		emu.rp_catch_up(step + 1);
+		if (audible(apu) != emu.last_audible)
+			push(emu, emu.absolute(step));
+	}
 }
 
 } // namespace
@@ -152,12 +285,22 @@ void rp_gbs_apu_write(Gbs_Emu* base, int reg, int data, long clock)
 	if (!emu.recording)
 		return;
 
+	// A driver's writes for one note (NRx1..NRx4) land together, so only a
+	// frame-sequencer step due before this write, which would change the
+	// state they leave, records it now; the driver call after them does
+	// otherwise. (libgme makes a voice sound again at its NRx1 length
+	// reload, before the trigger.)
+	if (emu.rp_apu().rp_next_frame_time() < clock) {
+		observe_writes(emu, clock);
+		step_to(emu, clock);
+	}
 	for (int i = 0; i < Gb_Apu::osc_count; i++) {
 		// The wave channel only starts when its DAC (NR30 bit 7) is on.
 		if (reg == TRIGGER_REGS[i] && (data & 0x80) && (i != 2 || (emu.rp_apu().rp_regs()[NR30] & 0x80)))
 			emu.triggers |= 1 << i;
 	}
 	emu.last_write = emu.absolute(clock);
+	emu.wrote = true;
 }
 
 void rp_gbs_driver_call(Gbs_Emu* base, long clock)
@@ -166,22 +309,23 @@ void rp_gbs_driver_call(Gbs_Emu* base, long clock)
 	if (!emu.recording)
 		return;
 
-	int64_t now = emu.absolute(clock);
-	if (emu.last_snapshot != NO_CLOCK && now - emu.last_snapshot < 4194304 / MIN_SNAPSHOTS_PER_SECOND_DIVISOR)
+	observe_writes(emu, clock);
+	// The registers the previous driver call left, at its last write (when
+	// they were heard) rather than this call's start, a driver period later.
+	if (emu.wrote && (emu.last_push == NO_CLOCK ||
+			emu.last_write - emu.last_push >= 4194304 / MIN_SNAPSHOTS_PER_SECOND_DIVISOR))
+		push(emu, emu.last_write);
+	step_to(emu, clock);
+}
+
+void rp_gbs_frame_end(Gbs_Emu* base, long clock)
+{
+	Rp_Gbs_Emu& emu = *static_cast<Rp_Gbs_Emu*>(base);
+	if (!emu.recording)
 		return;
 
-	// The state the previous driver call left, labelled with its last write
-	// (when the change was heard) rather than this call's start, a driver
-	// period later. Envelope and length state are brought up to now.
-	emu.rp_catch_up(clock);
-	Pending item;
-	fill_snapshot(emu, item.snapshot);
-	item.snapshot.triggers = emu.triggers;
-	item.emulated_frame = emu.emulated_frame(emu.last_write != NO_CLOCK ? emu.last_write : now);
-	emu.pending.push_back(item);
-	emu.triggers = 0;
-	emu.last_write = NO_CLOCK;
-	emu.last_snapshot = now;
+	observe_writes(emu, clock);
+	step_to(emu, clock);
 }
 
 struct rp_gbs {
@@ -234,6 +378,7 @@ int rp_gbs_start_track(rp_gbs* handle, int track)
 	emu.recording = true;
 	gme_err_t err = gme_start_track(&emu, track);
 	emu.recording = false;
+	emu.settle();
 	return err == NULL;
 }
 
@@ -263,6 +408,7 @@ int rp_gbs_play(rp_gbs* handle, float* out, long frames)
 	emu.recording = true;
 	gme_err_t err = gme_play(&emu, (int) count, handle->samples.data());
 	emu.recording = false;
+	emu.settle();
 	emu.publish(out_start);
 
 	// Same scale as Backends::Gme::Handle#read (AudioFormat::GME_INT16_SCALE).
@@ -280,9 +426,14 @@ int rp_gbs_seek(rp_gbs* handle, long ms)
 {
 	if (!handle)
 		return 0;
-	handle->emu->snapshots.clear();
-	handle->emu->pending.clear();
-	return gme_seek(handle->emu, (int) ms) == NULL;
+	Rp_Gbs_Emu& emu = *handle->emu;
+	emu.snapshots.clear();
+	// Recorded so capture_now can show the state heard at the target.
+	emu.recording = true;
+	gme_err_t err = gme_seek(&emu, (int) ms);
+	emu.recording = false;
+	emu.settle();
+	return err == NULL;
 }
 
 long rp_gbs_tell_ms(rp_gbs* handle)
@@ -316,6 +467,9 @@ void rp_gbs_capture_now(rp_gbs* handle)
 	if (!handle)
 		return;
 	Rp_Gbs_Emu& emu = *handle->emu;
+	if (emu.publish_from_position())
+		return;
+
 	emu.snapshots.clear();
 	rp_gbs_snapshot snap;
 	fill_snapshot(emu, snap);

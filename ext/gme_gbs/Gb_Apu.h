@@ -54,6 +54,8 @@ public:
 	uint8_t const* rp_regs() const { return regs; }
 	Gb_Osc const& rp_osc( int i ) const { return *oscs [i]; }
 	int rp_sweep_freq() const { return square1.sweep_freq; }
+	// When the next 256 Hz frame-sequencer step (length, envelope, sweep) is due.
+	blip_time_t rp_next_frame_time() const { return next_frame_time; }
 	// Runs the oscillators to `time` (as any register read does) so their
 	// envelope and length state is current; output is unchanged.
 	void rp_catch_up( blip_time_t time ) { run_until( time ); }

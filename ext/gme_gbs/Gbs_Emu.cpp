@@ -287,6 +287,8 @@ blargg_err_t Gbs_Emu::run_clocks( blip_time_t& duration, int )
 	next_play -= cpu_time;
 	if ( next_play < 0 ) // could go negative if routine is taking too long to return
 		next_play = 0;
+	// rubyplayer patch: see ext/rp_gbs/rp_gbs_hooks.h.
+	RP_GBS_FRAME_END_HOOK( this, cpu_time );
 	apu.end_frame( cpu_time );
 
 	return 0;

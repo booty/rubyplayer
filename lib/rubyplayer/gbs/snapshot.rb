@@ -6,7 +6,7 @@ module RubyPlayer
     VOICE_NAMES = ['Square 1', 'Square 2', 'Wave', 'Noise'].freeze
 
     # One Game Boy APU state record from librp_gbs (rp_gbs_snapshot in
-    # ext/rp_gbs/rp_gbs.h), taken at each music-driver call. `frame` is
+    # ext/rp_gbs/rp_gbs.h), taken when what is heard changes. `frame` is
     # relative to the first frame of the read that produced it until a
     # timeline makes it absolute. `regs` are $FF10-$FF3F; bit fields are bit i
     # for voice i.

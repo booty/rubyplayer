@@ -127,8 +127,9 @@ module RubyPlayer
           [GbsNativeLib.rp_gbs_snapshots(@gbs).read_bytes(count * Gbs::Snapshot::SIZE), count]
         end
 
-        # Current state as one snapshot at frame 0, without emulating: for
-        # showing a seek's new position before any audio is decoded.
+        # The state heard at the current position (frame 0), then any already
+        # emulated beyond it, without emulating: for showing a seek's new
+        # position before any audio is decoded.
         def capture_now
           return ['', 0] if @gbs.nil?
 

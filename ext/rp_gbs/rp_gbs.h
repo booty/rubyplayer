@@ -24,7 +24,7 @@ typedef struct rp_gbs rp_gbs;
  * with 'l<C48C4CCCxS<4S<x2L<L<'. */
 typedef struct {
 	int32_t  frame;        /* output frame, relative to the first frame of the
-	                          rp_gbs_play call that returned it, at which this
+	                          rp_gbs_play call that returned it, from which this
 	                          state is heard (may exceed that call's length) */
 	uint8_t  regs[48];     /* $FF10-$FF3F as last written (wave RAM at 32..47);
 	                          sweep updates square 1's frequency registers */
@@ -65,13 +65,17 @@ RP_GBS_API long rp_gbs_tell_ms(rp_gbs*);
 /* Same as gme_mute_voices: bit 0 square 1, 1 square 2, 2 wave, 3 noise. */
 RP_GBS_API void rp_gbs_mute_voices(rp_gbs*, int mask);
 
-/* Snapshots recorded during the most recent rp_gbs_play call, in order, one
- * per music-driver call (at most one per ~4 ms). Valid until the next play. */
+/* Snapshots recorded during the most recent rp_gbs_play call, in order: one
+ * whenever the voices sounding or their volumes change (a trigger, a length
+ * counter running out, an envelope step), at the moment they change, plus
+ * the registers each music-driver call leaves (at most one per ~4 ms).
+ * Valid until the next play. */
 RP_GBS_API int  rp_gbs_snapshot_size(void);
 RP_GBS_API int  rp_gbs_snapshot_count(rp_gbs*);
 RP_GBS_API const rp_gbs_snapshot* rp_gbs_snapshots(rp_gbs*);
-/* Replaces the snapshots with one of the current state at frame 0 (the next
- * play's first frame) without emulating. Use after a seek. */
+/* Replaces the snapshots with those heard from the current position on,
+ * without emulating: the state heard there at frame 0 (the next play's first
+ * frame), then any libgme already emulated beyond it. Use after a seek. */
 RP_GBS_API void rp_gbs_capture_now(rp_gbs*);
 
 #ifdef __cplusplus

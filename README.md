@@ -136,7 +136,7 @@ envelope and length counter), its volume envelope drawn from the last trigger
 history. Unlike VGM, every value is read from the emulator, so levels and
 envelopes are exact. `M` mutes or unmutes the selected channel and `S` solos
 it. `.gbs` playback uses libgme's own GBS emulator, vendored with hooks that
-record APU state at each music-driver call (`ext/rp_gbs`), verified
+record APU state whenever what is heard changes (`ext/rp_gbs`), verified
 sample-for-sample against Homebrew libgme; `config.backends[".gbs"] = :gme`
 switches back to libgme playback (no live page), and the app does so
 automatically if `librp_gbs.dylib` is missing.
@@ -286,7 +286,7 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | File | Purpose |
 |---|---|
 | `ext/gme_gbs/` | Vendored libgme 0.6.5 GBS emulator and the playback framework, effects buffer, and C API it plays through (LGPL 2.1; see `ext/gme_gbs/VENDOR.md` for files, build flags, and the read-only accessor patch). |
-| `ext/rp_gbs/rp_gbs.{h,cpp}`, `rp_gbs_hooks.h` | C API that builds the emulator through libgme's own `gme_new_emu` path (so output is libgme's), plus APU snapshots taken at each music-driver call through libgme's `GME_APU_HOOK`/`GME_FRAME_HOOK` macros and mapped to output frames across leading-silence skipping. Compiled with hidden symbols to `lib/rubyplayer/native/librp_gbs.dylib`. `test/gbs_native_parity_test.rb` requires bit-exact output against libgme. |
+| `ext/rp_gbs/rp_gbs.{h,cpp}`, `rp_gbs_hooks.h` | C API that builds the emulator through libgme's own `gme_new_emu` path (so output is libgme's), plus APU snapshots taken through libgme's `GME_APU_HOOK`/`GME_FRAME_HOOK` macros at each trigger, length or envelope change, and driver call, mapped to output frames across leading-silence skipping and kept so a seek shows the state heard at its target. Compiled with hidden symbols to `lib/rubyplayer/native/librp_gbs.dylib`. `test/gbs_native_parity_test.rb` requires bit-exact output against libgme. |
 
 ### Other directories
 

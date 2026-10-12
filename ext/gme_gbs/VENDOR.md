@@ -27,13 +27,14 @@ License: GNU LGPL 2.1 (`COPYING`, copied from libgme's `license.txt`).
 - `-DBLARGG_LITTLE_ENDIAN=1`, `-DNDEBUG`, `-std=c++11`: as for `ext/snes_spc`.
 - `-include ext/rp_gbs/rp_gbs_hooks.h`: defines libgme's `GME_APU_HOOK` and `GME_FRAME_HOOK`
   instrumentation macros (empty by default in `Classic_Emu.h`) so `rp_gbs` sees every APU
-  write and music-driver call without editing the emulator.
+  write and music-driver call, plus `RP_GBS_FRAME_END_HOOK` for the patched call below.
 - `-fvisibility=hidden -fvisibility-inlines-hidden`: these classes and `gme_*` functions also
   exist in Homebrew libgme, loaded into the same process; only `rp_gbs_*` is exported.
 
 ## Local patch (the only source changes)
 
-Read-only accessors, plus one call libgme already makes internally. They change no output.
+Read-only accessors, one call libgme already makes internally, and one hook call. They change
+no output.
 
 `Gbs_Emu.h`, public, after `header()`:
 
@@ -51,9 +52,19 @@ Read-only accessors, plus one call libgme already makes internally. They change 
 	uint8_t const* rp_regs() const { return regs; }
 	Gb_Osc const& rp_osc( int i ) const { return *oscs [i]; }
 	int rp_sweep_freq() const { return square1.sweep_freq; }
+	// When the next 256 Hz frame-sequencer step (length, envelope, sweep) is due.
+	blip_time_t rp_next_frame_time() const { return next_frame_time; }
 	// Runs the oscillators to `time` (as any register read does) so their
 	// envelope and length state is current; output is unchanged.
 	void rp_catch_up( blip_time_t time ) { run_until( time ); }
+```
+
+`Gbs_Emu.cpp`, in `Gbs_Emu::run_clocks`, just before `apu.end_frame( cpu_time );`, so the
+frame's last stretch is observed before the APU runs it unseen:
+
+```cpp
+	// rubyplayer patch: see ext/rp_gbs/rp_gbs_hooks.h.
+	RP_GBS_FRAME_END_HOOK( this, cpu_time );
 ```
 
 `Music_Emu.h`, public, after `track_ended()`:

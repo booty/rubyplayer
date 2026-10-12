@@ -68,20 +68,22 @@ class GbsNativeBackendTest < Minitest::Test
     packed, count = @handle.take_snapshots
     snapshots = Array.new(count) { |index| RubyPlayer::Gbs::Snapshot.unpack(packed, index) }
 
-    assert_operator count, :>, 15
+    assert_operator count, :>, 5
     assert_equal RubyPlayer::Gbs::Snapshot, @handle.snapshot_record
     assert(snapshots.any? { |snapshot| snapshot.playing.positive? })
     assert_in_delta 59.73, snapshots.last.driver_hz, 0.01
   end
 
-  def test_capture_now_after_a_seek_returns_one_snapshot_at_frame_zero
+  # The state heard at the target, then what libgme emulated beyond it.
+  def test_capture_now_after_a_seek_starts_at_frame_zero
     @handle = @backend.open(GBS, 0, sample_rate: RATE)
 
     assert @handle.seek(5_000)
     packed, count = @handle.capture_now
+    frames = Array.new(count) { |index| RubyPlayer::Gbs::Snapshot.unpack(packed, index).frame }
 
-    assert_equal 1, count
-    assert_equal 0, RubyPlayer::Gbs::Snapshot.unpack(packed, 0).frame
+    assert_equal 0, frames.first
+    assert_equal frames.sort, frames
     assert_in_delta 5_000, @handle.position_ms, 1
   end
 
