@@ -27,3 +27,8 @@ Metrics/MethodLength:
 
 Metrics/ClassLength:
   Max: 500
+
+# Keyword arguments name themselves at every call site, so only positional
+# parameters count toward the limit.
+Metrics/ParameterLists:
+  CountKeywordArgs: false

@@ -110,7 +110,6 @@ class NsfNativeParityTest < Minitest::Test
     Gme.gme_delete(gme) if gme
     Lib.rp_nsf_close(ours) if ours
   end
-  # rubocop:enable Metrics/ParameterLists
 
   def open_gme(path, track, ignore_silence:, fade_ms:, m3u:)
     out = FFI::MemoryPointer.new(:pointer)

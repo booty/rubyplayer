@@ -177,7 +177,7 @@ module RubyPlayer
       end
 
       # Screen rectangle coordinates use the Screen API's short x/y names.
-      # rubocop:disable Naming/MethodParameterName, Metrics/ParameterLists
+      # rubocop:disable Naming/MethodParameterName
       # `position_ms` is the track position for the header clock, when
       # now_sample counts something else (GBS: output frames since launch).
       def render(screen, x:, y:, width:, height:, theme:, track_title: '', now_sample: nil, mute_mask: 0,
@@ -199,7 +199,7 @@ module RubyPlayer
 
         render_state
       end
-      # rubocop:enable Naming/MethodParameterName, Metrics/ParameterLists
+      # rubocop:enable Naming/MethodParameterName
 
       private
 

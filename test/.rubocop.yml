@@ -17,6 +17,12 @@ Style/OneClassPerFile:
 
 Metrics/ParameterLists:
   Enabled: false
+# `assert_equal expected, list.map { ... }`: braces bind to the call they
+# follow, and assertions read clearer without the extra parentheses. (The
+# cop's AllowedPatterns match the block's call, `list.map`, not the
+# assertion, so they cannot exempt assertions alone.)
+Lint/AmbiguousBlockAssociation:
+  Enabled: false
 
 Metrics/ModuleLength:
   Enabled: false

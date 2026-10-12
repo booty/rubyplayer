@@ -103,7 +103,6 @@ class GbsNativeParityTest < Minitest::Test
     Gme.gme_delete(gme) if gme
     Lib.rp_gbs_close(ours) if ours
   end
-  # rubocop:enable Metrics/ParameterLists
 
   def play_snapshot_frames(handle, buf)
     Lib.rp_gbs_play(handle, buf, CHUNK_FRAMES)
