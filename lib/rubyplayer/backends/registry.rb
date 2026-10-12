@@ -18,6 +18,9 @@ module RubyPlayer
         GME_EXTS.each { |e| @map[e] = :gme }
         OPENMPT_EXTS.each { |e| @map[e] = :openmpt }
         FFMPEG_EXTS.each { |e| @map[e] = :ffmpeg }
+        # libgme still scans .spc; playback moves to the native SPC player,
+        # which falls back to libgme itself when its dylib is missing.
+        @map['.spc'] = :snes_spc
         (overrides || {}).each do |ext, name|
           e = ext.start_with?('.') ? ext.downcase : ".#{ext.downcase}"
           @map[e] = name.to_sym
@@ -35,14 +38,8 @@ module RubyPlayer
 
       def backend_for(path)
         case backend_name_for(path)
-        when :gme
-          # Lazily require the FFI binding so the registry (and its pure
-          # extension-mapping logic) can be used/tested without the native
-          # libgme library being installed.
-          @instances[:gme] ||= begin
-            require_relative 'gme'
-            Gme.new
-          end
+        when :gme then gme_backend
+        when :snes_spc then snes_spc_backend
         when :openmpt
           @instances[:openmpt] ||= begin
             require_relative 'openmpt'
@@ -57,6 +54,23 @@ module RubyPlayer
       end
 
       private
+
+      # Lazily require the FFI binding so the registry (and its pure
+      # extension-mapping logic) can be used/tested without the native
+      # libgme library being installed.
+      def gme_backend
+        @instances[:gme] ||= begin
+          require_relative 'gme'
+          Gme.new
+        end
+      end
+
+      def snes_spc_backend
+        require_relative 'snes_spc'
+        return gme_backend unless SnesSpc.available?
+
+        @instances[:snes_spc] ||= SnesSpc.new(gme: gme_backend)
+      end
 
       def ext_of(path) = File.extname(path).downcase
     end

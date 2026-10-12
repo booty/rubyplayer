@@ -77,6 +77,16 @@ module RubyPlayer
         end
       end
 
+      # Lengths Handle#initialize derives from gme_track_info, for backends
+      # (SnesSpc) that decode elsewhere but must end tracks the same way.
+      def playback_lengths(path, subtune_index)
+        with_emu(path, GmeLib::GME_INFO_ONLY) do |emu|
+          with_info(emu, subtune_index) do |info|
+            { duration_ms: real_length(info), play_length_ms: info[:play_length] }
+          end
+        end
+      end
+
       def open(path, subtune_index, sample_rate:)
         emu = open_emu(path, sample_rate)
         # VGM command time includes leading silence. Keeping it prevents the

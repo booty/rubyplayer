@@ -32,6 +32,29 @@ class AppNowPlayingTest < Minitest::Test
     assert_equal :info, @app.instance_variable_get(:@now_playing_page)
   end
 
+  # SPC tracks scan as backend 'snes_spc'; the popup must still refresh their
+  # hardware details like libgme-backed tracks.
+  def test_spc_track_refreshes_hardware_details_without_a_rescan
+    FileUtils.cp(File.join(FIXTURES, 'spc', 'earthbound-megaton-walk.spc'), @music)
+    @app.scan_paths([@music], wait: true)
+    library = @app.instance_variable_get(:@library)
+    track = library.all_tracks.find { |entry| entry.format == 'spc' }
+
+    assert_equal 'snes_spc', track.backend
+    library.replace_track_metadata(track.id, {})
+    @app.engine.enqueue_now([track])
+    wait_until { @app.engine.state[:track]&.id == track.id }
+    @app.handle_events
+    use_screen(rows: 40, cols: 110)
+    @app.handle_key('o')
+
+    wait_until do
+      @app.handle_events
+      @app.render
+      back_buffer_text.include?('Chips: S-DSP')
+    end
+  end
+
   def test_popup_loads_fresh_file_tags_and_technical_details_for_an_existing_library_track
     path = File.join(@tmp, 'tagged.mp3')
     system('ffmpeg', '-hide_banner', '-loglevel', 'error',
