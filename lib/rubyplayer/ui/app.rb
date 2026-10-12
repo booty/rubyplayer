@@ -1407,7 +1407,7 @@ module RubyPlayer
       def render_modal(title:, w:, h:, hint: nil, hint_bg: nil, styled_hint: false)
         x = [(@screen.cols - w) / 2, 0].max
         y = [(@screen.rows - h) / 2, 0].max
-        (1...(h - 1)).each { |i| @screen.put(y + i, x + 1, ' ' * (w - 2), bg: @theme[:surface]) }
+        (1...(h - 1)).each { |i| @screen.fill(y + i, x + 1, w - 2, bg: @theme[:surface]) }
         draw_box(x, y, w, h, active: true, title: title)
         yield x, y if block_given?
         return unless hint

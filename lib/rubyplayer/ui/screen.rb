@@ -42,13 +42,33 @@ module RubyPlayer
               underline: false, dim: false)
         return if row.negative? || row >= @rows
 
+        # Cells are never mutated once placed, so one frozen cell per distinct
+        # character can fill many positions: a full-width background fill
+        # allocates one cell, not one per column, which matters for
+        # full-screen modals redrawn at the frame rate.
+        cells = {}
         text.each_char.with_index do |ch, i|
           c = col + i
           next if c.negative?
           break if c >= @cols
 
-          @back[row][c] = Cell.new(ch, fg, bg, bold, italic, underline, dim)
+          @back[row][c] = cells[ch] ||= Cell.new(ch, fg, bg, bold, italic, underline, dim).freeze
         end
+      end
+
+      # Same result as put(row, col, ch * width, ...), but one shared cell and
+      # one Array#fill instead of a per-character loop: full-screen modals
+      # clear their whole surface every frame.
+      def fill(row, col, width, ch: ' ', **style)
+        return if row.negative? || row >= @rows
+
+        start = [col, 0].max
+        stop = [col + width, @cols].min
+        return if stop <= start
+
+        cell = Cell.new(ch, style[:fg], style[:bg], style.fetch(:bold, false), style.fetch(:italic, false),
+                        style.fetch(:underline, false), style.fetch(:dim, false)).freeze
+        @back[row].fill(cell, start, stop - start)
       end
 
       # Diffs back vs front row by row. Each contiguous run of changed cells in a

@@ -36,6 +36,7 @@ module RubyPlayer
       # A note-start edge stays bold for about two snapshots (~100 ms at 48 kHz).
       EDGE_HOLD_FRAMES = 4_800
       WAVEFORM_SAMPLES = 4_096
+      DIRECTORY_TABLE_BYTES = 256 * 4
       ENV_MAX = 0x7ff
       LEVEL_GLYPHS = ' ▁▂▃▄▅▆▇█'
       BAR_PARTIALS = ['', '▏', '▎', '▍', '▌', '▋', '▊', '▉'].freeze
@@ -48,7 +49,7 @@ module RubyPlayer
                        :ECHO_FIXED_ROWS, :SAMPLE_FIXED_ROWS, :RAM_FIXED_ROWS, :RAM_LABEL, :RAM_SLICE_ALIGN,
                        :WIDE_FIXED_COLUMNS,
                        :NARROW_FIXED_COLUMNS, :COLUMN_GAP, :EDGE_HOLD_FRAMES,
-                       :WAVEFORM_SAMPLES, :ENV_MAX, :LEVEL_GLYPHS, :BAR_PARTIALS, :RAM_GLYPHS,
+                       :WAVEFORM_SAMPLES, :DIRECTORY_TABLE_BYTES, :ENV_MAX, :LEVEL_GLYPHS, :BAR_PARTIALS, :RAM_GLYPHS,
                        :GAIN_LABELS
 
       attr_reader :selected_voice
@@ -58,6 +59,7 @@ module RubyPlayer
         @edge_frames = Array.new(VOICES)
         @cache_key = nil
         @derived = nil
+        @memo = {}
       end
 
       # Key handling returns whether this widget consumed the command.
@@ -84,7 +86,7 @@ module RubyPlayer
         @height = height
         @theme = theme
         @mute_mask = state&.mute_mask || 0
-        put(0, header(track_title, state, position_ms), fg: theme[:accent], bold: true)
+        put(0, header(sanitize(track_title), state, position_ms), fg: theme[:accent], bold: true)
         snapshot = state&.snapshot
         return put(1, 'Waiting for SPC state', fg: theme[:text_muted]) unless snapshot
 
@@ -265,15 +267,20 @@ module RubyPlayer
       def echo_panel(global, width, rows)
         voices = (0...VOICES).select { |index| global[:eon][index] == 1 }
         writes = global[:flg][:echo_write] ? 'writes on' : 'writes OFF'
-        curve = Spc::Fir.response(global[:fir], points: width).map { |db| db - Spc::Fir::MIN_DB }
+        graph_height = graph_rows(rows, ECHO_FIXED_ROWS)
+        fir_graph = memo(:fir, global[:fir], width, graph_height) do
+          curve = Spc::Fir.response(global[:fir], points: width).map { |db| db - Spc::Fir::MIN_DB }
+          graph(curve, Spc::Fir::MAX_DB - Spc::Fir::MIN_DB, graph_height)
+        end
+        kind = memo(:fir_kind, global[:fir]) { Spc::Fir.kind(global[:fir]) }
         [title('Echo / FIR'),
          line("Delay #{global[:delay_ms]} ms · FB #{signed(global[:efb])} · Vol #{volume_pair(global[:evol],
                                                                                               global[:evol_inverted])}"),
          line(format('Buffer $%04X · %.1f KB · %s', global[:esa] * 0x100, global[:echo_bytes] / 1024.0, writes)),
          line("Echo on: #{voices.empty? ? 'none' : voices.join(' ')}"),
          line("FIR #{global[:fir].join(' ')}"),
-         *graph(curve, Spc::Fir::MAX_DB - Spc::Fir::MIN_DB, graph_rows(rows, ECHO_FIXED_ROWS)),
-         line("#{Spc::Fir.kind(global[:fir])} · 50 Hz – 16 kHz", color: :text_muted)]
+         *fir_graph,
+         line("#{kind} · 50 Hz – 16 kHz", color: :text_muted)]
       end
 
       def sample_panel(derived, voices, width, rows)
@@ -287,7 +294,7 @@ module RubyPlayer
         [heading,
          line(format('start $%04X · loop $%04X · %s · %s', entry[:start], entry[:loop],
                      format_samples(info[:samples]), info[:looped] ? 'looped' : 'one-shot')),
-         *waveform_lines(derived, entry, width, graph_rows(rows, SAMPLE_FIXED_ROWS)),
+         *memo(:waveform, srcn, width, rows) { waveform_lines(derived, entry, width, graph_rows(rows, SAMPLE_FIXED_ROWS)) },
          line("Used by voices #{users.join(' ')}", color: :text_muted)]
       end
 
@@ -297,21 +304,26 @@ module RubyPlayer
         bar_width = [width - RAM_LABEL.length, 1].max
         # Round slices up to $400 so row labels read as tidy addresses.
         slice = ((Spc::RamMap::RAM_BYTES / graph_rows(rows, RAM_FIXED_ROWS).to_f) / RAM_SLICE_ALIGN).ceil * RAM_SLICE_ALIGN
-        bars = Array.new(Spc::RamMap::RAM_BYTES.fdiv(slice).ceil) do |row|
-          from = row * slice
-          to = [from + slice, Spc::RamMap::RAM_BYTES].min
-          { text: format('$%04X ', from) + ram_bar(derived[:regions], from, to, bar_width), color: :primary }
+        bars = memo(:ram, width, slice) do
+          Array.new(Spc::RamMap::RAM_BYTES.fdiv(slice).ceil) do |row|
+            from = row * slice
+            to = [from + slice, Spc::RamMap::RAM_BYTES].min
+            { text: format('$%04X ', from) + ram_bar(derived[:regions], from, to, bar_width), color: :primary }
+          end
         end
         [title('ARAM 64 KB'), *bars, line(legend, color: :text_muted),
          line(format('DIR $%04X · ESA $%04X', global[:dir] * 0x100, global[:esa] * 0x100))]
       end
 
       def render_strip(top, rows, derived, voices)
-        in_use = voices.map { |voice| voice[:srcn] }
-        entries = derived[:directory].select { |entry| entry[:info] }
-                                     .sort_by { |entry| [in_use.include?(entry[:srcn]) ? 0 : 1, entry[:srcn]] }
-        cells = entries.map { |entry| strip_cell(entry, voices) }
         return unless rows.positive?
+
+        in_use = voices.map { |voice| voice[:srcn] }
+        cells = memo(:strip, in_use) do
+          derived[:directory].select { |entry| entry[:info] }
+                             .sort_by { |entry| [in_use.include?(entry[:srcn]) ? 0 : 1, entry[:srcn]] }
+                             .map { |entry| strip_cell(entry, voices) }
+        end
 
         put(top, 'Samples', fg: @theme[:accent], bold: true)
         cell_width = (cells.map(&:length).max || 0) + 3
@@ -330,16 +342,26 @@ module RubyPlayer
 
       # -- derived data (cached per RAM copy) ------------------------------
 
+      # The engine hands over a fresh RAM copy every decode chunk, and the
+      # echo buffer inside it changes constantly, so key on what the derived
+      # data actually depends on: the directory table, the samples in use, and
+      # the echo/directory registers. Sample data itself rarely changes.
       def derive(ram, voices, global)
         in_use = voices.map { |voice| voice[:srcn] }.uniq.sort
-        key = [ram.object_id, in_use, global[:dir], global[:esa], global[:edl]]
+        table = ram.byteslice(global[:dir] * 0x100, DIRECTORY_TABLE_BYTES)
+        key = [table, in_use, global[:dir], global[:esa], global[:edl]]
         return @derived if key == @cache_key
 
         directory = Spc::Brr.directory(ram, global[:dir], in_use: in_use)
         @cache_key = key
+        @memo.clear
         @derived = { ram: ram, directory: directory, waveforms: {},
                      regions: Spc::RamMap.regions(global: global, directory: directory) }
       end
+
+      # Graph lines depend only on derived data, size, and a few registers, but
+      # building them per frame dominated render time (~3 ms at 158 columns).
+      def memo(*key) = @memo.fetch(key) { @memo[key] = yield }
 
       def waveform_lines(derived, entry, width, rows)
         samples = derived[:waveforms][entry[:srcn]] ||=
@@ -451,12 +473,15 @@ module RubyPlayer
       def title(text) = { text: text, color: :accent, bold: true }
       def line(text, color: :text) = { text: text, color: color }
 
+      # Only the track title comes from outside (file tags); the rest is ours.
+      def sanitize(text) = text.to_s.gsub(/[[:cntrl:]]/, ' ')
+
       # Clips to the widget's rectangle so nothing paints outside it.
       def put(row, text, column: 0, **style)
         available = @width - column
         return unless available.positive? && row.between?(0, @height - 1)
 
-        @screen.put(@top + row, @left + column, text.to_s.gsub(/[[:cntrl:]]/, ' ')[0, available], **style)
+        @screen.put(@top + row, @left + column, text[0, available], **style)
       end
     end
   end

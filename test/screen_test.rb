@@ -133,4 +133,18 @@ class ScreenTest < Minitest::Test
 
     assert s.region_damaged?(rows: 4..4, cols: 19..19)
   end
+
+  # fill is a fast path for put with a repeated character; results must match,
+  # including clipping at both edges.
+  def test_fill_matches_put_of_a_repeated_character
+    filled = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 3, cols: 10)
+    put = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 3, cols: 10)
+    [[1, -2, 6], [0, 7, 9], [2, 3, 4]].each do |row, col, width|
+      filled.fill(row, col, width, bg: :blue, bold: true)
+      put.put(row, col, ' ' * width, bg: :blue, bold: true)
+    end
+    filled.fill(5, 0, 4)
+
+    assert_equal put.instance_variable_get(:@back), filled.instance_variable_get(:@back)
+  end
 end
