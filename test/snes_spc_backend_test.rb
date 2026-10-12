@@ -2,6 +2,8 @@
 
 require 'test_helper'
 require 'minitest/mock'
+require 'tmpdir'
+require 'zlib'
 require 'rubyplayer/backends/registry'
 require 'rubyplayer/backends/gme'
 require 'rubyplayer/backends/snes_spc'
@@ -104,6 +106,30 @@ class SnesSpcBackendTest < Minitest::Test
     loudest = Array.new(3) { @handle.read(16_384).unpack('e*').map(&:abs).max }.max
 
     assert_operator loudest, :>, 0.01
+  end
+
+  # Regression: libgme plays gzip-compressed content under a .spc name, so
+  # such files scanned fine but failed to open once playback moved here.
+  def test_gzip_compressed_spc_content_plays_like_the_plain_file
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, 'compressed.spc')
+      Zlib::GzipWriter.open(path) { |gzip| gzip.write(File.binread(SPC)) }
+      plain = @backend.open(SPC, 0, sample_rate: RATE)
+      @handle = @backend.open(path, 0, sample_rate: RATE)
+
+      assert_equal plain.read(16_384), @handle.read(16_384)
+    ensure
+      plain&.close
+    end
+  end
+
+  def test_oversized_compressed_content_is_refused
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, 'huge.spc')
+      Zlib::GzipWriter.open(path) { |gzip| gzip.write("\0" * (2 * 1024 * 1024)) }
+
+      assert_raises(RubyPlayer::Backends::SnesSpc::Error) { @backend.open(path, 0, sample_rate: RATE) }
+    end
   end
 
   def test_opening_a_non_spc_file_raises

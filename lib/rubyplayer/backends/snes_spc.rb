@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'stringio'
+require 'zlib'
 require_relative '../audio_format'
 require_relative 'gme'
 
@@ -13,7 +15,11 @@ module RubyPlayer
 
       # gme_set_fade's default fade length; Gme::Handle relies on it.
       FADE_MS = 8_000
-      private_constant :FADE_MS
+      GZIP_MAGIC = "\x1f\x8b".b
+      # An SPC is ~66 KB plus optional extended tags; anything decompressing
+      # past this is not one (and must not exhaust memory).
+      MAX_SPC_BYTES = 1024 * 1024
+      private_constant :FADE_MS, :GZIP_MAGIC, :MAX_SPC_BYTES
 
       def self.available?
         return @available unless @available.nil?
@@ -43,8 +49,9 @@ module RubyPlayer
       def open(path, subtune_index, sample_rate:)
         raise Error, 'native SPC player is unavailable' unless self.class.available?
 
+        bytes = spc_bytes(path)
         lengths = @gme.playback_lengths(path, subtune_index)
-        Handle.new(File.binread(path), sample_rate: sample_rate, **lengths)
+        Handle.new(bytes, sample_rate: sample_rate, **lengths)
       end
 
       # Same contract as Gme::Handle: packed float32 stereo until the track ends.
@@ -139,6 +146,24 @@ module RubyPlayer
           SnesSpcLib.rp_spc_close(@spc) if @spc
           @spc = nil
         end
+      end
+
+      private
+
+      # libgme transparently plays gzip-compressed content under a .spc name;
+      # keep those library entries playable.
+      def spc_bytes(path)
+        bytes = File.binread(path)
+        return bytes unless bytes.start_with?(GZIP_MAGIC)
+
+        Zlib::GzipReader.wrap(StringIO.new(bytes)) do |gzip|
+          inflated = gzip.read(MAX_SPC_BYTES + 1) || ''.b
+          raise Error, 'compressed SPC is too large' if inflated.bytesize > MAX_SPC_BYTES
+
+          inflated
+        end
+      rescue Zlib::Error => e
+        raise Error, "invalid compressed SPC: #{e.message}"
       end
     end
   end
