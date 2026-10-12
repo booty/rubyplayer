@@ -11,6 +11,7 @@ require_relative '../vgm/telemetry'
 require_relative 'vgm_live_view'
 require_relative 'spc_live_view'
 require_relative '../gbs/tracker'
+require_relative '../nsf/tracker'
 require_relative 'vgm_telemetry_controller'
 
 module RubyPlayer
@@ -56,9 +57,10 @@ module RubyPlayer
         )
         @vgm_live_view = VgmLiveView.new
         @spc_live_view = SpcLiveView.new
-        # GBS reuses the VGM page; its rows come from APU snapshots.
-        @gbs_live_view = VgmLiveView.new(source: 'GBS')
-        @gbs_tracker = Gbs::Tracker.new
+        # GBS and NSF reuse the VGM page; their rows come from chip snapshots,
+        # each kind through its own tracker.
+        @chip_pages = { gbs: [VgmLiveView.new(source: 'GBS'), Gbs::Tracker.new],
+                        nsf: [VgmLiveView.new(source: 'NSF'), Nsf::Tracker.new] }
         @vgm_telemetry_controller = VgmTelemetryController.new(
           engine: @engine, telemetry: @vgm_telemetry,
           refresh_hz: [@config['ui', 'vgm_telemetry_fps'], @config['ui', 'frame_fps']].min,
@@ -275,7 +277,7 @@ module RubyPlayer
         case @now_playing_modal&.live_kind
         when :spc then handle_spc_mute_key(key)
         when :vgm then handle_channel_mute_key(key, @vgm_live_view)
-        when :gbs then handle_channel_mute_key(key, @gbs_live_view)
+        when :gbs, :nsf then handle_channel_mute_key(key, @chip_pages.fetch(@now_playing_modal.live_kind).first)
         else false
         end
       end
@@ -618,14 +620,14 @@ module RubyPlayer
         @vgm_live_view.update(nil)
         modal = NowPlayingModal.new(track, extras: @library.track_metadata_for(track.id),
                                            page: @now_playing_page,
-                                           vgm_view: kind == :gbs ? @gbs_live_view : @vgm_live_view,
+                                           vgm_view: @chip_pages.dig(kind, 0) || @vgm_live_view,
                                            live_available: live, live_kind: kind, spc_view: @spc_live_view)
         @now_playing_modal = modal
         if @show_now_playing
           @vgm_telemetry_controller.visible = kind == :vgm
           live ? set_art(nil) : fetch_art(track)
         end
-        return unless %w[ffmpeg gme snes_spc gbs_native].include?(track.backend)
+        return unless %w[ffmpeg gme snes_spc gbs_native nsf_native].include?(track.backend)
 
         # Existing library rows predate technical metadata. Probe once when
         # opening, off the UI thread, rather than requiring a destructive rescan.
@@ -1396,22 +1398,23 @@ module RubyPlayer
         when :vgm
           @now_playing_modal.update_vgm(now_sample: @engine.vgm_telemetry_request&.sample,
                                         mute_mask: @engine.voice_mute_mask)
-        when :gbs then update_gbs_live
+        when :gbs, :nsf then update_chip_live(@now_playing_modal.live_kind)
         end
         @art_region = @now_playing_modal.render(@screen, theme: @theme, frame: method(:render_modal),
                                                          min_art_rows: @config['ui', 'art_min_rows'])
         render_art_placeholder
       end
 
-      # Feeds every APU snapshot heard since the last frame to the tracker,
-      # even on the Info page, so note history stays continuous.
-      def update_gbs_live
+      # Feeds every chip snapshot heard since the last frame to the page's
+      # tracker, even on the Info page, so note history stays continuous.
+      def update_chip_live(kind)
         live = @engine.chip_live
         return unless live
 
-        @gbs_live_view.update(@gbs_tracker.snapshot) if @gbs_tracker.update(live) || @gbs_live_view.snapshot.nil?
-        @gbs_live_view.paused = live.paused
-        @now_playing_modal.update_vgm(now_sample: @gbs_tracker.now_sample, mute_mask: live.mute_mask,
+        view, tracker = @chip_pages.fetch(kind)
+        view.update(tracker.snapshot) if tracker.update(live) || view.snapshot.nil?
+        view.paused = live.paused
+        @now_playing_modal.update_vgm(now_sample: tracker.now_sample, mute_mask: live.mute_mask,
                                       position_ms: @engine.state[:position_ms])
       end
 

@@ -103,3 +103,13 @@ the authority for workflow and invariants.
   *before* start_track, or the search sees unmuted audio. Views needing
   every state change (note history) consume all heard snapshots in order
   (`ChipTimeline#take_through`), not just the latest.
+- Live NSF view (nsf_native): same approach, sharing `ext/gme` and
+  `ext/rp_gme/rp_recorder.h` with GBS. The chips run lazily, so at a hook
+  their state is still what the latest write left: record it at that
+  write's time, then step frame counters to catch notes that end between
+  driver calls. Stepping must be simulated on copies for the 2A03: advancing
+  the real APU adds time splits, and libgme's muted triangle (all voices
+  are muted during long seeks) keeps phase differently across them, which
+  broke parity only after seeks over ~0.3 s. VRC7 reuses the YM2413 model
+  (register writes rebuilt from snapshot diffs). libgme numbers voices APU,
+  VRC6 (saw first), N163, 5B, FDS, MMC5, VRC7; the page mutes by that.

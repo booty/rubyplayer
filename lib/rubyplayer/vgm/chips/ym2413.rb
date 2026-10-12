@@ -20,12 +20,18 @@ module RubyPlayer
                          'Horn', 'Synthesizer', 'Harpsichord', 'Vibraphone', 'Synth Bass', 'Acoustic Bass',
                          'Electric Guitar'].freeze
 
+        # Variants (the VRC7) override these.
+        def self.key = 'ym2413'
+        def self.chip_name = 'YM2413 OPLL'
+        def self.channel_count = 9
+        def self.program_names = PROGRAM_NAMES
+
         def initialize(clock_hz:, instance: 0)
           @clock_hz = clock_hz
           @instance = instance
           @registers = Array.new(0x40)
-          @last_trigger_samples = Array.new(9)
-          @release_samples = Array.new(9)
+          @last_trigger_samples = Array.new(self.class.channel_count)
+          @release_samples = Array.new(self.class.channel_count)
           @notes = NoteLog.new
         end
 
@@ -47,9 +53,9 @@ module RubyPlayer
         end
 
         def snapshot(sample:)
-          channels = Array.new(9) { |index| channel_snapshot(index, sample) }
+          channels = Array.new(self.class.channel_count) { |index| channel_snapshot(index, sample) }
           ChipSnapshot.new(
-            id: "ym2413:#{@instance}", name: 'YM2413 OPLL', clock_hz: @clock_hz,
+            id: "#{self.class.key}:#{@instance}", name: self.class.chip_name, clock_hz: @clock_hz,
             channels: channels,
             details: { rhythm_mode: rhythm_enabled?, rhythm_register: register(0x0e), events: @notes.packed }
           )
@@ -99,7 +105,7 @@ module RubyPlayer
 
         def program_details(program, custom)
           { program_number: custom ? :custom : program,
-            program_name: custom ? 'Custom' : PROGRAM_NAMES[program.to_i] }
+            program_name: custom ? 'Custom' : self.class.program_names[program.to_i] }
         end
 
         def percussion_snapshot(channel)
@@ -208,7 +214,7 @@ module RubyPlayer
 
         def rhythm_enabled? = register(0x0e).to_i.anybits?(0x20)
         def rhythm_channel?(channel) = rhythm_enabled? && channel >= 6
-        def channel_id(channel) = "ym2413:#{@instance}:#{channel}"
+        def channel_id(channel) = "#{self.class.key}:#{@instance}:#{channel}"
         def register(address) = @registers[address]
       end
     end

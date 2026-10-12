@@ -146,6 +146,26 @@ sample-for-sample against Homebrew libgme; `config.backends[".gbs"] = :gme`
 switches back to libgme playback (no live page), and the app does so
 automatically if `librp_gbs.dylib` is missing.
 
+NSF and NSFe (NES and Famicom) tracks open on an **NSF** live page laid out
+the same way, covering the 2A03 and every expansion chip libgme plays: Konami
+VRC6 (two pulses and a sawtooth) and VRC7 (six FM channels, shown with the
+YM2413 OPLL panels and VRC7 instrument names), the Famicom Disk System
+(wavetable, envelope, and modulation table), Nintendo MMC5 (two pulses and
+PCM), Namco 163 (up to eight wavetable channels, with how many are enabled),
+and Sunsoft 5B. The 2A03 line names the region (NTSC, or PAL's 2A07 at 50
+Hz), frame counter mode, and music-driver rate. Each channel shows its pitch,
+level, and settings (duty, envelope, length counter, sweep, linear counter,
+LFSR mode, DPCM sample and rate); pulse and noise channels draw their volume
+envelope from the trigger, and wavetable channels their wave. A looping DPCM
+sample gets the pitch its loop length makes (Sunsoft's DMC bass). Levels are
+exact except VRC7's, which are estimated as on the VGM page. Channels mute
+and solo by libgme voice. An NSF that sets expansion bits no chip defines
+still plays and shows the chips libgme knows. `.nsf` and `.nsfe` play
+through libgme's own NSF emulator, vendored with the same kind of hooks
+(`ext/rp_nsf`) and verified sample-for-sample against Homebrew libgme on every
+fixture, every chip included; `config.backends[".nsf"] = :gme` switches back,
+and the app does so automatically if `librp_nsf.dylib` is missing.
+
 Artwork comes from embedded pictures in FFmpeg-backed files, falling back to
 images in the track's folder (such as `cover.jpg` or `folder.png`). Archived
 tracks look beside their entry inside the archive first (rip zips often pack
@@ -236,7 +256,7 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | `playback_engine/voice_muting.rb` | `PlaybackEngine::VoiceMuting`: user voice muting for any handle with `#mute` (native SPC, libgme), queued for the decoder thread and tied to the track it targets. |
 | `spc/snapshot.rb` | `Spc::Snapshot` (one decoded S-DSP state record) and `Spc::LiveState`. |
 | `gbs/snapshot.rb`, `gbs/tracker.rb` | `Gbs::Snapshot` (one decoded Game Boy APU record) and `Gbs::Tracker`, which turns the snapshot stream into the VGM live page's channel model and note history. |
-| `nsf/snapshot.rb` | `Nsf::Snapshot` (one decoded 2A03-plus-expansion record) and `Nsf::Voices` (libgme's voice numbering per chip set). |
+| `nsf/snapshot.rb`, `nsf/chips.rb`, `nsf/vrc7.rb`, `nsf/tracker.rb` | `Nsf::Snapshot` (one decoded 2A03-plus-expansion record) and `Nsf::Voices` (libgme's voice numbering per chip set); `Nsf::Chips`, which reads each chip's channels (pitch, level, settings) from a record; `Nsf::Vrc7`, the YM2413 model with VRC7's channel count and instrument names; and `Nsf::Tracker`, which builds the VGM live page's channel model and per-chip note history. |
 | `spc/dsp.rb`, `spc/brr.rb`, `spc/fir.rb`, `spc/ram_map.rb` | Pure decoders for the live page: DSP registers, sample directory and BRR samples, echo FIR frequency response, and SPC RAM layout. |
 | `track_formatter.rb` | `TrackFormatter`: runs configured formatter lambdas against a track and helper context, then normalizes strings and conditional fragments into validated styled segments. |
 | `keymap.rb` | `Keymap`: maps normalized key names to action symbols, merging Ruby-config overrides over sensible single-letter defaults. Matching is case-insensitive. Pane-local bindings shadow global bindings. |
@@ -261,7 +281,7 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 |---|---|
 | `app.rb` | `UI::App`: wires every other component together and owns the main loop — key dispatch, event handling, config hot-reload, and the top-level `render`. This is the natural place to look first to see how a keypress becomes an action and how state changes reach the screen. |
 | `spc_live_view.rb` | `SpcLiveView`: the full-modal SPC live page. Renders a `Spc::LiveState` into a rectangle, choosing three-column, two-column, or stacked panels by size; graphs are memoized per input. |
-| `vgm_live_view.rb`, `vgm_telemetry_controller.rb` | `VgmLiveView`: the full-modal VGM (and GBS) live page, rendering snapshots into a rectangle with three-column, two-column, or stacked panels by size; and the visible-consumer refresh controller. The view does not read files, query the engine, or depend on the Now Playing modal. |
+| `vgm_live_view.rb`, `gb_live_panels.rb`, `nes_live_panels.rb`, `vgm_telemetry_controller.rb` | `VgmLiveView`: the full-modal VGM (and GBS and NSF, through the Game Boy and NES panel modules) live page, rendering snapshots into a rectangle with three-column, two-column, or stacked panels by size; and the visible-consumer refresh controller. The view does not read files, query the engine, or depend on the Now Playing modal. |
 | `gb_live_panels.rb` | `GbLivePanels`: the Game Boy APU parts of `VgmLiveView` (chip line, instrument text, exact levels, voice panel, volume envelope and wave RAM). |
 | `live_glyphs.rb` | Block-character level bars and graphs shared by the live pages. |
 | `screen.rb` | `Screen`: the double-buffered renderer described above (`put`/`clear_back`/`flush`), plus truecolor and named ANSI color support. Has no knowledge of panes, tracks, or layout — purely a drawing primitive. |

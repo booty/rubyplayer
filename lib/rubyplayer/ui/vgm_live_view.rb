@@ -6,6 +6,7 @@ require_relative '../vgm/note_log'
 require_relative '../vgm/pitch'
 require_relative 'live_glyphs'
 require_relative 'gb_live_panels'
+require_relative 'nes_live_panels'
 
 module RubyPlayer
   module UI
@@ -15,15 +16,19 @@ module RubyPlayer
     # Like SpcLiveView, the layout is chosen from the rectangle.
     #
     # VGM snapshots come from register replay at the telemetry rate (~15 Hz)
-    # and lag the audio a little; GBS snapshots come from Gbs::Tracker. Levels
+    # and lag the audio a little; GBS and NSF snapshots come from
+    # Gbs::Tracker and Nsf::Tracker. Levels
     # and history are drawn against `now_sample`, the sample being heard, so
     # they move smoothly between snapshots.
     class VgmLiveView
       include LiveGlyphs
       include GbLivePanels
+      include NesLivePanels
 
       CHANNEL_KEYS = [*'1'..'9', *'a'..'z'].freeze
-      CHIP_ORDER = { 'ym2612' => 0, 'sn76489' => 1, 'ym2413' => 2, 'gb_dmg' => 3 }.freeze
+      # NSF chips follow libgme's voice order, 2A03 first.
+      CHIP_ORDER = { 'ym2612' => 0, 'sn76489' => 1, 'ym2413' => 2, 'gb_dmg' => 3, '2a03' => 4, 'vrc6' => 5, 'n163' => 6,
+                     's5b' => 7, 'fds' => 8, 'mmc5' => 9, 'vrc7' => 10 }.freeze
       THREE_COLUMN_WIDTH = 150
       TWO_COLUMN_WIDTH = 100
       WIDE_TABLE_WIDTH = 110
@@ -308,12 +313,14 @@ module RubyPlayer
       end
 
       def chip_lines
-        lines = Array(@snapshot.chips).sort_by { |chip| CHIP_ORDER.fetch(chip.id.split(':').first, 3) }.map do |chip|
+        lines = Array(@snapshot.chips).sort_by { |chip| CHIP_ORDER.fetch(chip.id.split(':').first, 99) }.map do |chip|
           case chip.id.split(':').first
           when 'ym2612' then line(ym2612_summary(chip))
           when 'sn76489' then line(sn76489_summary(chip))
           when 'ym2413' then line(ym2413_summary(chip))
           when 'gb_dmg' then line(gb_summary(chip))
+          when 'vrc7' then line(vrc7_summary(chip))
+          when '2a03', 'vrc6', 'n163', 's5b', 'fds', 'mmc5' then line(nes_summary(chip))
           else line("#{chip.name} · #{format_clock(chip.clock_hz)} · live detail unavailable", color: :text_muted)
           end
         end
@@ -391,9 +398,11 @@ module RubyPlayer
         end
       end
 
-      # Register replay estimates FM and PSG levels; Game Boy levels are read
-      # from the emulator.
-      def level_heading = @rows.all? { |row| gb_kind?(row.channel) } ? 'Level' : 'Level (est.)'
+      # Register replay estimates FM and PSG levels (and VRC7's); Game Boy and
+      # NES levels are read from the emulator.
+      def level_heading
+        @rows.all? { |row| gb_kind?(row.channel) || nes_kind?(row.channel) } ? 'Level' : 'Level (est.)'
+      end
 
       def render_channel_rows(first_row, rows)
         @visible_rows = [rows, 0].max
@@ -462,6 +471,7 @@ module RubyPlayer
         channel = row.channel
         details = channel.details
         return gb_instrument_texts(channel) if gb_kind?(channel)
+        return nes_instrument_texts(channel) if nes_kind?(channel)
 
         case channel.kind
         when :fm then fm_instrument_texts(channel.patch)
@@ -535,6 +545,7 @@ module RubyPlayer
         when :pcm then pcm_attenuation(channel)
         when :tone, :noise then tone_attenuation(row, *key_timing(channel))
         when *GB_KINDS then gb_attenuation(channel)
+        when *NES_KINDS then nes_attenuation(channel)
         when :percussion
           held, released = key_timing(channel)
           held ? Vgm::Envelope.opll_rom(volume: 0, released: released) : Vgm::Envelope::MAX_ATTENUATION
@@ -690,6 +701,7 @@ module RubyPlayer
         channel = row.channel
         lines = case channel.kind
                 when *GB_KINDS then gb_voice_lines(row, width)
+                when *NES_KINDS then nes_voice_lines(row, width)
                 when :fm then fm_voice_lines(row, width)
                 when :pcm then pcm_voice_lines(row)
                 when :noise then noise_voice_lines(row, width)
@@ -769,13 +781,13 @@ module RubyPlayer
       end
 
       def carriers_for(row, patch)
-        return [2] if row.chip.id.start_with?('ym2413')
+        return [2] if opll_chip?(row.chip)
 
         patch.algorithm ? Vgm::Envelope::CARRIERS.fetch(patch.algorithm) : []
       end
 
       def operator_level(row, operator)
-        opll = row.chip.id.start_with?('ym2413')
+        opll = opll_chip?(row.chip)
         held, released = opll ? key_timing(row.channel) : operator_timing(row.channel, operator.index)
         return 0 unless held
 
@@ -880,6 +892,7 @@ module RubyPlayer
       def envelope?
         row = @rows[@selected_index]
         return true if row && gb_kind?(row.channel)
+        return nes_detail?(row.channel) if row && nes_kind?(row.channel)
 
         patch = row&.channel&.patch
         !!(patch && !patch.operators.empty? && %i[fm tone].include?(row.channel.kind))
@@ -889,6 +902,7 @@ module RubyPlayer
         row = @rows[@selected_index]
         return [] unless row && rows >= 4
         return gb_envelope_panel(row, width, rows) if gb_kind?(row.channel)
+        return nes_detail_panel(row, width, rows) if nes_kind?(row.channel)
 
         patch = row.channel.patch
         heading = title('Envelopes (estimated)')
@@ -910,6 +924,8 @@ module RubyPlayer
       end
 
       def no_envelope_reason(row)
+        return 'ROM instrument: envelope rates are not readable' if row.channel.details[:program_name]
+
         case row.channel.kind
         when :pcm then 'PCM stream: no envelope generator'
         when :tone, :noise then 'No envelope generator: the level is the attenuation register'
@@ -1076,7 +1092,12 @@ module RubyPlayer
       # libgme's VGM voices: FM 1-6 and PCM (the DAC); then the PSG as one voice when
       # an FM chip is present, else one per PSG channel. OPLL channels 6-9
       # share a voice, and so do its rhythm instruments. GBS: one per channel.
+      # NSF: one per channel, numbered across chips.
       def mute_bits(row)
+        # NSF channels carry their libgme voice.
+        nsf_voice = row.channel.details[:voice]
+        return 1 << nsf_voice if nsf_voice
+
         voice = row.voice
         case row.chip.id.split(':').first
         # The DAC row covers FM 6 too: the DAC replaces it while enabled.
@@ -1092,6 +1113,9 @@ module RubyPlayer
       end
 
       def fm_chip? = @rows.any? { |row| row.chip.id.start_with?('ym2612', 'ym2413') }
+
+      # The YM2413 and its VRC7 variant share the OPLL model.
+      def opll_chip?(chip) = chip.id.start_with?('ym2413', 'vrc7')
 
       def muted?(row)
         bits = mute_bits(row)
