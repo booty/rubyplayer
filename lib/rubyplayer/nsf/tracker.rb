@@ -48,6 +48,7 @@ module RubyPlayer
         @generation = generation
         @notes = Hash.new { |hash, key| hash[key] = Vgm::NoteLog.new }
         @vrc7 = nil
+        @vrc7_registers = nil
         @latest = nil
         @playing = 0
         @trigger_samples = {}
@@ -85,32 +86,31 @@ module RubyPlayer
         end
       end
 
-      # Rebuilds the register writes since the previous snapshot. A key on
-      # that stayed on but was retriggered between snapshots is replayed as
-      # key off, key on.
+      # Rebuilds the register writes since the previous snapshot (every
+      # register, for a new model). A key on that stayed on but was
+      # retriggered between snapshots is replayed as key off, key on.
       def ingest_vrc7(state, sample)
+        previous = @vrc7 && @vrc7_registers
         @vrc7 ||= Vrc7.new
-        previous = @vrc7_registers || ("\0".b * 26)
         base = Voices.new(state.chips).base(:vrc7)
         current = state.vrc7_custom + state.vrc7_regs
-        8.times { |register| write_vrc7(register, current, previous, register, sample) }
+        8.times { |register| write_vrc7(register, current.getbyte(register), previous&.getbyte(register), sample) }
         6.times do |channel|
           [0x10, 0x30, 0x20].each do |register|
             index = 8 + (channel * 3) + VRC7_REGISTERS.index(register)
-            if register == 0x20 && state.triggers[base + channel] == 1 && previous.getbyte(index).anybits?(KEY_ON)
-              @vrc7.write(register: register + channel, value: previous.getbyte(index) & ~KEY_ON, sample: sample)
+            before = previous&.getbyte(index)
+            if register == 0x20 && state.triggers[base + channel] == 1 && before&.anybits?(KEY_ON)
+              @vrc7.write(register: register + channel, value: before & ~KEY_ON, sample: sample)
+              before = nil # the key on must be written again
             end
-            write_vrc7(register + channel, current, previous, index, sample)
+            write_vrc7(register + channel, current.getbyte(index), before, sample)
           end
         end
         @vrc7_registers = current
       end
 
-      def write_vrc7(register, current, previous, index, sample)
-        value = current.getbyte(index)
-        return if @vrc7_registers && previous.getbyte(index) == value
-
-        @vrc7.write(register: register, value: value, sample: sample)
+      def write_vrc7(register, value, before, sample)
+        @vrc7.write(register: register, value: value, sample: sample) unless value == before
       end
 
       def build

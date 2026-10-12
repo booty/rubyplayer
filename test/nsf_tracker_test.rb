@@ -57,6 +57,33 @@ class NsfTrackerTest < Minitest::Test
     assert_empty events_for('2a03')
   end
 
+  # The same note again, with nothing changed but a retrigger: the
+  # synthesized key off must be followed by key on, not leave it off.
+  def test_vrc7_retriggers_with_unchanged_registers_stay_keyed_on
+    note = vrc7_note(frame: 4_410, triggers: 1 << 5)
+    ingest(note, note.with(frame: 8_820))
+    channel = vrc7_channel(0)
+
+    assert_equal :key_on, channel.state
+    # The OPLL model logs the replayed key off and key on together.
+    assert_equal([[:on, 4_410], [:off, 8_820], [:on, 8_820]], events_for('vrc7').map do |event|
+      [event.kind, event.sample]
+    end)
+  end
+
+  # A seek or track change starts a new model; it must get every register,
+  # including those equal to the previous generation's.
+  def test_vrc7_state_is_complete_after_a_new_generation
+    note = vrc7_note(frame: 4_410, triggers: 1 << 5)
+    ingest(note)
+    ingest(note.with(frame: 0), generation: 2)
+    channel = vrc7_channel(0)
+
+    assert_equal :key_on, channel.state
+    assert_equal 'Piano', channel.details[:program_name]
+    refute_nil channel.pitch_hz
+  end
+
   def test_every_rip_maps_to_its_chips
     expected = { mega_man_2: %w[2a03], castlevania_3_japan: %w[2a03 vrc6], lagrange_point: %w[2a03 vrc7],
                  metroid_fds: %w[2a03 fds], just_breed: %w[2a03 mmc5], erika_to_satoru: %w[2a03 n163],
@@ -136,6 +163,14 @@ class NsfTrackerTest < Minitest::Test
                                                                  voice_count: 5)
     @zero.with(**fields)
   end
+
+  # VRC7 channel 1 keyed on: FNUM $80, block 1, ROM instrument 3 (Piano).
+  def vrc7_note(**fields)
+    regs = ([0x80, 0x12, 0x30] + ([0] * 15)).pack('C*')
+    state(chips: 0x02, voice_count: 11, playing: 1 << 5, vrc7_regs: regs, **fields)
+  end
+
+  def vrc7_channel(index) = @tracker.snapshot.chips.find { |entry| entry.id.start_with?('vrc7') }.channels[index]
 
   def events_for(key)
     chip = @tracker.snapshot.chips.find { |entry| entry.id.start_with?(key) }
