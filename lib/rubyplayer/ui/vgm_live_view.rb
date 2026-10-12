@@ -48,15 +48,17 @@ module RubyPlayer
       STATE_LABELS = { key_on: 'key on', key_off: 'key off', enabled: 'on', muted: 'off', data: 'data',
                        idle: 'idle' }.freeze
       ACTIVE_STATES = %i[key_on enabled data].freeze
-      # YM2612 algorithms. Operator 1 has feedback; ▶ is the output.
+      # YM2612 algorithms. Operator 1 has feedback; ▶ is the output. All
+      # are padded to the tallest so the panel below does not jump when a
+      # channel changes algorithm.
       ALGORITHMS = [
-        ['1→2→3→4→▶'],
-        ['1──┐', '2──┴→3→4→▶'],
-        ['1─────┐', '2→3───┴→4→▶'],
-        ['1→2─┐', '3───┴→4→▶'],
-        ['1→2─┐', '3→4─┴→▶'],
-        ['  ┌→2─┐', '1─┼→3─┼→▶', '  └→4─┘'],
-        ['1→2─┐', '   3─┼→▶', '   4─┘'],
+        ['1→2→3→4→▶', '', '', ''],
+        ['1──┐', '2──┴→3→4→▶', '', ''],
+        ['1─────┐', '2→3───┴→4→▶', '', ''],
+        ['1→2─┐', '3───┴→4→▶', '', ''],
+        ['1→2─┐', '3→4─┴→▶', '', ''],
+        ['  ┌→2─┐', '1─┼→3─┼→▶', '  └→4─┘', ''],
+        ['1→2─┐', '  3─┼→▶', '  4─┘', ''],
         ['1─┐', '2─┤', '3─┼→▶', '4─┘']
       ].freeze
       # Spelled-out forms of the short FM terms, shown when there is room.

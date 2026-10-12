@@ -136,6 +136,19 @@ class VgmLiveViewTest < Minitest::Test
     assert_includes text, 'AMS 1 (1.4 dB) · FMS 3 (±10¢)'
   end
 
+  # Algorithm diagrams differ in height; the operator table must not move.
+  def test_operator_table_stays_put_across_algorithms
+    rows = [0x00, 0x07].map do |algorithm|
+      chip = Vgm::Chips::Ym2612.new(clock_hz: 7_670_453)
+      fast_patch(chip)
+      write(chip, 0xb0, algorithm, 0)
+      @view.update(snapshot_for([chip], 0))
+      render(cols: 160, rows: 48).index { |line| line.start_with?('OP   AR') }
+    end
+
+    assert_equal rows.first, rows.last
+  end
+
   def test_history_draws_notes_where_they_were_played
     chip = Vgm::Chips::Ym2612.new(clock_hz: 7_670_453)
     fast_patch(chip)
