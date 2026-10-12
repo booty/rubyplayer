@@ -33,9 +33,33 @@ class VgmNoteLogTest < Minitest::Test
 
   def test_old_events_are_dropped
     @log.on(0, 0, 60)
+    @log.off(0, 100)
     @log.on(0, NoteLog::HISTORY_SAMPLES + (2 * RubyPlayer::Vgm::SAMPLE_RATE), 61)
 
     assert_equal [61], NoteLog.decode(@log.packed).map(&:midi)
+  end
+
+  # Channel 0 is held from the start; pruning must not drop its only start.
+  def test_notes_held_across_the_cut_restart_at_the_boundary
+    @log.on(0, 0, 60)
+    @log.note(0, 10, 62)
+    @log.on(1, 20, 70)
+    @log.off(1, 30)
+    late = NoteLog::HISTORY_SAMPLES + (2 * RubyPlayer::Vgm::SAMPLE_RATE)
+    @log.on(2, late, 64)
+
+    events = NoteLog.decode(@log.packed)
+
+    assert_equal([[0, :on, 62, late - NoteLog::HISTORY_SAMPLES], [2, :on, 64, late]],
+                 events.map { |event| [event.channel, event.kind, event.midi, event.sample] })
+  end
+
+  def test_late_events_are_kept_in_sample_order
+    @log.on(0, 100, 60)
+    @log.on(1, 300, 61)
+    @log.off(0, 200)
+
+    assert_equal [100, 200, 300], NoteLog.decode(@log.packed).map(&:sample)
   end
 
   def test_event_count_is_bounded

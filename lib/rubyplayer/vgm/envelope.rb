@@ -63,21 +63,26 @@ module RubyPlayer
       def opn_curve(parameters, keycode, clock_hz)
         eg_hz = clock_hz / 144.0 / 3
         scale = keycode >> (3 - parameters.fetch(:rs, 0).to_i)
-        rate = ->(value, base = 2 * value.to_i) { value.to_i.zero? ? 0 : (base + scale).clamp(0, 63) }
+        rate = ->(value) { value.to_i.zero? ? 0 : ((2 * value.to_i) + scale).clamp(0, 63) }
         speed = ->(value) { steps_per_second(rate.call(value), eg_hz) }
+        # Release has no zero rate: RR 0 is rate 2 plus key scaling, a slow
+        # but finite fade (MAME fm.cpp sets rr = 34 + (RR << 2)).
+        release_rate = ((4 * parameters[:rr].to_i) + 2 + scale).clamp(0, 63)
         Curve.new(attack: speed.call(parameters[:ar]), instant: rate.call(parameters[:ar]) >= INSTANT_ATTACK_RATE,
                   decay: speed.call(parameters[:d1r]), sustain_level: sustain_level(parameters[:d1l]),
-                  sustain: speed.call(parameters[:d2r]),
-                  release: steps_per_second(rate.call(parameters[:rr], (4 * parameters[:rr].to_i) + 2), eg_hz))
+                  sustain: speed.call(parameters[:d2r]), release: steps_per_second(release_rate, eg_hz))
       end
 
-      # Loudest carrier of a YM2612 channel, as an attenuation.
-      def opn_channel(patch, keycode:, clock_hz:, held:, released: nil)
+      # Loudest carrier of a YM2612 channel, as an attenuation. Each
+      # operator has its own key, so `timings` holds [held, released] per
+      # operator (index 1..4 at 0..3); held is nil for one never keyed.
+      def opn_channel(patch, keycode:, clock_hz:, timings:)
         return MAX_ATTENUATION unless patch&.algorithm
 
         CARRIERS.fetch(patch.algorithm).map do |index|
           operator = patch.operators.find { |item| item.index == index }
-          next MAX_ATTENUATION unless operator
+          held, released = timings[index - 1]
+          next MAX_ATTENUATION unless operator && held
 
           opn_operator(operator.parameters, keycode: keycode, clock_hz: clock_hz, held: held, released: released)
         end.min

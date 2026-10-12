@@ -31,6 +31,10 @@ module RubyPlayer
           @key_masks = Array.new(6, 0)
           @last_trigger_samples = Array.new(6)
           @release_samples = Array.new(6)
+          # Per operator (OP1..OP4 at 0..3): each has its own key, and the
+          # live page's levels follow the keyed carriers only.
+          @operator_triggers = Array.new(6) { Array.new(4) }
+          @operator_releases = Array.new(6) { Array.new(4) }
           @notes = NoteLog.new
           @dac_writes = 0
           # The chip has one A4-A6 high-byte latch shared by all channels on
@@ -103,6 +107,8 @@ module RubyPlayer
                                   key_masks: @key_masks,
                                   last_trigger_samples: @last_trigger_samples,
                                   release_samples: @release_samples,
+                                  operator_triggers: @operator_triggers,
+                                  operator_releases: @operator_releases,
                                   notes: @notes.dump_state,
                                   dac_writes: @dac_writes,
                                   frequency_latch: @frequency_latch,
@@ -120,6 +126,8 @@ module RubyPlayer
           @key_masks = state.fetch(:key_masks).dup
           @last_trigger_samples = state.fetch(:last_trigger_samples).dup
           @release_samples = state.fetch(:release_samples).dup
+          @operator_triggers = state.fetch(:operator_triggers).map(&:dup)
+          @operator_releases = state.fetch(:operator_releases).map(&:dup)
           @notes = NoteLog.new.restore_state(state.fetch(:notes))
           @dac_writes = state.fetch(:dac_writes)
           @frequency_latch = state.fetch(:frequency_latch)
@@ -142,12 +150,23 @@ module RubyPlayer
           new_mask = (value >> 4) & 0x0f
           old_mask = @key_masks[channel]
           @key_masks[channel] = new_mask
+          record_operator_keys(channel, old_mask, new_mask, sample)
           if new_mask.anybits?(~old_mask)
             @last_trigger_samples[channel] = sample
             @notes.on(channel, sample, midi_for(channel)) unless dac_channel?(channel)
           elsif new_mask.zero? && old_mask.positive?
             @release_samples[channel] = sample
             @notes.off(channel, sample) unless dac_channel?(channel)
+          end
+        end
+
+        def record_operator_keys(channel, old_mask, new_mask, sample)
+          4.times do |operator|
+            if new_mask[operator] == 1 && old_mask[operator].zero?
+              @operator_triggers[channel][operator] = sample
+            elsif new_mask[operator].zero? && old_mask[operator] == 1
+              @operator_releases[channel][operator] = sample
+            end
           end
         end
 
@@ -238,6 +257,7 @@ module RubyPlayer
           {
             key_mask: @key_masks[index], frequency: frequency, pitch_cents: cents,
             release_sample: @release_samples[index],
+            operator_triggers: @operator_triggers[index].dup, operator_releases: @operator_releases[index].dup,
             algorithm: base&.then { |value| value & 0x07 },
             feedback: base&.then { |value| (value >> 3) & 0x07 },
             ams: ams_fms&.then { |value| (value >> 4) & 0x03 },

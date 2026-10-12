@@ -212,6 +212,31 @@ class VgmYm2612Test < Minitest::Test
     assert_equal 300, snapshot.channels.first.details.fetch(:release_sample)
   end
 
+  def test_operators_key_on_and_off_independently
+    write(0x28, 0x30, sample: 100)
+    write(0x28, 0xb0, sample: 200)
+    write(0x28, 0x80, sample: 300)
+    details = @chip.snapshot(sample: 400).channels.first.details
+
+    assert_equal [100, 100, nil, 200], details.fetch(:operator_triggers)
+    assert_equal [300, 300, nil, nil], details.fetch(:operator_releases)
+  end
+
+  # A burst's end is logged at its last DAC write, after FM events with
+  # later samples; pruning past them must not fail or reorder history.
+  def test_late_dac_burst_ends_survive_pruning
+    write(0x2b, 0x80)
+    write(0x2a, 0x90, sample: 0)
+    256.times { |index| write(0x28, index.even? ? 0xf0 : 0x00, sample: index + 1) }
+    write(0x2a, 0x90, sample: 10_000)
+    RubyPlayer::Vgm::NoteLog::MAX_EVENTS.times do |index|
+      write(0x28, index.even? ? 0xf0 : 0x00, sample: 10_001 + index)
+    end
+    samples = RubyPlayer::Vgm::NoteLog.decode(@chip.snapshot(sample: 20_000).details.fetch(:events)).map(&:sample)
+
+    assert_equal samples.sort, samples
+  end
+
   def test_dac_bursts_are_single_history_notes
     write(0x2b, 0x80)
     [10, 20, 30].each { |sample| write(0x2a, 0x90, sample: sample) }

@@ -103,6 +103,21 @@ class VgmLiveViewTest < Minitest::Test
     assert_equal 0, level_cells(render(cols: 90, rows: 30, now: 44_100 * 3))
   end
 
+  # Algorithm 0's only carrier is OP4; keying OP1 alone makes no sound.
+  def test_level_follows_each_operators_own_key
+    chip = Vgm::Chips::Ym2612.new(clock_hz: 7_670_453)
+    fast_patch(chip)
+    write(chip, 0xb0, 0x00, 0)
+    write(chip, 0x28, 0x10, 0)
+    @view.update(snapshot_for([chip], 100))
+
+    assert_equal 0, level_cells(render(cols: 90, rows: 30))
+    write(chip, 0x28, 0x90, 200)
+    @view.update(snapshot_for([chip], 300))
+
+    assert_operator level_cells(render(cols: 90, rows: 30)), :>, 10
+  end
+
   def test_history_draws_notes_where_they_were_played
     chip = Vgm::Chips::Ym2612.new(clock_hz: 7_670_453)
     fast_patch(chip)
@@ -155,6 +170,14 @@ class VgmLiveViewTest < Minitest::Test
     end
 
     assert_equal [1, 2, 4, 8, 16, 32, 64, 64, 64], bits
+  end
+
+  # libgme's rhythm voice exists while the chip is melodic; a solo must
+  # cover it so drums enabled later stay silent.
+  def test_opll_solo_covers_rhythm_before_rhythm_mode
+    @view.update(snapshot_for([Vgm::Chips::Ym2413.new(clock_hz: 3_579_545)], 0))
+
+    assert_equal 0x7f, @view.all_mute_bits
   end
 
   def test_muted_rows_are_flagged

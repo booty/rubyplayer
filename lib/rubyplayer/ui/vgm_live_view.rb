@@ -143,8 +143,10 @@ module RubyPlayer
       # solos it.
       def all_mute_bits
         bits = @rows.reduce(0) { |all, row| all | mute_bits(row) }
-        # PCM is a libgme voice even while the DAC is off and has no row.
-        bits |= 1 << 6 if @rows.any? { |row| row.chip.id.start_with?('ym2612') }
+        # Voice 6 exists whether or not it has a row: PCM while the YM2612's
+        # DAC is off, OPLL rhythm while the chip is melodic. Leaving it out
+        # would let it play through a solo once the track turns it on.
+        bits |= 1 << 6 if @rows.any? { |row| row.chip.id.start_with?('ym2612', 'ym2413') }
         bits
       end
 
@@ -457,7 +459,7 @@ module RubyPlayer
         channel = row.channel
         held, released = key_timing(channel)
         case channel.kind
-        when :fm then fm_attenuation(row, held, released)
+        when :fm then fm_attenuation(row)
         when :pcm then pcm_attenuation(channel)
         when :tone, :noise then tone_attenuation(row, held, released)
         when :percussion
@@ -469,23 +471,35 @@ module RubyPlayer
       # Seconds since key-on, and since key-off when released; nil before
       # the first key-on.
       def key_timing(channel)
-        on = channel.last_trigger_sample
+        timing(channel.last_trigger_sample, channel.details[:release_sample], ACTIVE_STATES.include?(channel.state))
+      end
+
+      # key_timing for one YM2612 operator (index 1..4), which keys on and
+      # off independently of the others.
+      def operator_timing(channel, index)
+        details = channel.details
+        timing(details[:operator_triggers]&.at(index - 1), details[:operator_releases]&.at(index - 1),
+               details[:key_mask].to_i[index - 1] == 1)
+      end
+
+      def timing(on, off, keyed)
         return [nil, nil] unless on && @now >= on
 
-        off = channel.details[:release_sample]
         seconds = ->(samples) { samples.fdiv(Vgm::SAMPLE_RATE) }
-        return [seconds.call(@now - on), nil] if ACTIVE_STATES.include?(channel.state) || off.nil? || off < on
+        return [seconds.call(@now - on), nil] if keyed || off.nil? || off < on
 
         [seconds.call(off - on), seconds.call([@now - off, 0].max)]
       end
 
-      def fm_attenuation(row, held, released)
-        return Vgm::Envelope::MAX_ATTENUATION unless held
+      def fm_attenuation(row)
+        channel = row.channel
+        Vgm::Envelope.opn_channel(channel.patch, keycode: fm_keycode(channel), clock_hz: row.chip.clock_hz.to_f,
+                                                 timings: Array.new(4) { |index| operator_timing(channel, index + 1) })
+      end
 
-        frequency = row.channel.details[:frequency]
-        keycode = frequency ? Vgm::Envelope.opn_keycode(fnum: frequency[:fnum], block: frequency[:block]) : 0
-        Vgm::Envelope.opn_channel(row.channel.patch, keycode: keycode, clock_hz: row.chip.clock_hz.to_f,
-                                                     held: held, released: released)
+      def fm_keycode(channel)
+        frequency = channel.details[:frequency]
+        frequency ? Vgm::Envelope.opn_keycode(fnum: frequency[:fnum], block: frequency[:block]) : 0
       end
 
       def pcm_attenuation(channel)
@@ -663,18 +677,17 @@ module RubyPlayer
       end
 
       def operator_level(row, operator)
-        held, released = key_timing(row.channel)
+        opll = row.chip.id.start_with?('ym2413')
+        held, released = opll ? key_timing(row.channel) : operator_timing(row.channel, operator.index)
         return 0 unless held
 
-        attenuation = if row.chip.id.start_with?('ym2413')
+        attenuation = if opll
                         details = row.channel.details
                         Vgm::Envelope.opll_custom(operator.parameters, block: details[:block].to_i,
                                                                        clock_hz: row.chip.clock_hz.to_f, volume: 0,
                                                                        held: held, released: released)
                       else
-                        frequency = row.channel.details[:frequency]
-                        keycode = frequency ? Vgm::Envelope.opn_keycode(**frequency.slice(:fnum, :block)) : 0
-                        Vgm::Envelope.opn_operator(operator.parameters, keycode: keycode,
+                        Vgm::Envelope.opn_operator(operator.parameters, keycode: fm_keycode(row.channel),
                                                                         clock_hz: row.chip.clock_hz.to_f,
                                                                         held: held, released: released)
                       end

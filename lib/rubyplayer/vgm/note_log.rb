@@ -69,9 +69,15 @@ module RubyPlayer
 
       private
 
+      # Keeps events in sample order: pruning and the history lanes depend
+      # on it, and a DAC burst's end is logged late, at its last write, after
+      # other channels may have logged later events.
       def append(channel, kind, midi, sample)
-        @buffer << [channel, kind, midi || NO_NOTE, sample].pack(FORMAT)
-        prune(sample)
+        event = [channel, kind, midi || NO_NOTE, sample].pack(FORMAT)
+        index = @buffer.bytesize / EVENT_BYTES
+        index -= 1 while index.positive? && sample_at(index - 1) > sample
+        @buffer.insert(index * EVENT_BYTES, event)
+        prune(sample_at((@buffer.bytesize / EVENT_BYTES) - 1))
       end
 
       # Trims in batches (a second's worth or PRUNE_SLACK events past the
@@ -83,7 +89,25 @@ module RubyPlayer
 
         drop = [count - MAX_EVENTS, 0].max
         drop += 1 while drop < count - 1 && sample - sample_at(drop) > HISTORY_SAMPLES
-        @buffer = @buffer.byteslice((drop * EVENT_BYTES)..)
+        return if drop.zero?
+
+        boundary = (sample - HISTORY_SAMPLES).clamp(sample_at(drop - 1), sample_at(drop))
+        @buffer = held_at_cut(drop, boundary) + @buffer.byteslice((drop * EVENT_BYTES)..)
+      end
+
+      # A note held across the cut would lose its only start event and
+      # vanish from the history, so each still-held channel restarts at the
+      # boundary with the pitch it had there.
+      def held_at_cut(drop, boundary)
+        held = {}
+        self.class.decode(@buffer.byteslice(0, drop * EVENT_BYTES)).each do |event|
+          case event.kind
+          when :on then held[event.channel] = event.midi
+          when :off then held.delete(event.channel)
+          when :note then held[event.channel] = event.midi if held.key?(event.channel)
+          end
+        end
+        held.map { |channel, midi| [channel, 0, midi || NO_NOTE, boundary].pack(FORMAT) }.join.b
       end
 
       def sample_at(index) = @buffer.unpack1('L<', offset: (index * EVENT_BYTES) + 3)

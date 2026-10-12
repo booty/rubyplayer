@@ -49,7 +49,28 @@ class VgmEnvelopeTest < Minitest::Test
       end
     )
 
-    assert_equal 0, Envelope.opn_channel(patch, keycode: 0, clock_hz: CLOCK, held: 1.0)
+    assert_equal 0, Envelope.opn_channel(patch, keycode: 0, clock_hz: CLOCK, timings: Array.new(4, [1.0, nil]))
+  end
+
+  # Algorithm 0's only carrier is OP4; keying OP1 alone is silent.
+  def test_unkeyed_carriers_are_silent
+    loud = operator_parameters(total_level: 0)
+    patch = RubyPlayer::Vgm::Patch.from_bytes(
+      chip: :ym2612, bytes: [0], algorithm: 0, feedback: 0,
+      operators: [1, 2, 3, 4].map { |index| RubyPlayer::Vgm::Operator.new(index: index, parameters: loud) }
+    )
+    timings = [[1.0, nil], [nil, nil], [nil, nil], [nil, nil]]
+
+    assert_equal Envelope::MAX_ATTENUATION, Envelope.opn_channel(patch, keycode: 0, clock_hz: CLOCK, timings: timings)
+  end
+
+  # RR 0 is the slowest release, not no release.
+  def test_zero_release_rate_still_fades
+    parameters = operator_parameters(total_level: 0).merge(rr: 0)
+    fade = ->(released) { level(parameters, held: 1.0, released: released) }
+
+    assert_operator fade.call(10.0), :>, fade.call(0.0)
+    assert_operator fade.call(100.0), :>, fade.call(10.0)
   end
 
   def test_rates_double_every_four_steps
