@@ -371,11 +371,21 @@ module RubyPlayer
         @status_line.set_message('Could not read dropped path')
       end
 
+      # Enter accepts the filter. Arrows and Tab accept it too, then do their
+      # usual job, so moving through the filtered list takes no extra key.
+      FILTER_ACCEPT_KEYS = %w[up down tab].freeze
+      private_constant :FILTER_ACCEPT_KEYS
+
       def handle_filter_mode_key(key)
         case key
         when 'enter'
           @filter_buffer = nil
           @filter_before_edit = nil
+        when *FILTER_ACCEPT_KEYS
+          @filter_buffer = nil
+          @filter_before_edit = nil
+          action = @keymap.action_for(key, pane: @active_pane)
+          dispatch(action) if action
         when 'escape'
           @tracks_pane.filter = @filter_before_edit
           @filter_buffer = nil

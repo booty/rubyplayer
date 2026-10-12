@@ -62,7 +62,7 @@ Select **Focus** in the Library pane, then choose a noise recipe in Tracks and p
 
 - Press `>` to skip to the next track. Press `<` to restart the current track; within its first three seconds, it plays the previous track from this session if available. With no previous track, it restarts the current track.
 - Footer commands occupy three stable rows: playback, queue actions, and controls for the focused pane. Keys and colons are bold; Ctrl combinations use caret notation (`^R` for Ctrl+R). Feature toggles show their current `(on)` or `(off)` state. Narrow terminals show shorter labels and fewer hints. Help stays at the right edge; press `?` for every available command.
-- Press `/` to filter current Tracks view live across title, artist, album, composer, and path. Enter accepts filter; Escape restores previous filter. Each view remembers its filter, cursor, and scroll position.
+- Press `/` to filter current Tracks view live across title, artist, album, composer, and path. Enter accepts filter, as do Up, Down, and Tab, which then move the selection or switch pane as usual; Escape restores previous filter. Each view remembers its filter, cursor, and scroll position.
 - Tracks pane title shows current source or folder breadcrumb plus visible item count. Long breadcrumbs keep leaf name and count visible.
 - Pane-edge scrollbar appears only when rows overflow viewport.
 - Terminals narrower than 72 columns show one full-width pane; Tab switches panes. Wider terminals retain two-pane layout.

@@ -68,6 +68,35 @@ class AppTest < Minitest::Test
     assert_equal 'space', @app.tracks_pane.filter
   end
 
+  # Arrows and Tab accept the filter like Enter, then do their usual job, so
+  # browsing the filtered list needs no extra keypress.
+  def test_arrows_accept_the_filter_and_move_the_selection
+    select_tracks_for(:folder)
+    @app.handle_key('/')
+    first = @app.tracks_pane.selected_track_index
+    @app.handle_key('down')
+
+    assert_nil @app.filter_buffer
+    assert_equal first + 1, @app.tracks_pane.selected_track_index
+    @app.handle_key('/')
+    @app.handle_key('up')
+
+    assert_nil @app.filter_buffer
+    assert_equal first, @app.tracks_pane.selected_track_index
+  end
+
+  def test_tab_accepts_the_filter_and_cycles_the_pane
+    select_tracks_for(:folder)
+    @app.handle_key('/')
+    'space'.each_char { |char| @app.handle_key(char) }
+    pane = @app.active_pane
+    @app.handle_key('tab')
+
+    assert_nil @app.filter_buffer
+    assert_equal 'space', @app.tracks_pane.filter
+    refute_equal pane, @app.active_pane
+  end
+
   def test_filter_escape_restores_previous_filter
     select_tracks_for(:folder)
     @app.tracks_pane.filter = 'space'
