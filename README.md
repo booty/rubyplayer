@@ -83,20 +83,28 @@ Voice capabilities describe hardware, not live activity. Copyright, dumper,
 and comments appear when available. Opening the popup loads fresh details for
 ordinary audio files and chiptunes without a rescan. Unknown fields are omitted.
 
-For VGM/VGZ tracks, Now Playing opens on **Live channels** when the current
-playback source is a VGM stream. Press `Tab` to switch between **Info** and
-**Live**. Live shows register-derived YM2612/YM3438 FM rows, SN76489 PSG rows,
-and YM2413 OPLL rows when libgme renders those chips. Up/Down selects a channel,
-PageUp/PageDown scrolls, and Left/Right changes channel, patch, and chip details.
-The Live page reads VGM commands on one bounded background worker and follows
+For VGM/VGZ tracks, Now Playing opens on a full-screen **VGM** live page when
+the current playback source is a VGM stream. Press `Tab` to switch between
+**Info** and **Live**. Live covers YM2612/YM3438 FM, SN76489 PSG, and YM2413
+OPLL chips when libgme renders them, and uses the whole terminal: one line per
+chip (LFO, channel 3 mode, DAC stream rate, timers; PSG noise mode and stereo;
+OPLL rhythm keys), every channel (operator keys, note and cents, frequency, an
+estimated level bar, pan, instrument, state), a keyboard marking each sounding
+channel, the selected channel's voice (YM2612 algorithm diagram and operator
+table, OPLL instrument, PSG and DAC detail), estimated operator envelope
+shapes, and a few seconds of per-channel note history. Up/Down selects a
+channel; `M` mutes or unmutes its libgme voice and `S` solos it. libgme mixes
+some channels as one voice (the PSG beside an FM chip, OPLL channels 6–9, OPLL
+rhythm), so those mute together. Mute is heard once already-decoded audio
+drains. The Live page reads VGM commands on one bounded background worker and follows
 the sample position already consumed by the audio output, so decoder read-ahead
 does not move the display early. Opening Live deep into a dense track replays
 in bounded slices and shows **Catching up** until it reaches the playhead,
 including while paused. GME also preserves VGM leading silence so the audio and
 register timelines begin together; this also turns off libgme's silence-based
 end-of-track detection for VGM, which instead ends on its end command or
-header length. These rows report register state;
-they do not estimate envelope release tails or prove audibility. Unsupported
+header length. Channel state comes from registers; levels and envelope shapes
+are estimated from envelope rates and key timing, not measured. Unsupported
 chips and partial DAC/stream cases are labeled in the page; for example,
 libgme's YM2612 priority makes mixed YM2612/YM2413 files unavailable for OPLL
 detail, and YM2151/T6W28 live detail is not provided. Switching to Info or
@@ -193,6 +201,7 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | `play_queue.rb` | `PlayQueue`: the in-memory playback queue (`Track` objects, not DB rows). Head of the list is "currently playing" when the engine is playing. Supports insert-now/front/end, positional or by-id removal, and bounded undo/redo. |
 | `playback_engine.rb` | `PlaybackEngine`: owns the decoder thread, the queue, and the `AudioOutput` device for the process's lifetime. UI threads call its public methods (commands in); it publishes events out via `EventBus`. Handles play/pause/skip/seek, disliked-track auto-skip, and per-track playback-history recording once a track has played past a configurable percentage. Its VGM request API captures consumed audio time and transport identity without disk access. |
 | `vgm/reader.rb`, `vgm/cursor.rb`, `vgm/chips.rb`, `vgm/telemetry.rb` | Bounded plain/gzip VGM command reader, state-carrying loop/checkpoint replay, chip capability routing, and a lazy coalescing worker that publishes immutable snapshots. Chip adapters live under `vgm/chips/`. |
+| `vgm/note_log.rb`, `vgm/envelope.rb` | Per-chip packed history of note starts, stops, and pitch changes recorded during replay; closed-form estimates of YM2612/YM2413 envelope levels from register rates and key timing. |
 | `audio_output.rb` | `AudioOutput`: thin FFI wrapper around the native shim (`RpAudio`) — init/start/stop the device, write float32 stereo frames into its ring buffer, query playback position, pause. One instance per process (the C side holds module-level state). |
 | `audio_format.rb` | `AudioFormat`: canonical little-endian float32 interleaved-stereo constants and frame sizes shared by audio producers and consumers. |
 | `focus_sounds.rb` | `FocusSound` and `FocusSounds`: immutable catalog of infinite SoX noise recipes, separate from finite library tracks. |
@@ -201,7 +210,8 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | `runtime_dependencies.rb` | `RuntimeDependencies`: checks native libraries, command-line tools, and the audio shim before App loads, with actionable startup diagnostics. |
 | `event_bus.rb` | `EventBus`: thread-safe event queue with a self-pipe wakeup, so the main loop's `IO.select` can block on stdin *and* background events simultaneously instead of polling. |
 | `level_tap.rb` | `LevelTap`: feeds the bottom-line EQ animation. Runs a Goertzel-algorithm frequency analysis at log-spaced band frequencies over the window of audio the device is playing: `push` (decoder thread) tags audio with its output-timeline frame as it enters the ring; `levels` (UI thread) reads the window ending at `frames_played`. |
-| `playback_engine/spc_state.rb` | `PlaybackEngine::SpcState`: SPC live state for the engine — pushes each chunk's DSP snapshots into a timeline at the chunk's output frame, returns the snapshot being heard (`spc_live`), and queues voice muting for the decoder thread. |
+| `playback_engine/spc_state.rb` | `PlaybackEngine::SpcState`: SPC live state for the engine — pushes each chunk's DSP snapshots into a timeline at the chunk's output frame and returns the snapshot being heard (`spc_live`). |
+| `playback_engine/voice_muting.rb` | `PlaybackEngine::VoiceMuting`: user voice muting for any handle with `#mute` (native SPC, libgme), queued for the decoder thread and tied to the track it targets. |
 | `spc/snapshot.rb`, `spc/timeline.rb` | `Spc::Snapshot` (one decoded S-DSP state record), `Spc::LiveState`, and `Spc::Timeline`, which indexes packed snapshots by output-timeline frame. |
 | `spc/dsp.rb`, `spc/brr.rb`, `spc/fir.rb`, `spc/ram_map.rb` | Pure decoders for the live page: DSP registers, sample directory and BRR samples, echo FIR frequency response, and SPC RAM layout. |
 | `track_formatter.rb` | `TrackFormatter`: runs configured formatter lambdas against a track and helper context, then normalizes strings and conditional fragments into validated styled segments. |
@@ -225,7 +235,8 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 |---|---|
 | `app.rb` | `UI::App`: wires every other component together and owns the main loop — key dispatch, event handling, config hot-reload, and the top-level `render`. This is the natural place to look first to see how a keypress becomes an action and how state changes reach the screen. |
 | `spc_live_view.rb` | `SpcLiveView`: the full-modal SPC live page. Renders a `Spc::LiveState` into a rectangle, choosing three-column, two-column, or stacked panels by size; graphs are memoized per input. |
-| `vgm_channels.rb`, `vgm_telemetry_controller.rb` | Snapshot-only live channel widget and visible-consumer refresh controller. The widget does not read files, query the engine, or depend on the Now Playing modal. |
+| `vgm_live_view.rb`, `vgm_telemetry_controller.rb` | `VgmLiveView`: the full-modal VGM live page, rendering snapshots into a rectangle with three-column, two-column, or stacked panels by size; and the visible-consumer refresh controller. The view does not read files, query the engine, or depend on the Now Playing modal. |
+| `live_glyphs.rb` | Block-character level bars and graphs shared by the live pages. |
 | `screen.rb` | `Screen`: the double-buffered renderer described above (`put`/`clear_back`/`flush`), plus truecolor and named ANSI color support. Has no knowledge of panes, tracks, or layout — purely a drawing primitive. |
 | `library_pane.rb` | `LibraryPane`: left-hand source tree with queue/history/favorites/Focus, five smart views, and folder hierarchy. Owns folder breadcrumbs, selection, scrolling, and overflow indicator. |
 | `list_row_renderer.rb` | Shared stateless track-row construction, styled segment drawing, clipping, theme-color resolution, and section-header text. |
@@ -330,7 +341,7 @@ restart.
 |---|---:|---|
 | `config.ui.library_pane_percent` | `33` | Library width, integer `1..99`. |
 | `config.ui.frame_fps` | `30` | Frame limit; positive integer. |
-| `config.ui.vgm_telemetry_fps` | `15` | Maximum Live-channel refresh rate, integer `1..30`, also capped by `frame_fps`. |
+| `config.ui.vgm_telemetry_fps` | `15` | Maximum VGM live-page snapshot rate (levels still animate at the frame rate), integer `1..30`, also capped by `frame_fps`. |
 | `config.ui.vgm_telemetry_max_bytes` | `67108864` | Maximum decompressed VGM/VGZ bytes held for telemetry; positive integer. Above-limit files continue playing without live detail. |
 | `config.ui.idle_poll_seconds` | `0.25` | Idle loop wake-up interval. |
 | `config.ui.status_message_seconds` | `5` | Status duration; positive integer. |

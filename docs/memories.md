@@ -58,8 +58,18 @@ the authority for workflow and invariants.
   decompression and command-boundary validation cancellable, since a small VGM
   can still contain millions of short commands. YM2612 global key/DAC/special
   mode writes belong to port 0; keep pre-1.10 legacy FM clocks explicitly
-  ambiguous. Wrap and paginate operator fields at narrow sizes, and keep
-  warnings off the patch page so they cannot hide register details.
+  ambiguous.
+- VGM live page: the worker publishes only the latest snapshot (~15 Hz), so
+  anything finer than a refresh (short notes, arpeggios, DAC bursts) must be
+  recorded during replay (`Vgm::NoteLog`, carried in checkpoints) rather than
+  diffed from snapshots in the UI. Envelope levels are a closed-form model of
+  the EG rates, drawn against the sample being heard so bars move between
+  snapshots; label them as estimates. libgme's silence detection hears user
+  mutes and cannot be safely re-armed mid-track (its silence clock stops while
+  ignoring), so the first mute disables it for the track. libgme groups some
+  VGM voices (PSG beside FM, OPLL 6-9, rhythm); mute those as a group.
+  Single-entry render caches must be keyed per panel, not per item: keying a
+  shared slot per operator thrashed and recomputed every frame.
 - VGM register-model fidelity: check chip formulas against a reference
   emulator (Nuked-OPN2/MAME), not self-derived expectations — the YM2612 pitch
   test once pinned an octave error. OPN2 frequency high bytes go through one
