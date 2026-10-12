@@ -457,12 +457,12 @@ module RubyPlayer
 
       def attenuation(row)
         channel = row.channel
-        held, released = key_timing(channel)
         case channel.kind
         when :fm then fm_attenuation(row)
         when :pcm then pcm_attenuation(channel)
-        when :tone, :noise then tone_attenuation(row, held, released)
+        when :tone, :noise then tone_attenuation(row, *key_timing(channel))
         when :percussion
+          held, released = key_timing(channel)
           held ? Vgm::Envelope.opll_rom(volume: 0, released: released) : Vgm::Envelope::MAX_ATTENUATION
         else Vgm::Envelope::MAX_ATTENUATION
         end
@@ -485,10 +485,9 @@ module RubyPlayer
       def timing(on, off, keyed)
         return [nil, nil] unless on && @now >= on
 
-        seconds = ->(samples) { samples.fdiv(Vgm::SAMPLE_RATE) }
-        return [seconds.call(@now - on), nil] if keyed || off.nil? || off < on
+        return [(@now - on).fdiv(Vgm::SAMPLE_RATE), nil] if keyed || off.nil? || off < on
 
-        [seconds.call(off - on), seconds.call([@now - off, 0].max)]
+        [(off - on).fdiv(Vgm::SAMPLE_RATE), [@now - off, 0].max.fdiv(Vgm::SAMPLE_RATE)]
       end
 
       def fm_attenuation(row)
