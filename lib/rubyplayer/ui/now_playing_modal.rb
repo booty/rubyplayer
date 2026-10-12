@@ -13,7 +13,7 @@ module RubyPlayer
       COMPACT_FRAME_ROWS = 4
       private_constant :MAX_WIDTH, :ART_MIN_WIDTH, :FRAME_ROWS, :COMPACT_FRAME_ROWS
 
-      SPC_LIVE_HINT = '[Tab] Info/Live [↑/↓] Voice [o/esc/enter] Close'
+      SPC_LIVE_HINT = '[Tab] Info/Live [↑/↓] Voice [0-7] Mute [S] Solo [o/esc/enter] Close'
       private_constant :SPC_LIVE_HINT
 
       # live_kind is :vgm or :spc when a live page exists for this track.

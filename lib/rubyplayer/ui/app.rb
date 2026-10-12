@@ -259,10 +259,34 @@ module RubyPlayer
         elsif key == 'tab'
           toggle_now_playing_page if live_kind
         elsif @now_playing_page == :live
+          return invalidate_screen! if handle_spc_mute_key(key)
+
           mapped_key = { 'pgup' => 'pageup', 'pgdn' => 'pagedown' }.fetch(key, key)
           invalidate_screen! if @now_playing_modal&.handle_live_key(mapped_key)
         end
       end
+
+      # Digits toggle S-DSP voices 0-7 (as numbered in the table); S solos the
+      # selected voice, or unmutes everything if it is already soloed. Returns
+      # whether the key was consumed.
+      # rubocop:disable Naming/PredicateMethod
+      def handle_spc_mute_key(key)
+        return false unless @now_playing_modal&.live_kind == :spc
+
+        live = @engine.spc_live
+        return false unless live
+
+        mask = live.mute_mask
+        case key.to_s.downcase
+        when /\A[0-7]\z/ then @engine.mute_spc_voices(mask ^ (1 << key.to_i))
+        when 's'
+          solo = 0xff & ~(1 << @spc_live_view.selected_voice)
+          @engine.mute_spc_voices(mask == solo ? 0 : solo)
+        else return false
+        end
+        true
+      end
+      # rubocop:enable Naming/PredicateMethod
 
       def handle_missing_purge_key(key)
         case key

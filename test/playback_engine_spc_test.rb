@@ -49,7 +49,7 @@ class PlaybackEngineSpcTest < Minitest::Test
   # Each read's single snapshot (at the chunk's first frame) carries the read
   # number in regs[0]; RAM is a distinct string per read.
   class SnapshotHandle
-    attr_reader :reads
+    attr_reader :reads, :muted_on
 
     def initialize = @reads = 0
 
@@ -66,6 +66,8 @@ class PlaybackEngineSpcTest < Minitest::Test
 
     def copy_ram = "ram #{@reads}".freeze
     def close; end
+
+    def mute(mask) = @muted_on = [mask, Thread.current]
   end
 
   class PlainHandle
@@ -112,6 +114,31 @@ class PlaybackEngineSpcTest < Minitest::Test
 
     assert_equal 2, @engine.spc_live.snapshot.regs[0]
     assert_match(/\Aram \d+\z/, @engine.spc_live.ram)
+  end
+
+  # Mute is applied by the decoder thread, which owns the native handle, but
+  # the requested mask is visible to the UI at once.
+  def test_mute_mask_reaches_the_handle_on_the_decoder_thread
+    start(SnapshotHandle)
+    handle = @engine.instance_variable_get(:@handle)
+    @engine.mute_spc_voices(0b100)
+
+    assert_equal 0b100, @engine.spc_live.mute_mask
+    wait_until { handle.muted_on }
+
+    assert_equal 0b100, handle.muted_on.first
+    refute_equal Thread.current, handle.muted_on.last
+  end
+
+  def test_a_new_track_starts_unmuted
+    start(SnapshotHandle)
+    first = @engine.instance_variable_get(:@handle)
+    @engine.mute_spc_voices(0xff)
+    wait_until { first.muted_on }
+    @engine.enqueue_now([track])
+    wait_until { !@engine.instance_variable_get(:@handle).equal?(first) && @engine.spc_live }
+
+    assert_equal 0, @engine.spc_live.mute_mask
   end
 
   def test_no_live_state_for_handles_without_snapshots

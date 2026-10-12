@@ -52,7 +52,7 @@ module RubyPlayer
         RAM_BYTES = 0x10000
         private_constant :RAM_BYTES
 
-        attr_reader :duration_ms
+        attr_reader :duration_ms, :mute_mask
 
         def initialize(bytes, sample_rate:, duration_ms:, play_length_ms:)
           data = FFI::MemoryPointer.new(:uchar, bytes.bytesize)
@@ -62,6 +62,7 @@ module RubyPlayer
           raise Error, 'not a playable SPC file' if @spc.null?
 
           @duration_ms = duration_ms
+          @mute_mask = 0
           # Mirrors Gme::Handle: fade at libgme's play_length (a real length or
           # its 2:30 default) so looping SPCs end the same way on both backends.
           SnesSpcLib.rp_spc_set_fade(@spc, play_length_ms, FADE_MS) if play_length_ms.positive?
@@ -86,6 +87,12 @@ module RubyPlayer
           SnesSpcLib.rp_spc_seek(@spc, milliseconds) == 1
         end
         # rubocop:enable Naming/PredicateMethod
+
+        # Bit v silences S-DSP voice v from the next emulated block on.
+        def mute(mask)
+          @mute_mask = mask
+          SnesSpcLib.rp_spc_mute_voices(@spc, mask) if @spc
+        end
 
         def position_ms
           return 0 if @spc.nil?

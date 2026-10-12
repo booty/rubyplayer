@@ -86,7 +86,7 @@ class SpcLiveViewTest < Minitest::Test
   def state_for(name)
     snapshot = RubyPlayer::Spc::Snapshot.new(frame: 0, regs: SpcFixture.regs(name), env: Array.new(8, 0x400),
                                              env_mode: Array.new(8, 3), brr_addr: Array.new(8, 0), attack_edges: 0)
-    RubyPlayer::Spc::LiveState.new(snapshot: snapshot, ram: SpcFixture.ram(name), paused: false)
+    RubyPlayer::Spc::LiveState.new(snapshot: snapshot, ram: SpcFixture.ram(name), paused: false, mute_mask: 0)
   end
 
   def render(name, cols:, rows:)

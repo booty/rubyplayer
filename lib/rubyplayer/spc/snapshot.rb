@@ -19,8 +19,8 @@ module RubyPlayer
     end
 
     # What the Now Playing live page renders: the snapshot being heard (nil
-    # until the first one plays) and the latest SPC RAM copy.
-    LiveState = Data.define(:snapshot, :ram, :paused)
+    # until the first one plays), the latest SPC RAM copy, and muted voices.
+    LiveState = Data.define(:snapshot, :ram, :paused, :mute_mask)
 
     class Snapshot
       SIZE = 176

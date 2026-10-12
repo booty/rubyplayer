@@ -81,6 +81,16 @@ class SnesSpcBackendTest < Minitest::Test
     assert_equal 0, @handle.position_ms
   end
 
+  def test_mute_silences_voices_and_reports_the_mask
+    @handle = @backend.open(SPC, 0, sample_rate: RATE)
+    @handle.mute(0xff)
+    2.times { @handle.read(16_384) }
+    data = @handle.read(16_384)
+
+    assert_equal 0xff, @handle.mute_mask
+    assert_operator data.unpack('e*').map(&:abs).max, :<, 0.05
+  end
+
   def test_opening_a_non_spc_file_raises
     path = File.join(FIXTURES, 'mega-man-2.nsf')
 

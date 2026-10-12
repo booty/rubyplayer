@@ -53,6 +53,24 @@ class AppSpcLiveTest < Minitest::Test
     assert_includes rendered_text, 'voice 1'
   end
 
+  def test_digit_keys_toggle_voice_mute_and_s_solos_the_selected_voice
+    @app.handle_key('o')
+    @app.handle_key('2')
+
+    assert_equal 0b100, @app.engine.spc_live.mute_mask
+    assert_match(/^.{2,6}2  .*M/, rendered_text)
+    @app.handle_key('2')
+
+    assert_equal 0, @app.engine.spc_live.mute_mask
+    @app.handle_key('down')
+    @app.handle_key('s')
+
+    assert_equal 0xff & ~0b10, @app.engine.spc_live.mute_mask
+    @app.handle_key('s')
+
+    assert_equal 0, @app.engine.spc_live.mute_mask
+  end
+
   def test_spc_live_page_does_not_start_vgm_telemetry
     @app.handle_key('o')
     @app.send(:tick_vgm_telemetry)

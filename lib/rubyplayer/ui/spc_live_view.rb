@@ -83,6 +83,7 @@ module RubyPlayer
         @width = width
         @height = height
         @theme = theme
+        @mute_mask = state&.mute_mask || 0
         put(0, header(track_title, state, position_ms), fg: theme[:accent], bold: true)
         snapshot = state&.snapshot
         return put(1, 'Waiting for SPC state', fg: theme[:text_muted]) unless snapshot
@@ -132,37 +133,38 @@ module RubyPlayer
 
       def table_heading
         unless wide_table?
-          return format('%-2s %-4s %-7s %-6s %-*s %-3s %-5s %s', '#', 'Smp', 'Rate', 'Env', bar_width, 'ENVX', 'Out', 'ENP',
+          return format('%-2s %-4s %-7s %-6s %-*s %-3s %-5s %s', '#', 'Smp', 'Rate', 'Env', bar_width, 'ENVX', 'Out', 'ENPM',
                         'State')
         end
 
         format('%-2s %-4s %-6s %-8s %-7s %-17s %-*s %-3s %-5s %s', '#', 'Smp', 'Pitch', 'Rate', 'Pan', 'Envelope',
-               bar_width, 'ENVX', 'Out', 'ENP', 'State')
+               bar_width, 'ENVX', 'Out', 'ENPM', 'State')
       end
 
       def render_voice_rows(first_row, snapshot, voices, rows)
         voices.first([rows, 0].max).each_with_index do |voice, index|
           selected = index == @selected_voice
-          put(first_row + index, voice_line(index, voice, snapshot),
-              fg: selected ? @theme[:selection_text] : voice_color(snapshot, index),
+          muted = muted?(index)
+          put(first_row + index, voice_line(index, voice, snapshot, muted),
+              fg: selected ? @theme[:selection_text] : voice_color(snapshot, index, muted),
               bg: selected ? @theme[:selection_bg] : nil,
-              bold: selected || recent_edge?(index, snapshot.frame))
+              bold: selected || recent_edge?(index, snapshot.frame), dim: muted)
         end
       end
 
-      def voice_line(index, voice, snapshot)
+      def voice_line(index, voice, snapshot, muted)
         env = snapshot.env[index]
         state = voice_state(snapshot, index)
         bar = level_bar(env, ENV_MAX, bar_width)
         out = level_glyph(voice[:outx].abs, 128)
         unless wide_table?
           return format('%-2d %-4d %-7s %-6s %s %-3s %-5s %s', index, voice[:srcn], format_khz(voice[:rate_hz]),
-                        envelope_short(voice), bar, out, flag_text(voice), state)
+                        envelope_short(voice), bar, out, flag_text(voice, muted), state)
         end
 
         format('%-2d %-4d %-6s %-8s %-7s %-17s %s %-3s %-5s %s', index, voice[:srcn], format('$%04X', voice[:pitch]),
                format_khz(voice[:rate_hz]), pan_text(voice), envelope_text(voice), bar, out,
-               flag_text(voice), state)
+               flag_text(voice, muted), state)
       end
 
       def voice_state(snapshot, index)
@@ -172,9 +174,11 @@ module RubyPlayer
         mode.to_s
       end
 
-      def voice_color(snapshot, index)
-        snapshot.env[index].zero? ? @theme[:text_muted] : @theme[:text]
+      def voice_color(snapshot, index, muted)
+        muted || snapshot.env[index].zero? ? @theme[:text_muted] : @theme[:text]
       end
+
+      def muted?(index) = @mute_mask[index] == 1
 
       def remember_edges(snapshot)
         VOICES.times do |index|
@@ -424,8 +428,8 @@ module RubyPlayer
         "L#{dots.join}R"
       end
 
-      def flag_text(voice)
-        [voice[:echo] ? 'E' : '·', voice[:noise] ? 'N' : '·', voice[:pmod] ? 'P' : '·'].join
+      def flag_text(voice, muted)
+        [voice[:echo] ? 'E' : '·', voice[:noise] ? 'N' : '·', voice[:pmod] ? 'P' : '·', muted ? 'M' : ''].join
       end
 
       def mask_dots(mask) = Array.new(VOICES) { |index| mask[index] == 1 ? '●' : '·' }.join

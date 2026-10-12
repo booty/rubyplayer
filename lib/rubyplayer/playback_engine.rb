@@ -6,6 +6,7 @@ require_relative 'level_tap'
 require_relative 'vgm/reader'
 require_relative 'vgm/snapshot'
 require_relative 'spc/timeline'
+require_relative 'playback_engine/spc_state'
 
 module RubyPlayer
   # Owns the decoder thread, the authoritative PlayQueue, and the AudioOutput.
@@ -13,6 +14,8 @@ module RubyPlayer
   # event_bus.publish. The audio device is started once and runs for the life
   # of the engine; pause/underrun emit silence.
   class PlaybackEngine
+    include SpcState
+
     THREAD_JOIN_TIMEOUT_SECONDS = 5
     ACTIVE_COMMAND_POLL_TIMEOUT_SECONDS = 0
     BUFFER_FULL_POLL_INTERVAL_SECONDS = 0.005
@@ -71,6 +74,7 @@ module RubyPlayer
       @vgm_revision = 0
       @vgm_source = nil
       @spc_live = false
+      @spc_mute_mask = 0
       @published_second = nil
       # Decoder-owned navigation history includes short plays that do not
       # qualify for the library's persistent listening history.
@@ -221,15 +225,6 @@ module RubyPlayer
       end
     end
 
-    # S-DSP state at the frame the device is playing, for SPC handles that
-    # record snapshots; nil otherwise.
-    def spc_live
-      live, paused = @mutex.synchronize { [@playing && @spc_live && !@focus_sound, @paused] }
-      return unless live
-
-      Spc::LiveState.new(snapshot: @spc_timeline.at(@audio.frames_played), ram: @spc_ram, paused: paused)
-    end
-
     private
 
     def position_ms
@@ -290,6 +285,7 @@ module RubyPlayer
     def handle_request(cmd)
       case cmd[0]
       when :seek then handle_seek(cmd[1])
+      when :spc_mute then @handle.mute(cmd[1]) if @handle.respond_to?(:mute)
       when :forget_previous
         @previous_tracks.reject! { |track| cmd[1].include?(track.id) }
         @last_started_track = nil if cmd[1].include?(@last_started_track&.id)
@@ -388,11 +384,7 @@ module RubyPlayer
       written = chunk.empty? ? 0 : @audio.write(chunk)
       consumed = written * AudioFormat::BYTES_PER_FRAME
       @level_tap.push(chunk.byteslice(0, consumed), start_frame: start_frame) if @pending_levels && written.positive?
-      if @pending_snapshots && written.positive?
-        packed, count = @pending_snapshots
-        @spc_timeline.push(packed, count, origin_frame: start_frame)
-        @pending_snapshots = nil
-      end
+      push_pending_snapshots(start_frame) if written.positive?
       @pending = consumed < @pending.bytesize ? @pending.byteslice(consumed..) : nil
       return ACTIVE_COMMAND_POLL_TIMEOUT_SECONDS unless @pending
 
@@ -403,8 +395,6 @@ module RubyPlayer
       refill_wait(refill_frames(writable) - writable)
     end
 
-    # Snapshots wait with their chunk until its first write, the moment its
-    # output-timeline origin is known. RAM is copied once per chunk (64 KB).
     # EQ levels and S-DSP snapshots follow played audio, so both keep
     # everything that can still be waiting in the ring plus the chunk being
     # written into it.
@@ -416,13 +406,6 @@ module RubyPlayer
       @spc_timeline = Spc::Timeline.new(retain_frames: retain_frames)
       @spc_ram = nil
       @pending_snapshots = nil
-    end
-
-    def capture_spc_state
-      return unless @handle.respond_to?(:take_snapshots)
-
-      @pending_snapshots = @handle.take_snapshots
-      @spc_ram = @handle.copy_ram
     end
 
     def refill_frames(writable)
@@ -500,7 +483,7 @@ module RubyPlayer
         @vgm_generation += 1
         @vgm_revision = 0
         @vgm_source = vgm ? build_vgm_source(track, path) : nil
-        @spc_live = @handle.respond_to?(:take_snapshots)
+        start_spc_tracking
         @started_at = Time.now.utc
       end
       reset_played_audio_followers
@@ -661,12 +644,6 @@ module RubyPlayer
         @spc_live = false
       end
       reset_spc_state
-    end
-
-    def reset_spc_state
-      @pending_snapshots = nil
-      @spc_timeline.reset
-      @spc_ram = nil
     end
 
     def reset_played_audio_followers
