@@ -7,45 +7,54 @@ module RubyPlayer
     # S-DSP snapshots indexed by output-timeline frame, so the UI shows the
     # state being heard rather than the decoder's (up to ~0.85 s ahead).
     #
-    # Same design as LevelTap: the decoder thread pushes each chunk's packed
-    # records at the frame where the chunk starts playing; the UI asks for the
+    # Like LevelTap: the decoder thread pushes each chunk's packed records at
+    # the output frame where the chunk starts playing; the UI asks for the
     # frame the device has played. Records stay packed until displayed.
+    #
+    # Pushes only append. Records may be tagged beyond their own chunk
+    # (libgme emulates ahead), and that state stays valid while playback is
+    # continuous, so discontinuities (seek, track change) call #reset instead.
     class Timeline
-      FRAME_FORMAT = 'L<'
-      private_constant :FRAME_FORMAT
+      # One pushed chunk. Record frames are offsets from origin_frame.
+      Segment = Struct.new(:origin_frame, :packed_records, :record_count)
+      # Each chunk is ~340 ms at default settings, so this keeps ~85 s of
+      # snapshots when nobody calls #at (live page closed).
+      DEFAULT_MAX_SEGMENTS = 256
+      FRAME_OFFSET_FORMAT = 'L<'
+      private_constant :DEFAULT_MAX_SEGMENTS, :FRAME_OFFSET_FORMAT
 
-      def initialize(retain_frames:)
-        @retain_frames = retain_frames
-        # Sorted [origin_frame, packed, count]; record frames are relative to
-        # origin and ascend across segments.
+      def initialize(max_segments: DEFAULT_MAX_SEGMENTS)
+        @max_segments = max_segments
         @segments = []
         @mutex = Mutex.new
       end
 
-      def push(packed, count, origin_frame:)
-        return if count.zero?
+      def push(packed_records, record_count, origin_frame:)
+        return if record_count.zero?
 
         @mutex.synchronize do
-          # A flush discards buffered audio and later writes reuse its
-          # timeline positions, so newer state replaces anything from there on.
-          truncate_from(origin_frame)
-          @segments << [origin_frame, packed, count]
-          drop_before(absolute_frame(@segments.last, count - 1) - @retain_frames)
+          @segments << Segment.new(origin_frame, packed_records, record_count)
+          @segments.shift while @segments.size > @max_segments
         end
       end
 
-      # Latest snapshot heard at or before `frame`, with an absolute frame.
-      def at(frame)
+      # Latest snapshot heard at or before `output_frame`, carrying its
+      # absolute output frame. Discards segments before the one it returns:
+      # between resets the device only moves forward. Pruning here, not by
+      # distance from the newest push, matters because silence lookahead can
+      # push records seconds ahead of what is being heard.
+      def at(output_frame)
         @mutex.synchronize do
-          @segments.reverse_each do |segment|
-            origin, packed, count = segment
-            next if origin > frame
+          @segments.each_index.reverse_each do |segment_index|
+            segment = @segments[segment_index]
+            next if segment.origin_frame > output_frame
 
-            index = last_index_at_or_before(segment, count, frame)
-            next unless index
+            record_index = last_record_at_or_before(segment, output_frame)
+            next unless record_index
 
-            snapshot = Snapshot.unpack(packed, index)
-            return snapshot.with(frame: origin + snapshot.frame)
+            @segments.shift(segment_index)
+            snapshot = Snapshot.unpack(segment.packed_records, record_index)
+            return snapshot.with(frame: segment.origin_frame + snapshot.frame)
           end
           nil
         end
@@ -57,31 +66,15 @@ module RubyPlayer
 
       private
 
-      def absolute_frame(segment, index)
-        segment[0] + segment[1].unpack1(FRAME_FORMAT, offset: index * Snapshot::SIZE)
+      def output_frame_of(segment, record_index)
+        segment.origin_frame +
+          segment.packed_records.unpack1(FRAME_OFFSET_FORMAT, offset: record_index * Snapshot::SIZE)
       end
 
-      def last_index_at_or_before(segment, count, frame)
-        after = (0...count).bsearch { |index| absolute_frame(segment, index) > frame } || count
+      def last_record_at_or_before(segment, output_frame)
+        after = (0...segment.record_count).bsearch { |index| output_frame_of(segment, index) > output_frame }
+        after ||= segment.record_count
         after.zero? ? nil : after - 1
-      end
-
-      def truncate_from(frame)
-        while (segment = @segments.last)
-          keep = (0...segment[2]).bsearch { |index| absolute_frame(segment, index) >= frame } || segment[2]
-          return if keep == segment[2]
-
-          if keep.zero?
-            @segments.pop
-          else
-            @segments[-1] = [segment[0], segment[1].byteslice(0, keep * Snapshot::SIZE), keep]
-            return
-          end
-        end
-      end
-
-      def drop_before(frame)
-        @segments.shift while @segments.size > 1 && absolute_frame(@segments.first, @segments.first[2] - 1) < frame
       end
     end
   end

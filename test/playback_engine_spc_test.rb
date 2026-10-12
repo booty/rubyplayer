@@ -65,6 +65,16 @@ class PlaybackEngineSpcTest < Minitest::Test
     end
 
     def copy_ram = "ram #{@reads}".freeze
+    # Fake of the backend seek contract, which reports success.
+    def seek(_milliseconds) = true # rubocop:disable Naming/PredicateMethod
+
+    # The state right after a seek, before any audio is decoded.
+    def capture_now
+      regs = Array.new(128, 0)
+      regs[0] = 99
+      [[0, *regs, *Array.new(24, 0), 0].pack(RubyPlayer::Spc::Snapshot::FORMAT), 1]
+    end
+
     def close; end
 
     def mute(mask) = @muted_on = [mask, Thread.current]
@@ -139,6 +149,19 @@ class PlaybackEngineSpcTest < Minitest::Test
     wait_until { !@engine.instance_variable_get(:@handle).equal?(first) && @engine.spc_live }
 
     assert_equal 0, @engine.spc_live.mute_mask
+  end
+
+  # Regression: seek kept the pre-seek timeline and RAM, and a paused engine
+  # decodes nothing, so the page showed the old position's voices forever.
+  def test_seeking_while_paused_shows_the_post_seek_state
+    start(SnapshotHandle)
+    @engine.toggle_play
+    wait_until { @engine.state[:paused] }
+    @engine.seek(30_000)
+
+    wait_until { @engine.spc_live.snapshot&.regs&.first == 99 }
+
+    assert_equal "ram #{@engine.instance_variable_get(:@handle).reads}", @engine.spc_live.ram
   end
 
   def test_no_live_state_for_handles_without_snapshots

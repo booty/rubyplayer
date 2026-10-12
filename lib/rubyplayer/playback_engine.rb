@@ -395,15 +395,15 @@ module RubyPlayer
       refill_wait(refill_frames(writable) - writable)
     end
 
-    # EQ levels and S-DSP snapshots follow played audio, so both keep
-    # everything that can still be waiting in the ring plus the chunk being
-    # written into it.
+    # EQ levels and S-DSP snapshots follow played audio. The level tap keeps
+    # what can still wait in the ring plus the chunk being written; the SPC
+    # timeline prunes by played position instead, because silence lookahead
+    # can tag snapshots seconds ahead.
     def build_played_audio_followers(config)
       ring_frames = config['audio', 'ring_buffer_ms'] * @audio.sample_rate / MILLISECONDS_PER_SECOND
-      retain_frames = ring_frames + (2 * @chunk_frames)
       @level_tap = LevelTap.new(bands: config['eq', 'bands'], sample_rate: @audio.sample_rate,
-                                retain_frames: retain_frames)
-      @spc_timeline = Spc::Timeline.new(retain_frames: retain_frames)
+                                retain_frames: ring_frames + (2 * @chunk_frames))
+      @spc_timeline = Spc::Timeline.new
       @spc_ram = nil
       @pending_snapshots = nil
     end
@@ -605,13 +605,14 @@ module RubyPlayer
       @audio.paused = true
       @audio.flush
       @pending = nil
-      @pending_snapshots = nil
+      reset_spc_state
       if @handle.seek(ms)
         @mutex.synchronize do
           @seek_offset_ms = ms
           @frames_base = @audio.frames_played
           @vgm_revision += 1 if @vgm_source
         end
+        capture_spc_state_after_seek
         @published_second = nil
       end
       @audio.paused = @paused

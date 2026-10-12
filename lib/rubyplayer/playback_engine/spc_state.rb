@@ -37,6 +37,16 @@ module RubyPlayer
         @spc_ram = @handle.copy_ram
       end
 
+      # A paused engine decodes nothing, so record the post-seek state now; it
+      # plays from the next output frame (the ring was just flushed).
+      def capture_spc_state_after_seek
+        return unless @handle.respond_to?(:capture_now)
+
+        packed, count = @handle.capture_now
+        @spc_timeline.push(packed, count, origin_frame: @audio.frames_played + @audio.buffered_frames)
+        @spc_ram = @handle.copy_ram
+      end
+
       # Runs on a chunk's first write, when its output-timeline origin is known.
       def push_pending_snapshots(start_frame)
         return unless @pending_snapshots
@@ -53,6 +63,8 @@ module RubyPlayer
         @spc_mute_mask = 0
       end
 
+      # Discontinuities (seek, track change, stop) drop everything: the
+      # timeline only appends, and flushed positions get reused.
       def reset_spc_state
         @pending_snapshots = nil
         @spc_timeline.reset

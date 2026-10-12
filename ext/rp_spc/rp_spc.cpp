@@ -62,8 +62,10 @@ struct rp_spc {
 	long user_fade_length_ms;
 
 	std::vector<rp_spc_snapshot> snapshots;
-	long call_origin;               // out_time at the start of the current rp_spc_play
-	long capture_base;              // output sample position the next native block feeds
+	// Snapshot timing. "output samples" are interleaved samples at the output
+	// rate, the unit of out_time/emu_time; snapshot frames are output frames.
+	long call_origin_output_samples;  // out_time when the current rp_spc_play began
+	long capture_base_output_samples; // output position the next native block feeds
 	int previous_env_mode[8];
 	int previous_srcn[8];
 
@@ -113,14 +115,14 @@ void end_track_if_error(rp_spc* s, blargg_err_t err)
 		s->emu_track_ended = true;
 }
 
-void capture_snapshot(rp_spc* s, long ahead);
+void capture_snapshot(rp_spc* s, long ahead_native_samples);
 
 // Spc_Emu::play_and_filter, plus one snapshot per emulator call. Snapshots
 // cannot be denser without changing the audio: Snes_Spc lets the DSP run
 // ahead of the CPU at call boundaries, so splitting a call shifts what driver
 // code reads back from the DSP (it changed last-battle.spc by up to 5175 LSB).
 // With resampling, libgme emulates ~50 ms per call. `buffered` is native
-// input already waiting in the resampler ahead of capture_base.
+// input already waiting in the resampler ahead of capture_base_output_samples.
 blargg_err_t play_and_filter(rp_spc* s, long count, sample_t* out, long buffered)
 {
 	blargg_err_t err = s->apu.play((int) count, out);
@@ -132,10 +134,10 @@ blargg_err_t play_and_filter(rp_spc* s, long count, sample_t* out, long buffered
 }
 
 // Spc_Emu::play_. `position` is the output sample position of out[0].
-blargg_err_t play_raw(rp_spc* s, long count, sample_t* out, long position)
+blargg_err_t play_raw(rp_spc* s, long count, sample_t* out, long output_sample_position)
 {
 	if (!s->resample) {
-		s->capture_base = position;
+		s->capture_base_output_samples = output_sample_position;
 		return play_and_filter(s, count, out, 0);
 	}
 
@@ -144,7 +146,7 @@ blargg_err_t play_raw(rp_spc* s, long count, sample_t* out, long position)
 		remain -= s->resampler.read(&out[count - remain], (int) remain);
 		if (remain > 0) {
 			long n = s->resampler.max_write();
-			s->capture_base = position + (count - remain);
+			s->capture_base_output_samples = output_sample_position + (count - remain);
 			blargg_err_t err = play_and_filter(s, n, s->resampler.buffer(), s->resampler.written());
 			if (err)
 				return err;
@@ -174,11 +176,13 @@ blargg_err_t skip_raw(rp_spc* s, long count)
 
 // Records DSP state tagged with the output frame (relative to the current
 // rp_spc_play call) at which it will be heard. `ahead` is how many native
-// samples the emulator has produced beyond capture_base's output position.
-void capture_snapshot(rp_spc* s, long ahead)
+// samples the emulator has produced beyond capture_base_output_samples.
+void capture_snapshot(rp_spc* s, long ahead_native_samples)
 {
-	double ahead_out = s->resample ? ahead / s->resampler.ratio() : (double) ahead;
-	long frame = (long) ((s->capture_base + ahead_out - s->call_origin) / out_channels);
+	double ahead_output_samples = s->resample ? ahead_native_samples / s->resampler.ratio()
+	                                          : (double) ahead_native_samples;
+	long frame = (long) ((s->capture_base_output_samples + ahead_output_samples -
+	                      s->call_origin_output_samples) / out_channels);
 
 	rp_spc_snapshot snap;
 	memset(&snap, 0, sizeof snap);
@@ -209,10 +213,10 @@ void capture_snapshot(rp_spc* s, long ahead)
 // Music_Emu::emu_play
 void emu_play(rp_spc* s, long count, sample_t* out)
 {
-	long position = s->emu_time;
+	long output_sample_position = s->emu_time;
 	s->emu_time += count;
 	if (!s->emu_track_ended)
-		end_track_if_error(s, play_raw(s, count, out, position));
+		end_track_if_error(s, play_raw(s, count, out, output_sample_position));
 	else
 		memset(out, 0, count * sizeof *out);
 }
@@ -403,8 +407,8 @@ rp_spc* rp_spc_open(const void* data, long size, int out_rate)
 	s->mute_mask = 0;
 	s->user_fade_start_ms = -1;
 	s->user_fade_length_ms = -1;
-	s->call_origin = 0;
-	s->capture_base = 0;
+	s->call_origin_output_samples = 0;
+	s->capture_base_output_samples = 0;
 	for (int v = 0; v < voice_count; v++) {
 		s->previous_env_mode[v] = Spc_Dsp::env_release;
 		s->previous_srcn[v] = -1;
@@ -464,7 +468,7 @@ long rp_spc_play(rp_spc* s, float* out, long frames)
 	if ((long) s->scratch.size() < count)
 		s->scratch.resize(count);
 	s->snapshots.clear();
-	s->call_origin = s->out_time;
+	s->call_origin_output_samples = s->out_time;
 	play(s, count, s->scratch.data());
 	for (long i = 0; i < count; i++)
 		out[i] = s->scratch[i] / 32768.0f;
@@ -515,6 +519,19 @@ void rp_spc_mute_voices(rp_spc* s, int mask)
 		return;
 	s->mute_mask = mask;
 	s->apu.mute_voices(mask);
+}
+
+// Snapshot of the state the next rp_spc_play starts from, without emulating
+// anything (so the audio is untouched): lets a paused seek show its new
+// position. Replaces the previous call's snapshots; its frame is 0.
+void rp_spc_capture_now(rp_spc* s)
+{
+	if (!s)
+		return;
+	s->snapshots.clear();
+	s->call_origin_output_samples = s->out_time;
+	s->capture_base_output_samples = s->out_time;
+	capture_snapshot(s, 0);
 }
 
 int rp_spc_snapshot_size(void)

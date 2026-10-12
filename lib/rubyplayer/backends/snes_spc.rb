@@ -117,6 +117,15 @@ module RubyPlayer
           [SnesSpcLib.rp_spc_snapshots(@spc).read_bytes(count * SnesSpcLib.rp_spc_snapshot_size), count]
         end
 
+        # Current state as one snapshot at frame 0, without emulating: for
+        # showing a seek's new position before any audio is decoded.
+        def capture_now
+          return ['', 0] if @spc.nil?
+
+          SnesSpcLib.rp_spc_capture_now(@spc)
+          take_snapshots
+        end
+
         # The SPC700's 64 KB RAM (samples, directory, echo buffer) right now.
         def copy_ram
           return nil if @spc.nil?

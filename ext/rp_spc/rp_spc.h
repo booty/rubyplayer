@@ -61,6 +61,9 @@ void rp_spc_pause_silence_detection(rp_spc*, int paused);
  * per emulator call, about every 50 ms when resampling (at a 32 kHz output
  * rate, one per libgme-sized play block). Denser capture would change the
  * audio; see play_and_filter. Valid until the next rp_spc_play. */
+/* Replaces the snapshots with one of the current state at frame 0 (the next
+ * play's first frame) without emulating. Use after a seek. */
+void rp_spc_capture_now(rp_spc*);
 int  rp_spc_snapshot_size(void);
 int  rp_spc_snapshot_count(rp_spc*);
 const rp_spc_snapshot* rp_spc_snapshots(rp_spc*);
