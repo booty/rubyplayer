@@ -131,9 +131,10 @@ class PlaybackEngineSpcTest < Minitest::Test
   def test_mute_mask_reaches_the_handle_on_the_decoder_thread
     start(SnapshotHandle)
     handle = @engine.instance_variable_get(:@handle)
-    @engine.mute_spc_voices(0b100)
+    @engine.mute_voices(0b100)
 
     assert_equal 0b100, @engine.spc_live.mute_mask
+    assert_equal 0b100, @engine.voice_mute_mask
     wait_until { handle.muted_on }
 
     assert_equal 0b100, handle.muted_on.first
@@ -143,7 +144,7 @@ class PlaybackEngineSpcTest < Minitest::Test
   def test_a_new_track_starts_unmuted
     start(SnapshotHandle)
     first = @engine.instance_variable_get(:@handle)
-    @engine.mute_spc_voices(0xff)
+    @engine.mute_voices(0xff)
     wait_until { first.muted_on }
     @engine.enqueue_now([track])
     wait_until { !@engine.instance_variable_get(:@handle).equal?(first) && @engine.spc_live }
@@ -173,10 +174,10 @@ class PlaybackEngineSpcTest < Minitest::Test
     new_handle = SnapshotHandle.new
     engine.instance_variable_set(:@handle, old_handle)
     engine.instance_variable_set(:@playing, true)
-    engine.send(:start_spc_tracking)
-    engine.mute_spc_voices(0xff)
+    start_tracking(engine)
+    engine.mute_voices(0xff)
     engine.instance_variable_set(:@handle, new_handle)
-    engine.send(:start_spc_tracking)
+    start_tracking(engine)
     engine.send(:handle_request, engine.instance_variable_get(:@commands).pop)
 
     assert_nil new_handle.muted_on
@@ -187,7 +188,7 @@ class PlaybackEngineSpcTest < Minitest::Test
   def test_mute_requests_without_live_spc_playback_are_refused
     engine = build_engine(SnapshotHandle)
 
-    refute engine.mute_spc_voices(0xff)
+    refute engine.mute_voices(0xff)
     assert_empty engine.instance_variable_get(:@commands)
   end
 
@@ -230,5 +231,10 @@ class PlaybackEngineSpcTest < Minitest::Test
     RubyPlayer::Track.new(id: 1, folder_id: 1, physical_path: '/tmp/song.spc', archive_entry: '',
                           subtune_index: 0, backend: 'snes_spc', format: 'spc', title: 'Song',
                           duration_ms: nil)
+  end
+
+  def start_tracking(engine)
+    engine.send(:start_spc_tracking)
+    engine.send(:start_voice_muting)
   end
 end

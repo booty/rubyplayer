@@ -5,35 +5,19 @@ require_relative '../spc/timeline'
 module RubyPlayer
   class PlaybackEngine
     # Live S-DSP state for SPC handles that record snapshots: which snapshot
-    # is being heard, the latest SPC RAM, and voice muting. Split out of
+    # is being heard and the latest SPC RAM. Split out of
     # PlaybackEngine as one concern; it relies on the engine's @mutex,
     # @audio, @handle, @commands, and playback flags.
     module SpcState
       # S-DSP state at the frame the device is playing, for SPC handles that
       # record snapshots; nil otherwise.
       def spc_live
-        live, paused, mute_mask = @mutex.synchronize { [@playing && @spc_live && !@focus_sound, @paused, @spc_mute_mask] }
+        live, paused, mute_mask = @mutex.synchronize { [@playing && @spc_live && !@focus_sound, @paused, @voice_mute_mask] }
         return unless live
 
         Spc::LiveState.new(snapshot: @spc_timeline.at(@audio.frames_played), ram: @spc_ram, paused: paused,
                            mute_mask: mute_mask)
       end
-
-      # Records the request at once so the UI reflects it, but only the decoder
-      # thread touches the native handle. Audible after decoded audio drains.
-      # The command carries the track's generation: a track change queued
-      # ahead of it must not inherit the mute. Returns whether it was queued.
-      # rubocop:disable Naming/PredicateMethod
-      def mute_spc_voices(mask)
-        @mutex.synchronize do
-          return false unless @playing && @spc_live
-
-          @spc_mute_mask = mask
-          @commands << [:spc_mute, mask, @spc_generation]
-        end
-        true
-      end
-      # rubocop:enable Naming/PredicateMethod
 
       private
 
@@ -65,18 +49,9 @@ module RubyPlayer
         @pending_snapshots = nil
       end
 
-      # Caller holds @mutex: a new track starts unmuted, live only if its
-      # handle records snapshots.
+      # Caller holds @mutex: live only if the handle records snapshots.
       def start_spc_tracking
         @spc_live = @handle.respond_to?(:take_snapshots)
-        @spc_mute_mask = 0
-        @spc_generation += 1
-      end
-
-      # Decoder thread: apply a queued mute unless its track has been replaced.
-      def apply_spc_mute(mask, generation)
-        current = @mutex.synchronize { @spc_generation }
-        @handle.mute(mask) if generation == current && @handle.respond_to?(:mute)
       end
 
       # Discontinuities (seek, track change, stop) drop everything: the

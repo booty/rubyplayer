@@ -35,6 +35,7 @@ module RubyPlayer
       attach_function :gme_free_info, [:pointer], :void
       attach_function :gme_delete, [:pointer], :void
       attach_function :gme_load_m3u, %i[pointer string], :string, blocking: true
+      attach_function :gme_mute_voices, %i[pointer int], :void
     end
 
     # Mirrors gme_info_t: 16 ints then 16 const char*. Only the named leading
@@ -104,10 +105,11 @@ module RubyPlayer
       end
 
       class Handle
-        attr_reader :duration_ms
+        attr_reader :duration_ms, :mute_mask
 
         def initialize(emu, subtune_index)
           @emu = emu
+          @mute_mask = 0
           info_ptr = FFI::MemoryPointer.new(:pointer)
           return unless GmeLib.gme_track_info(@emu, info_ptr, subtune_index).nil?
 
@@ -149,6 +151,21 @@ module RubyPlayer
           return 0 if @emu.nil?
 
           GmeLib.gme_tell(@emu)
+        end
+
+        # libgme voice bits; for VGM: FM 1-6, PCM (DAC), then all PSG channels.
+        #
+        # libgme's silence detection would hear a user mute and end the track,
+        # and it cannot be re-armed safely: its silence clock stops while
+        # ignoring silence, so turning detection back on during a quiet
+        # passage ends the track at once. So the first mute turns it off for
+        # the rest of the track. Tracks still end at their length or fade.
+        def mute(mask)
+          return if @emu.nil?
+
+          @mute_mask = mask
+          GmeLib.gme_ignore_silence(@emu, 1) unless mask.zero?
+          GmeLib.gme_mute_voices(@emu, mask)
         end
 
         def close

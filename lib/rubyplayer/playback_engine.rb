@@ -7,6 +7,7 @@ require_relative 'vgm/reader'
 require_relative 'vgm/snapshot'
 require_relative 'spc/timeline'
 require_relative 'playback_engine/spc_state'
+require_relative 'playback_engine/voice_muting'
 
 module RubyPlayer
   # Owns the decoder thread, the authoritative PlayQueue, and the AudioOutput.
@@ -15,6 +16,7 @@ module RubyPlayer
   # of the engine; pause/underrun emit silence.
   class PlaybackEngine
     include SpcState
+    include VoiceMuting
 
     THREAD_JOIN_TIMEOUT_SECONDS = 5
     ACTIVE_COMMAND_POLL_TIMEOUT_SECONDS = 0
@@ -74,8 +76,7 @@ module RubyPlayer
       @vgm_revision = 0
       @vgm_source = nil
       @spc_live = false
-      @spc_mute_mask = 0
-      @spc_generation = 0
+      initialize_voice_muting
       @published_second = nil
       # Decoder-owned navigation history includes short plays that do not
       # qualify for the library's persistent listening history.
@@ -286,7 +287,7 @@ module RubyPlayer
     def handle_request(cmd)
       case cmd[0]
       when :seek then handle_seek(cmd[1])
-      when :spc_mute then apply_spc_mute(cmd[1], cmd[2])
+      when :voice_mute then apply_voice_mute(cmd[1], cmd[2])
       when :forget_previous
         @previous_tracks.reject! { |track| cmd[1].include?(track.id) }
         @last_started_track = nil if cmd[1].include?(@last_started_track&.id)
@@ -470,10 +471,7 @@ module RubyPlayer
       @audio.flush
       @audio.paused = false
       @mutex.synchronize do
-        if remember_previous && @last_started_track
-          @previous_tracks << @last_started_track
-          @previous_tracks.shift if @previous_tracks.size > PREVIOUS_TRACK_LIMIT
-        end
+        remember_previous_track if remember_previous
         # Unlike @current, this survives an empty queue or a failed open.
         @last_started_track = track
         @current = track
@@ -485,6 +483,7 @@ module RubyPlayer
         @vgm_revision = 0
         @vgm_source = vgm ? build_vgm_source(track, path) : nil
         start_spc_tracking
+        start_voice_muting
         @started_at = Time.now.utc
       end
       reset_played_audio_followers
@@ -493,6 +492,14 @@ module RubyPlayer
       safe_publish(:playback_state, playing: true, paused: false)
     rescue StandardError => e
       recover_from_track_error(track, e)
+    end
+
+    # Caller holds @mutex.
+    def remember_previous_track
+      return unless @last_started_track
+
+      @previous_tracks << @last_started_track
+      @previous_tracks.shift if @previous_tracks.size > PREVIOUS_TRACK_LIMIT
     end
 
     def build_vgm_source(track, path)
@@ -644,6 +651,7 @@ module RubyPlayer
         @vgm_source = nil
         @vgm_revision = 0
         @spc_live = false
+        stop_voice_muting
       end
       reset_spc_state
     end

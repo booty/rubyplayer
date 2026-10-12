@@ -278,10 +278,10 @@ module RubyPlayer
 
         mask = live.mute_mask
         case key.to_s.downcase
-        when /\A[0-7]\z/ then @engine.mute_spc_voices(mask ^ (1 << key.to_i))
+        when /\A[0-7]\z/ then @engine.mute_voices(mask ^ (1 << key.to_i))
         when 's'
           solo = 0xff & ~(1 << @spc_live_view.selected_voice)
-          @engine.mute_spc_voices(mask == solo ? 0 : solo)
+          @engine.mute_voices(mask == solo ? 0 : solo)
         else return false
         end
         true

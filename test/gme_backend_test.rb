@@ -105,6 +105,34 @@ class GmeBackendTest < Minitest::Test
     h.close
   end
 
+  def test_vgm_voices_can_be_muted
+    handle = RubyPlayer::Backends::Gme.new.open(File.join(FIXTURES, 'alisa-dragoon-introduction.vgm'), 0,
+                                                sample_rate: 44_100)
+    handle.read(44_100)
+    handle.mute(0xff)
+    2.times { handle.read(16_384) }
+    muted = handle.read(16_384).unpack('e*').map(&:abs).max
+    handle.mute(0)
+    handle.read(16_384)
+    unmuted = handle.read(16_384).unpack('e*').map(&:abs).max
+
+    assert_equal 0, handle.mute_mask
+    assert_operator muted, :<, 0.001
+    assert_operator unmuted, :>, 0.01
+  ensure
+    handle&.close
+  end
+
+  # A muted non-VGM track must not end on libgme's silence detection.
+  def test_muting_every_voice_does_not_end_the_track
+    handle = RubyPlayer::Backends::Gme.new.open(File.join(FIXTURES, 'mega-man-2.nsf'), 0, sample_rate: 44_100)
+    handle.mute(0xff)
+
+    assert_predicate(Array.new(30) { handle.read(16_384) }, :all?)
+  ensure
+    handle&.close
+  end
+
   def test_decode_produces_bounded_float_pcm
     h = @gme.open(File.join(FIXTURES, 'shantae.gbs'), 0, sample_rate: 44_100)
     data = h.read(1024)
