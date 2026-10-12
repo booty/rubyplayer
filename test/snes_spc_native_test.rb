@@ -2,6 +2,7 @@
 
 require 'test_helper'
 require 'ffi'
+require 'rubyplayer/backends/gme'
 
 # Exercises librp_spc's C API directly; the Ruby backend comes later.
 class SnesSpcNativeTest < Minitest::Test
@@ -16,10 +17,21 @@ class SnesSpcNativeTest < Minitest::Test
     attach_function :rp_spc_track_ended, [:pointer], :int
     attach_function :rp_spc_seek, %i[pointer long], :int
     attach_function :rp_spc_tell_ms, [:pointer], :long
+    attach_function :rp_spc_set_ignore_silence, %i[pointer int], :void
+    attach_function :rp_spc_mute_voices, %i[pointer int], :void
+  end
+
+  module GmeMute
+    extend FFI::Library
+
+    ffi_lib RubyPlayer::RuntimeDependencies::GME_LIBRARY_CANDIDATES
+    attach_function :gme_mute_voices, %i[pointer int], :void
   end
 
   RATE = 48_000
   SPC = File.join(FIXTURES, 'spc', 'earthbound-megaton-walk.spc')
+  CONFUSING_MELODY = File.join(FIXTURES, 'spc', 'confusing-melody.spc')
+  LONGEST_PLAY_MS = 60_000
 
   def teardown
     @handles&.each { |handle| Lib.rp_spc_close(handle) }
@@ -80,10 +92,68 @@ class SnesSpcNativeTest < Minitest::Test
     assert_operator ended_ms, :<, 2_200
   end
 
+  # confusing-melody.spc opens with ~685 ms of silence; like libgme, playback
+  # skips it unless silence handling is disabled.
+  def test_leading_silence_is_skipped_unless_ignored
+    skipped = open_spc(CONFUSING_MELODY)
+    kept = open_spc(CONFUSING_MELODY)
+    Lib.rp_spc_set_ignore_silence(kept, 1)
+
+    assert_operator first_audible_ms(skipped), :<, 50
+    assert_operator first_audible_ms(kept), :>, 600
+  end
+
+  # libgme ends a track after 6 s of silence, found by emulating ahead of the
+  # output, so the end lands well before 6 s of *output*. Ours must end at the
+  # same output position.
+  def test_silence_ends_the_track_where_libgme_does
+    ours = open_spc
+    Lib.rp_spc_set_fade(ours, -1, 0)
+    Lib.rp_spc_mute_voices(ours, 0xff)
+    gme = RubyPlayer::Backends::Gme.new.open(SPC, 0, sample_rate: RATE)
+    emu = gme.instance_variable_get(:@emu)
+    RubyPlayer::Backends::GmeLib.gme_set_fade(emu, -1)
+    GmeMute.gme_mute_voices(emu, 0xff)
+
+    our_end_ms = play_until_ended(ours)
+    gme_end_ms = gme_play_until_ended(gme)
+
+    assert_operator our_end_ms, :<, 6_000
+    assert_equal gme_end_ms, our_end_ms
+  ensure
+    gme&.close
+  end
+
   private
 
-  def open_spc
-    bytes = File.binread(SPC)
+  def first_audible_ms(handle)
+    frames = 4_096
+    out = FFI::MemoryPointer.new(:float, frames * 2)
+    40.times do |chunk|
+      Lib.rp_spc_play(handle, out, frames)
+      index = out.read_array_of_float(frames * 2).index { |sample| (sample * 32_768).abs > 8 }
+      return ((chunk * frames) + (index / 2)) * 1_000.0 / RATE if index
+    end
+
+    flunk 'no audible sample in the first ~3 s'
+  end
+
+  # Returns the position (ms) at which the track ended.
+  def play_until_ended(handle)
+    out = FFI::MemoryPointer.new(:float, 4_096 * 2)
+    while Lib.rp_spc_track_ended(handle).zero? && Lib.rp_spc_tell_ms(handle) < LONGEST_PLAY_MS
+      Lib.rp_spc_play(handle, out, 4_096)
+    end
+    Lib.rp_spc_tell_ms(handle)
+  end
+
+  def gme_play_until_ended(handle)
+    nil until handle.read(4_096).nil? || handle.position_ms >= LONGEST_PLAY_MS
+    handle.position_ms
+  end
+
+  def open_spc(path = SPC)
+    bytes = File.binread(path)
     pointer = FFI::MemoryPointer.from_string(bytes)
     handle = Lib.rp_spc_open(pointer, bytes.bytesize, RATE)
     (@handles ||= []) << handle unless handle.null?
