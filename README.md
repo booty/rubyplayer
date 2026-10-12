@@ -148,7 +148,8 @@ automatically if `librp_gbs.dylib` is missing.
 
 Artwork comes from embedded pictures in FFmpeg-backed files, falling back to
 images in the track's folder (such as `cover.jpg` or `folder.png`). Archived
-tracks use the folder containing the on-disk archive. Loading and image
+tracks look beside their entry inside the archive first (rip zips often pack
+box art), then in the folder containing the archive. Loading and image
 processing run in a background thread and notify the UI through EventBus.
 
 ## Testing

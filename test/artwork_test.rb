@@ -91,6 +91,46 @@ class ArtworkTest < Minitest::Test
     assert_equal 'ART', @artwork.for_track(track)
   end
 
+  # Rip zips often carry their own cover (journey-to-silius.zip: the box
+  # art beside the .nsf and .m3u, under a non-conventional name).
+  def test_archived_track_uses_art_inside_its_archive
+    zip = File.join(FIXTURES, 'nsf', 'journey-to-silius.zip')
+    cache = RubyPlayer::ArchiveCache.new(root: File.join(@tmp, 'cache'))
+    artwork = RubyPlayer::Artwork.new(archive_cache: cache)
+    track = track_for(zip, archive_entry: 'Journey to Silius [RAF World] (1990-08-10)(Sunsoft).nsf')
+    expected = File.binread(File.join(cache.extract(zip), 'Journey_to_Silius_box.jpg'))
+
+    assert_equal expected, artwork.for_track(track)
+  end
+
+  # Art packed with the rip is about that rip; a folder of many zips may
+  # share one image that fits none of them as well.
+  def test_art_inside_the_archive_beats_art_beside_it
+    dir = File.join(@tmp, 'rips')
+    FileUtils.mkdir_p(File.join(dir, 'src', 'inner'))
+    File.binwrite(File.join(dir, 'folder.jpg'), 'FOLDER')
+    File.binwrite(File.join(dir, 'src', 'inner', 'song.vgm'), 'x')
+    File.binwrite(File.join(dir, 'src', 'inner', 'box.png'), 'INSIDE')
+    zip = File.join(dir, 'game.zip')
+    system('bsdtar', '-cf', zip, '--format', 'zip', '-C', File.join(dir, 'src'), 'inner', exception: true)
+    artwork = RubyPlayer::Artwork.new(archive_cache: RubyPlayer::ArchiveCache.new(root: File.join(@tmp, 'cache')))
+
+    assert_equal 'INSIDE', artwork.for_track(track_for(zip, archive_entry: 'inner/song.vgm'))
+  end
+
+  # macOS AppleDouble stubs ("._cover.jpg") carry metadata, not pictures;
+  # they land beside the real files on non-Mac volumes and in Mac-made zips.
+  def test_appledouble_stubs_are_not_art
+    dir = File.join(@tmp, 'album')
+    FileUtils.mkdir_p(dir)
+    File.binwrite(File.join(dir, '._cover.jpg'), 'STUB')
+    File.binwrite(File.join(dir, 'zz.jpg'), 'ART')
+    vgm = File.join(dir, 'song.vgm')
+    File.write(vgm, '')
+
+    assert_equal 'ART', @artwork.for_track(track_for(vgm))
+  end
+
   def test_returns_nil_when_no_art_exists
     dir = File.join(@tmp, 'bare')
     FileUtils.mkdir_p(dir)

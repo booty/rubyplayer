@@ -5,16 +5,18 @@ require 'open3'
 module RubyPlayer
   # Resolves cover art for a track: embedded artwork first (only for
   # ffmpeg-decoded formats — retro rips can't carry pictures), then
-  # conventional image filenames in the track's folder. Archived tracks keep
-  # physical_path = the archive file on disk, so its dirname is already the
-  # right place to look without extracting anything.
+  # conventional image filenames in the track's folder. An archived track
+  # (physical_path is the archive) looks beside its entry inside the
+  # archive first, since rip zips often pack their own cover, then in the
+  # archive's own folder.
   class Artwork
     DEFAULT_NAMES = %w[cover folder front albumart album].freeze
     IMAGE_EXTENSIONS = %w[jpg jpeg png gif].freeze
 
-    def initialize(names: DEFAULT_NAMES, extractor: nil)
+    def initialize(names: DEFAULT_NAMES, extractor: nil, archive_cache: nil)
       @names = names
       @extractor = extractor || method(:extract_embedded)
+      @archive_cache = archive_cache
       # Both caches are filled once per path and never invalidated: art on
       # disk changes far less often than tracks advance, and a stale hit
       # costs only an outdated picture until restart — while a miss costs a
@@ -25,7 +27,7 @@ module RubyPlayer
     end
 
     def for_track(track)
-      embedded(track) || folder_art(File.dirname(track.physical_path))
+      embedded(track) || archived_art(track) || folder_art(File.dirname(track.physical_path))
     end
 
     # Average color of an image, as "#rrggbb": ffmpeg scales the whole frame
@@ -112,13 +114,26 @@ module RubyPlayer
       nil
     end
 
+    # The folder holding the track's entry inside its extracted archive.
+    # Scanning already extracted it, so this is normally a cache hit; it runs
+    # off the UI thread regardless.
+    def archived_art(track)
+      entry = track.archive_entry.to_s
+      return nil if entry.empty? || @archive_cache.nil?
+
+      folder_art(File.dirname(@archive_cache.materialize(track.physical_path, entry)))
+    rescue ArchiveCache::ExtractError, SystemCallError
+      nil
+    end
+
     def folder_art(dir)
       @folder_cache.fetch(dir) { @folder_cache[dir] = read_folder_image(dir) }
     end
 
     def read_folder_image(dir)
+      # "._name" files are macOS AppleDouble metadata stubs, not images.
       images = Dir.children(dir).select do |entry|
-        IMAGE_EXTENSIONS.include?(File.extname(entry).delete_prefix('.').downcase)
+        !entry.start_with?('._') && IMAGE_EXTENSIONS.include?(File.extname(entry).delete_prefix('.').downcase)
       end
       return nil if images.empty?
 

@@ -102,7 +102,7 @@ module RubyPlayer
         @theme_picker_index = 0
         @theme_id_before_preview = nil
         set_theme!(@config['ui', 'theme'])
-        @artwork = Artwork.new(names: @config['ui', 'art_filenames'])
+        @artwork = Artwork.new(names: @config['ui', 'art_filenames'], archive_cache: @archive_cache)
         @art_supported = ItermImage.supported?(env)
         @art_mode = normalize_art_mode(@config['ui', 'art_mode'])
         @art_bytes = nil
