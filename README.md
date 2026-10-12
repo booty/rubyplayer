@@ -326,7 +326,7 @@ restart.
 | `config.ui.info_metadata_rows` | `8` | Extra metadata rows shown in info modal. |
 | `config.audio.sample_rate` | `"auto"` | Device-native or positive integer Hz. |
 | `config.audio.ring_buffer_ms` | `500` | Audio buffer; positive integer ms. |
-| `config.audio.decode_chunk_frames` | `4096` | Decode chunk; positive integer frames. |
+| `config.audio.decode_chunk_frames` | `16384` | Decode chunk; positive integer frames. Larger bursts use less CPU for FM chiptunes. |
 | `config.scanner.thread_count` | `0` | Extractor workers; `0` uses CPU count. |
 | `config.library.backup_retention` | `10` | SQLite backups retained. |
 | `config.library.history_limit` | `100` | Tracks shown in History. |

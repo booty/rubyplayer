@@ -15,12 +15,21 @@ module RubyPlayer
     THREAD_JOIN_TIMEOUT_SECONDS = 5
     ACTIVE_COMMAND_POLL_TIMEOUT_SECONDS = 0
     BUFFER_FULL_POLL_INTERVAL_SECONDS = 0.005
+    # A full ring waits until this share of it is free, then refills in one
+    # burst. Decoding in small bursts as space trickles free cost about 3x
+    # the CPU for libgme FM emulation: each burst ran cache-cold. Refilling
+    # at 75% full still leaves most of the ring as underrun headroom.
+    REFILL_RING_FRACTION = 0.25
+    # Upper bound on one wait, so a stalled device or rate mismatch is
+    # rechecked promptly. Commands still wake the decoder immediately.
+    MAX_REFILL_WAIT_SECONDS = 0.1
     MILLISECONDS_PER_SECOND = 1000
     VGM_DECODER_CAPABILITIES = { sn76489: true, ym2612: true, ym2413: true }.freeze
     PREVIOUS_TRACK_THRESHOLD_MS = 3_000
     PREVIOUS_TRACK_LIMIT = 100
     private_constant :THREAD_JOIN_TIMEOUT_SECONDS, :ACTIVE_COMMAND_POLL_TIMEOUT_SECONDS,
-                     :BUFFER_FULL_POLL_INTERVAL_SECONDS,
+                     :BUFFER_FULL_POLL_INTERVAL_SECONDS, :REFILL_RING_FRACTION,
+                     :MAX_REFILL_WAIT_SECONDS,
                      :MILLISECONDS_PER_SECOND,
                      :VGM_DECODER_CAPABILITIES, :PREVIOUS_TRACK_THRESHOLD_MS,
                      :PREVIOUS_TRACK_LIMIT
@@ -38,8 +47,12 @@ module RubyPlayer
       @chunk_frames = config['audio', 'decode_chunk_frames']
       @history_min_pct = config['library', 'history_min_percent']
       @history_min_unknown_ms = config['library', 'history_min_seconds_unknown'] * MILLISECONDS_PER_SECOND
+      # Levels follow played audio, so keep everything that can still be
+      # waiting in the ring plus the chunk being written into it.
+      ring_frames = config['audio', 'ring_buffer_ms'] * audio.sample_rate / MILLISECONDS_PER_SECOND
       @level_tap = LevelTap.new(bands: config['eq', 'bands'],
-                                sample_rate: audio.sample_rate)
+                                sample_rate: audio.sample_rate,
+                                retain_frames: ring_frames + (2 * @chunk_frames))
       @commands = Thread::Queue.new
       # Guards @queue and the @current/@playing/@paused/@frames_base/@seek_offset_ms/
       # @started_at fields the decoder thread writes and `state`/UI commands read.
@@ -184,7 +197,7 @@ module RubyPlayer
       end
     end
 
-    def levels = @level_tap.levels
+    def levels = @level_tap.levels(at_frame: @audio.frames_played)
 
     def state
       @mutex.synchronize do
@@ -223,15 +236,16 @@ module RubyPlayer
     # ---- decoder thread ----
 
     def run
+      wait = ACTIVE_COMMAND_POLL_TIMEOUT_SECONDS
       loop do
-        # 0 timeout while playing lets this loop decode-ahead as fast as possible
-        # to fill the ring buffer; once it's full, pump's sleep(0.005) below
-        # throttles back to short-interval polling. Intentional decode-ahead, not
-        # a busy-wait bug.
+        # While playing, pump returns how long until it has work: 0 keeps
+        # decoding ahead to fill the ring; a full ring waits for a refill
+        # burst. Waiting in pop rather than sleep lets commands (seek, skip,
+        # stop) interrupt the wait immediately.
         cmd = begin
           active = @focus_sound || (@playing && !@paused)
           # Idle and paused sources have no work until a command wakes them.
-          @commands.pop(timeout: active ? ACTIVE_COMMAND_POLL_TIMEOUT_SECONDS : nil)
+          @commands.pop(timeout: active ? wait : nil)
         rescue ThreadError
           nil
         end
@@ -248,8 +262,9 @@ module RubyPlayer
           when :toggle_pause then toggle_pause
           when Array then handle_request(cmd)
           end
-          pump if @focus_sound || (@playing && !@paused)
+          wait = @focus_sound || (@playing && !@paused) ? pump : ACTIVE_COMMAND_POLL_TIMEOUT_SECONDS
         rescue StandardError => e
+          wait = ACTIVE_COMMAND_POLL_TIMEOUT_SECONDS
           # A backend can raise mid-decode (e.g. gme_play failing on a
           # corrupt-but-openable file). Without this, the exception would
           # kill the decoder thread and playback would be dead until the
@@ -315,14 +330,10 @@ module RubyPlayer
       nil
     end
 
+    # Returns seconds until pump has more work; the run loop waits that long
+    # unless a command arrives first.
     def pump
-      if @pending
-        written = @audio.write(@pending)
-        consumed = written * AudioFormat::BYTES_PER_FRAME
-        @pending = consumed < @pending.bytesize ? @pending.byteslice(consumed..) : nil
-        sleep BUFFER_FULL_POLL_INTERVAL_SECONDS if @pending # buffer full: yield briefly, stay responsive
-        return
-      end
+      return write_pending if @pending
 
       if @focus_sound
         data = @focus_player.read(@chunk_frames)
@@ -331,20 +342,63 @@ module RubyPlayer
         elsif data.empty?
           # Nonblocking pipe has no bytes yet. Yield so SoX can run while command
           # queue remains responsive to replacement and shutdown requests.
-          sleep BUFFER_FULL_POLL_INTERVAL_SECONDS
+          return BUFFER_FULL_POLL_INTERVAL_SECONDS
         else
           @pending = data
+          @pending_levels = false
         end
-        return
+        return ACTIVE_COMMAND_POLL_TIMEOUT_SECONDS
       end
       data = @handle&.read(@chunk_frames)
       if data.nil?
         finish_and_advance
       else
-        @level_tap.push(data)
         @pending = data
+        @pending_levels = true
         publish_position
       end
+      ACTIVE_COMMAND_POLL_TIMEOUT_SECONDS
+    end
+
+    # Fills the ring to the brim, then waits until a refill burst's worth is
+    # free before writing again (hysteresis). Writing every poll, or as soon
+    # as any space freed, copied the whole pending chunk across FFI 200x a
+    # second and kept decode bursts small.
+    def write_pending
+      writable = @audio.writable_frames
+      if @awaiting_refill
+        needed = refill_frames(writable)
+        return refill_wait(needed - writable) if writable < needed
+
+        @awaiting_refill = false
+      end
+
+      # Output-timeline frame where this write will play. Reading the two
+      # counters separately can skew by one device period; harmless for EQ.
+      start_frame = @audio.frames_played + @audio.buffered_frames
+      pending_frames = @pending.bytesize / AudioFormat::BYTES_PER_FRAME
+      chunk = writable < pending_frames ? @pending.byteslice(0, writable * AudioFormat::BYTES_PER_FRAME) : @pending
+      written = chunk.empty? ? 0 : @audio.write(chunk)
+      consumed = written * AudioFormat::BYTES_PER_FRAME
+      @level_tap.push(chunk.byteslice(0, consumed), start_frame: start_frame) if @pending_levels && written.positive?
+      @pending = consumed < @pending.bytesize ? @pending.byteslice(consumed..) : nil
+      return ACTIVE_COMMAND_POLL_TIMEOUT_SECONDS unless @pending
+
+      # A stale flag after a flush is harmless: the emptied ring passes the
+      # refill check at once.
+      @awaiting_refill = true
+      writable = @audio.writable_frames
+      refill_wait(refill_frames(writable) - writable)
+    end
+
+    def refill_frames(writable)
+      capacity = writable + @audio.buffered_frames
+      [(capacity * REFILL_RING_FRACTION).to_i, 1].max
+    end
+
+    def refill_wait(missing_frames)
+      seconds = missing_frames.to_f / @audio.sample_rate
+      seconds.clamp(BUFFER_FULL_POLL_INTERVAL_SECONDS, MAX_REFILL_WAIT_SECONDS)
     end
 
     # The UI renders position as m:ss, so anything finer than the displayed

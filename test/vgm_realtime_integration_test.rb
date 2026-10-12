@@ -28,6 +28,9 @@ class VgmRealtimeIntegrationTest < Minitest::Test
     def paused=(_value); end
     def flush; end
     def write(_data) = 0
+    # A permanently full ring: playback never consumes these fake writes.
+    def writable_frames = 0
+    def buffered_frames = 0
   end
 
   class FakeHandle

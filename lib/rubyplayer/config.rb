@@ -88,7 +88,10 @@ module RubyPlayer
     'audio' => {
       'sample_rate' => 'auto',
       'ring_buffer_ms' => 500,
-      'decode_chunk_frames' => 4096
+      # Large decode bursts amortize libgme's cache-cold start: 4096-frame
+      # chunks cost about twice the CPU for VGM FM emulation. EQ levels follow
+      # played audio, so chunk size no longer limits their update rate.
+      'decode_chunk_frames' => 16_384
     },
     'scanner' => { 'thread_count' => 0 },
     'library' => {

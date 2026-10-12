@@ -67,3 +67,9 @@ the authority for workflow and invariants.
   special-mode registers map A9→OP1, AA→OP2, A8→OP3, A2→OP4. Replay is
   resumable per request (stop only between timestamps); never make a command
   budget fatal, and degrade missing DAC/PCM data to a warning, not an error.
+- Decoder pacing affects CPU, not just latency: libgme FM emulation in small
+  real-time bursts measured ~3x its flat-out cost (cache-cold starts; raising
+  QoS did not help). Decode in large chunks and refill the ring with
+  hysteresis. Never tie UI animation to decode cadence: `LevelTap` indexes
+  pushed audio by output-timeline frame (`frames_played + buffered_frames` at
+  write) and analyses the window at `frames_played`.
