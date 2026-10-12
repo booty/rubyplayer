@@ -5,6 +5,7 @@ require_relative 'audio_output'
 require_relative 'level_tap'
 require_relative 'vgm/reader'
 require_relative 'vgm/snapshot'
+require_relative 'spc/timeline'
 
 module RubyPlayer
   # Owns the decoder thread, the authoritative PlayQueue, and the AudioOutput.
@@ -47,12 +48,7 @@ module RubyPlayer
       @chunk_frames = config['audio', 'decode_chunk_frames']
       @history_min_pct = config['library', 'history_min_percent']
       @history_min_unknown_ms = config['library', 'history_min_seconds_unknown'] * MILLISECONDS_PER_SECOND
-      # Levels follow played audio, so keep everything that can still be
-      # waiting in the ring plus the chunk being written into it.
-      ring_frames = config['audio', 'ring_buffer_ms'] * audio.sample_rate / MILLISECONDS_PER_SECOND
-      @level_tap = LevelTap.new(bands: config['eq', 'bands'],
-                                sample_rate: audio.sample_rate,
-                                retain_frames: ring_frames + (2 * @chunk_frames))
+      build_played_audio_followers(config)
       @commands = Thread::Queue.new
       # Guards @queue and the @current/@playing/@paused/@frames_base/@seek_offset_ms/
       # @started_at fields the decoder thread writes and `state`/UI commands read.
@@ -74,6 +70,7 @@ module RubyPlayer
       @vgm_generation = 0
       @vgm_revision = 0
       @vgm_source = nil
+      @spc_live = false
       @published_second = nil
       # Decoder-owned navigation history includes short plays that do not
       # qualify for the library's persistent listening history.
@@ -224,6 +221,15 @@ module RubyPlayer
       end
     end
 
+    # S-DSP state at the frame the device is playing, for SPC handles that
+    # record snapshots; nil otherwise.
+    def spc_live
+      live, paused = @mutex.synchronize { [@playing && @spc_live && !@focus_sound, @paused] }
+      return unless live
+
+      Spc::LiveState.new(snapshot: @spc_timeline.at(@audio.frames_played), ram: @spc_ram, paused: paused)
+    end
+
     private
 
     def position_ms
@@ -355,6 +361,7 @@ module RubyPlayer
       else
         @pending = data
         @pending_levels = true
+        capture_spc_state
         publish_position
       end
       ACTIVE_COMMAND_POLL_TIMEOUT_SECONDS
@@ -381,6 +388,11 @@ module RubyPlayer
       written = chunk.empty? ? 0 : @audio.write(chunk)
       consumed = written * AudioFormat::BYTES_PER_FRAME
       @level_tap.push(chunk.byteslice(0, consumed), start_frame: start_frame) if @pending_levels && written.positive?
+      if @pending_snapshots && written.positive?
+        packed, count = @pending_snapshots
+        @spc_timeline.push(packed, count, origin_frame: start_frame)
+        @pending_snapshots = nil
+      end
       @pending = consumed < @pending.bytesize ? @pending.byteslice(consumed..) : nil
       return ACTIVE_COMMAND_POLL_TIMEOUT_SECONDS unless @pending
 
@@ -389,6 +401,28 @@ module RubyPlayer
       @awaiting_refill = true
       writable = @audio.writable_frames
       refill_wait(refill_frames(writable) - writable)
+    end
+
+    # Snapshots wait with their chunk until its first write, the moment its
+    # output-timeline origin is known. RAM is copied once per chunk (64 KB).
+    # EQ levels and S-DSP snapshots follow played audio, so both keep
+    # everything that can still be waiting in the ring plus the chunk being
+    # written into it.
+    def build_played_audio_followers(config)
+      ring_frames = config['audio', 'ring_buffer_ms'] * @audio.sample_rate / MILLISECONDS_PER_SECOND
+      retain_frames = ring_frames + (2 * @chunk_frames)
+      @level_tap = LevelTap.new(bands: config['eq', 'bands'], sample_rate: @audio.sample_rate,
+                                retain_frames: retain_frames)
+      @spc_timeline = Spc::Timeline.new(retain_frames: retain_frames)
+      @spc_ram = nil
+      @pending_snapshots = nil
+    end
+
+    def capture_spc_state
+      return unless @handle.respond_to?(:take_snapshots)
+
+      @pending_snapshots = @handle.take_snapshots
+      @spc_ram = @handle.copy_ram
     end
 
     def refill_frames(writable)
@@ -466,9 +500,10 @@ module RubyPlayer
         @vgm_generation += 1
         @vgm_revision = 0
         @vgm_source = vgm ? build_vgm_source(track, path) : nil
+        @spc_live = @handle.respond_to?(:take_snapshots)
         @started_at = Time.now.utc
       end
-      @level_tap.reset
+      reset_played_audio_followers
       @published_second = nil
       safe_publish(:track_started, track: track)
       safe_publish(:playback_state, playing: true, paused: false)
@@ -587,6 +622,7 @@ module RubyPlayer
       @audio.paused = true
       @audio.flush
       @pending = nil
+      @pending_snapshots = nil
       if @handle.seek(ms)
         @mutex.synchronize do
           @seek_offset_ms = ms
@@ -622,7 +658,20 @@ module RubyPlayer
       @mutex.synchronize do
         @vgm_source = nil
         @vgm_revision = 0
+        @spc_live = false
       end
+      reset_spc_state
+    end
+
+    def reset_spc_state
+      @pending_snapshots = nil
+      @spc_timeline.reset
+      @spc_ram = nil
+    end
+
+    def reset_played_audio_followers
+      @level_tap.reset
+      reset_spc_state
     end
 
     # Publish calls happen from inside code that may already hold @mutex
