@@ -21,10 +21,19 @@ module RubyPlayer
 
       # Records the request at once so the UI reflects it, but only the decoder
       # thread touches the native handle. Audible after decoded audio drains.
+      # The command carries the track's generation: a track change queued
+      # ahead of it must not inherit the mute. Returns whether it was queued.
+      # rubocop:disable Naming/PredicateMethod
       def mute_spc_voices(mask)
-        @mutex.synchronize { @spc_mute_mask = mask }
-        @commands << [:spc_mute, mask]
+        @mutex.synchronize do
+          return false unless @playing && @spc_live
+
+          @spc_mute_mask = mask
+          @commands << [:spc_mute, mask, @spc_generation]
+        end
+        true
       end
+      # rubocop:enable Naming/PredicateMethod
 
       private
 
@@ -61,6 +70,13 @@ module RubyPlayer
       def start_spc_tracking
         @spc_live = @handle.respond_to?(:take_snapshots)
         @spc_mute_mask = 0
+        @spc_generation += 1
+      end
+
+      # Decoder thread: apply a queued mute unless its track has been replaced.
+      def apply_spc_mute(mask, generation)
+        current = @mutex.synchronize { @spc_generation }
+        @handle.mute(mask) if generation == current && @handle.respond_to?(:mute)
       end
 
       # Discontinuities (seek, track change, stop) drop everything: the

@@ -164,6 +164,33 @@ class PlaybackEngineSpcTest < Minitest::Test
     assert_equal "ram #{@engine.instance_variable_get(:@handle).reads}", @engine.spc_live.ram
   end
 
+  # Regression: a mute queued while a track change was already queued ahead
+  # of it muted the *new* track, whose displayed mask had just reset to 0.
+  # Driven without the decoder thread so the interleaving is deterministic.
+  def test_a_mute_for_a_replaced_track_is_ignored
+    engine = build_engine(SnapshotHandle)
+    old_handle = SnapshotHandle.new
+    new_handle = SnapshotHandle.new
+    engine.instance_variable_set(:@handle, old_handle)
+    engine.instance_variable_set(:@playing, true)
+    engine.send(:start_spc_tracking)
+    engine.mute_spc_voices(0xff)
+    engine.instance_variable_set(:@handle, new_handle)
+    engine.send(:start_spc_tracking)
+    engine.send(:handle_request, engine.instance_variable_get(:@commands).pop)
+
+    assert_nil new_handle.muted_on
+    assert_nil old_handle.muted_on
+    assert_equal 0, engine.spc_live.mute_mask
+  end
+
+  def test_mute_requests_without_live_spc_playback_are_refused
+    engine = build_engine(SnapshotHandle)
+
+    refute engine.mute_spc_voices(0xff)
+    assert_empty engine.instance_variable_get(:@commands)
+  end
+
   def test_no_live_state_for_handles_without_snapshots
     start(PlainHandle)
 
@@ -179,7 +206,7 @@ class PlaybackEngineSpcTest < Minitest::Test
 
   private
 
-  def start(handle_class)
+  def build_engine(handle_class)
     @audio = FakeRing.new
     @bus = RubyPlayer::EventBus.new
     @engine = RubyPlayer::PlaybackEngine.new(
@@ -188,6 +215,10 @@ class PlaybackEngineSpcTest < Minitest::Test
       config: RubyPlayer::ConfigStore.new(path: '/nonexistent.rb', create_if_missing: false),
       archive_cache: nil, focus_player: FakeFocus.new
     )
+  end
+
+  def start(handle_class)
+    build_engine(handle_class)
     @engine.start
     @engine.enqueue_now([track])
     wait_until { @audio.buffered_frames == CAPACITY }

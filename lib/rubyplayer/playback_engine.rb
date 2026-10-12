@@ -75,6 +75,7 @@ module RubyPlayer
       @vgm_source = nil
       @spc_live = false
       @spc_mute_mask = 0
+      @spc_generation = 0
       @published_second = nil
       # Decoder-owned navigation history includes short plays that do not
       # qualify for the library's persistent listening history.
@@ -285,7 +286,7 @@ module RubyPlayer
     def handle_request(cmd)
       case cmd[0]
       when :seek then handle_seek(cmd[1])
-      when :spc_mute then @handle.mute(cmd[1]) if @handle.respond_to?(:mute)
+      when :spc_mute then apply_spc_mute(cmd[1], cmd[2])
       when :forget_previous
         @previous_tracks.reject! { |track| cmd[1].include?(track.id) }
         @last_started_track = nil if cmd[1].include?(@last_started_track&.id)
