@@ -59,6 +59,19 @@ module RubyPlayer
         ['1→2─┐', '   3─┼→▶', '   4─┘'],
         ['1─┐', '2─┤', '3─┼→▶', '4─┘']
       ].freeze
+      # Spelled-out forms of the short FM terms, shown when there is room.
+      # Topology in operator numbers; carriers are the operators heard.
+      ALGORITHM_NAMES = ['serial chain, 1 carrier', '1+2 into 3→4, 1 carrier', '1 + 2→3 into 4, 1 carrier',
+                         '1→2 + 3 into 4, 1 carrier', 'two 2-op pairs, 2 carriers', '1 into 2, 3, 4, 3 carriers',
+                         '1→2 pair + 3, 4, 3 carriers', 'four parallel, 4 carriers'].freeze
+      # OP1 self-modulation depth (Sega's YM2612 manual).
+      FEEDBACK_NAMES = %w[off π/16 π/8 π/4 π/2 π 2π 4π].freeze
+      # LFO tremolo depth (AMS) and vibrato depth (FMS) per sensitivity.
+      AMS_NAMES = ['0 dB', '1.4 dB', '5.9 dB', '11.8 dB'].freeze
+      FMS_NAMES = ['0¢', '±3.4¢', '±6.7¢', '±10¢', '±14¢', '±20¢', '±40¢', '±80¢'].freeze
+      INSTRUMENT_WIDTH = 18
+      # Longest instrument wording; wider would only push State away.
+      MAX_INSTRUMENT_WIDTH = 64
       FM_OPERATOR_FIELDS = [%w[AR ar], %w[D1R d1r], %w[D1L d1l], %w[D2R d2r], %w[RR rr], %w[TL tl], %w[MUL mul],
                             %w[DT dt], %w[RS rs], %w[AM am], %w[SSG ssg_eg]].freeze
       OPLL_OPERATOR_FIELDS = [%w[AR ar], %w[DR dr], %w[SL sl], %w[RR rr], %w[TL total_level], %w[MUL mul],
@@ -71,7 +84,8 @@ module RubyPlayer
                        :COLUMN_GAP, :MIN_PANEL_ROWS, :KEYBOARD_ROWS, :WIDE_FIXED_COLUMNS, :NARROW_FIXED_COLUMNS,
                        :LEVEL_FLOOR_DB, :RECENT_TRIGGER_SAMPLES, :HISTORY_COLUMN_SAMPLES, :KEYBOARD_LOW,
                        :KEYBOARD_KEYS, :BLACK_KEYS, :HOLD_AXIS, :RELEASE_AXIS, :PAN_LABELS, :STATE_LABELS,
-                       :ACTIVE_STATES, :ALGORITHMS, :FM_OPERATOR_FIELDS, :OPLL_OPERATOR_FIELDS,
+                       :ACTIVE_STATES, :ALGORITHMS, :ALGORITHM_NAMES, :FEEDBACK_NAMES, :AMS_NAMES, :FMS_NAMES,
+                       :INSTRUMENT_WIDTH, :MAX_INSTRUMENT_WIDTH, :FM_OPERATOR_FIELDS, :OPLL_OPERATOR_FIELDS,
                        :DRUM_ABBREVIATIONS, :OPERATOR_LABEL_WIDTH, :MIN_OPERATOR_LEVEL
 
       # One channel table row; `voice` is its index within its chip.
@@ -350,10 +364,16 @@ module RubyPlayer
         (@width - (wide_table? ? WIDE_FIXED_COLUMNS : NARROW_FIXED_COLUMNS)).clamp(4, 32)
       end
 
+      # The bar stops growing at 32 cells; the instrument column takes the
+      # rest so wide screens can spell its terms out.
+      def instrument_width
+        (INSTRUMENT_WIDTH + @width - WIDE_FIXED_COLUMNS - bar_width).clamp(INSTRUMENT_WIDTH, MAX_INSTRUMENT_WIDTH)
+      end
+
       def table_heading
         if wide_table?
-          format('%-1s %-14s %-4s %-7s %8s %-*s %-3s %-18s %s', 'K', 'Channel', 'Keys', 'Note', 'Hz', bar_width,
-                 'Level (est.)', 'Pan', 'Instrument', 'State')
+          format('%-1s %-14s %-4s %-7s %8s %-*s %-3s %-*s %s', 'K', 'Channel', 'Keys', 'Note', 'Hz', bar_width,
+                 'Level (est.)', 'Pan', instrument_width, 'Instrument', 'State')
         else
           format('%-1s %-14s %-7s %-*s %s', 'K', 'Channel', 'Note', bar_width, 'Level', 'State')
         end
@@ -390,9 +410,10 @@ module RubyPlayer
           return format('%-1s %-14s %-7s %s %s', row.key, channel.label[0, 14], note_text(channel), bar, state)
         end
 
-        format('%-1s %-14s %-4s %-7s %8s %s %-3s %-18s %s', row.key, channel.label[0, 14], key_dots(channel),
+        width = instrument_width
+        format('%-1s %-14s %-4s %-7s %8s %s %-3s %-*s %s', row.key, channel.label[0, 14], key_dots(channel),
                note_text(channel), channel.pitch_hz ? format('%.1f', channel.pitch_hz) : '--', bar,
-               PAN_LABELS.fetch(channel.pan, '--'), instrument_text(row)[0, 18], state)
+               PAN_LABELS.fetch(channel.pan, '--'), width, instrument_text(row, width)[0, width], state)
       end
 
       # Note and cents, or '--' for unpitched channels and frequencies below
@@ -415,26 +436,60 @@ module RubyPlayer
         ACTIVE_STATES.include?(channel.state) ? '●' : '·'
       end
 
-      def instrument_text(row)
+      # The longest wording that fits `width`.
+      def instrument_text(row, width)
+        fit(width, *instrument_texts(row))
+      end
+
+      # Instrument wordings, longest first.
+      def instrument_texts(row)
         channel = row.channel
         details = channel.details
         case channel.kind
-        when :fm
-          patch = channel.patch
-          "ALG #{patch&.algorithm || '-'} FB #{patch&.feedback || '-'} #{patch&.short_digest.to_s[0, 6]}"
-        when :pcm then "PCM #{format('$%02X', details[:dac_value].to_i)}"
-        when :noise then "#{details[:noise_type]} att #{details[:attenuation]}"
-        when :percussion then 'rhythm'
+        when :fm then fm_instrument_texts(channel.patch)
+        when :pcm
+          value = format('$%02X', details[:dac_value].to_i)
+          ["PCM sample #{value}", "PCM #{value}"]
+        when :noise
+          ["#{details[:noise_type]} noise · att #{details[:attenuation]} (#{psg_db(details[:attenuation])})",
+           "#{details[:noise_type]} att #{details[:attenuation]}"]
+        when :percussion then ['rhythm (OPLL drums)', 'rhythm']
         else
           if details.key?(:period)
-            "square att #{details[:attenuation] || '--'}"
+            ["square · att #{details[:attenuation] || '--'} (#{psg_db(details[:attenuation])})",
+             "square att #{details[:attenuation] || '--'}"]
           elsif details[:program_name]
-            "#{details[:program_name]} v#{details[:volume]}"
+            ["#{details[:program_name]} · vol #{details[:volume]} (#{opll_volume_db(details[:volume])})",
+             "#{details[:program_name]} v#{details[:volume]}"]
           else
-            '--'
+            ['--']
           end
         end
       end
+
+      def fm_instrument_texts(patch)
+        algorithm = patch&.algorithm
+        feedback = patch&.feedback
+        digest = patch&.short_digest.to_s[0, 6]
+        short = "ALG #{algorithm || '-'} FB #{feedback || '-'} #{digest}"
+        return [short] unless algorithm && feedback
+
+        alg = "ALG #{algorithm} (#{ALGORITHM_NAMES.fetch(algorithm)})"
+        fb = "FB #{feedback} (#{FEEDBACK_NAMES.fetch(feedback)})"
+        ["#{alg} · #{fb} · patch #{digest}", "#{alg} · #{fb}", "#{alg} FB #{feedback} #{digest}", short]
+      end
+
+      # SN76489 attenuation is 2 dB per step; 15 is silent.
+      def psg_db(attenuation)
+        return '--' unless attenuation
+
+        attenuation.to_i >= 15 ? 'silent' : "-#{attenuation.to_i * 2} dB"
+      end
+
+      # YM2413 volume is 3 dB per step.
+      def opll_volume_db(volume) = volume.to_i.zero? ? '0 dB' : "-#{volume.to_i * 3} dB"
+
+      def fit(width, *candidates) = candidates.find { |text| text.length <= width } || candidates.last
 
       def row_color(muted, level)
         return @theme[:text_muted] if muted || level.zero?
@@ -629,15 +684,39 @@ module RubyPlayer
         channel = row.channel
         details = channel.details
         patch = channel.patch
-        lines = [title("#{channel.label} · ALG #{patch&.algorithm || '-'} · FB #{patch&.feedback || '-'} · " \
-                       "AMS #{details[:ams] || '-'} FMS #{details[:fms] || '-'}")]
+        # LFO depths go on the pitch line when they fit, else on the title.
+        pitch = pitch_line(channel)
+        lfo = lfo_texts(details)
+        pitch_text = fit(width, *lfo.map { |text| "#{pitch} · #{text}" }, pitch)
+        suffix = pitch_text == pitch ? " · #{lfo.last}" : ''
+        lines = [title(fit(width, *fm_voice_titles(channel.label, patch).map { |text| text + suffix }))]
         lines.concat(ALGORITHMS.fetch(patch.algorithm).map { |text| line(text, color: :primary) }) if patch&.algorithm
-        lines << line(pitch_line(channel))
+        lines << line(pitch_text)
         Array(details[:special_frequencies]).each do |slot|
           lines << line(format('OP%d %s', slot[:operator], slot[:pitch_hz] ? format_hz(slot[:pitch_hz]) : '--'),
                         color: :text_muted)
         end
         lines.concat(operator_table(row, patch, FM_OPERATOR_FIELDS, width)) if patch
+      end
+
+      def fm_voice_titles(label, patch)
+        algorithm = patch&.algorithm
+        feedback = patch&.feedback
+        short = "#{label} · ALG #{algorithm || '-'} · FB #{feedback || '-'}"
+        return [short] unless algorithm && feedback
+
+        ["#{label} · ALG #{algorithm} (#{ALGORITHM_NAMES.fetch(algorithm)}) · FB #{feedback} " \
+         "(#{FEEDBACK_NAMES.fetch(feedback)})", short]
+      end
+
+      # LFO sensitivities: tremolo (AMS) and vibrato (FMS) depth.
+      def lfo_texts(details)
+        ams = details[:ams]
+        fms = details[:fms]
+        short = "AMS #{ams || '-'} FMS #{fms || '-'}"
+        return [short] unless ams && fms
+
+        ["AMS #{ams} (#{AMS_NAMES.fetch(ams)}) · FMS #{fms} (#{FMS_NAMES.fetch(fms)})", short]
       end
 
       def pitch_line(channel)

@@ -118,6 +118,24 @@ class VgmLiveViewTest < Minitest::Test
     assert_operator level_cells(render(cols: 90, rows: 30)), :>, 10
   end
 
+  def test_wide_screens_spell_out_fm_terms
+    chip = Vgm::Chips::Ym2612.new(clock_hz: 7_670_453)
+    fast_patch(chip)
+    write(chip, 0xb0, 0x3c, 0)
+    write(chip, 0xb4, 0xd3, 0)
+    @view.update(snapshot_for([chip], 0))
+    narrow = render(cols: 110, rows: 40).find { |line| line.start_with?('1 FM 1') }
+    wide = render(cols: 200, rows: 60)
+    row = wide.find { |line| line.start_with?('1 FM 1') }
+
+    assert_match(/ALG 4 FB 7 \h{6}/, narrow)
+    assert_includes row, 'ALG 4 (two 2-op pairs, 2 carriers) · FB 7 (4π) · patch'
+    text = wide.join("\n")
+
+    assert_includes text, 'FM 1 · ALG 4 (two 2-op pairs, 2 carriers) · FB 7 (4π)'
+    assert_includes text, 'AMS 1 (1.4 dB) · FMS 3 (±10¢)'
+  end
+
   def test_history_draws_notes_where_they_were_played
     chip = Vgm::Chips::Ym2612.new(clock_hz: 7_670_453)
     fast_patch(chip)
@@ -197,7 +215,7 @@ class VgmLiveViewTest < Minitest::Test
     @view.update(snapshot_for([chip], 100))
     text = render(cols: 160, rows: 48).join("\n")
 
-    assert_includes text, 'Piano v3'
+    assert_includes text, 'Piano · vol 3 (-9 dB)'
     assert_includes text, 'FM 1 · Piano (ROM 3)'
     @view.handle_key('down')
     text = render(cols: 160, rows: 48).join("\n")
