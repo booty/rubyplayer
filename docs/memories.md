@@ -73,3 +73,12 @@ the authority for workflow and invariants.
   hysteresis. Never tie UI animation to decode cadence: `LevelTap` indexes
   pushed audio by output-timeline frame (`frames_played + buffered_frames` at
   write) and analyses the window at `frames_played`.
+- Live SPC view (snes_spc backend): replacing a decoder is only safe with a
+  bit-exact parity test against the old one; port libgme's control layer
+  (fade decided per play call, silence zeroing, lookahead) rather than
+  approximating it. Capture live state inside the decoder and tag it with
+  output-timeline frames, like LevelTap, instead of running a shadow
+  emulator. Verify fixture facts by decoding them, not by reading scan
+  output (a joined index list "135" was misread as a bitmask). Full-screen
+  views redrawn at 30 fps must memoize derived graphs and avoid per-cell
+  allocation (`Screen#fill`, shared frozen cells in `Screen#put`).

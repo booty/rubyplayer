@@ -19,7 +19,7 @@ Work on git branch `main`
 ```sh
 mise exec -- bundle exec rake test                    # full suite
 mise exec -- bundle exec ruby -Itest test/foo_test.rb # one test file
-mise exec -- bundle exec rake compile                 # native audio shim
+mise exec -- bundle exec rake compile                 # native audio shim + SPC player (C++)
 ```
 
 Ruby comes from mise. Plain `bundle exec` may select wrong Ruby.
@@ -83,6 +83,12 @@ Ruby comes from mise. Plain `bundle exec` may select wrong Ruby.
   to the next eligible pane. `QueueSelection` owns identity-preserving
   selection/scroll for upcoming tracks; history rows stay decorative.
 - Archives use macOS `bsdtar`; without `-P`, path-traversal entry names refuse.
+- `.spc` plays through `ext/rp_spc` (vendored libgme snes_spc core), not
+  libgme. Its output must stay bit-identical to libgme:
+  `test/snes_spc_parity_test.rb` compares every SPC fixture exactly. Do not
+  change `Snes_Spc::play` call sizes (e.g. to densify DSP snapshots): the DSP
+  runs ahead of the CPU at call boundaries, so splitting calls changes audio.
+  Vendored files change only per `ext/snes_spc/VENDOR.md`.
 
 ## Refactor seams
 

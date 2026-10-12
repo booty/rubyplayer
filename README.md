@@ -45,7 +45,7 @@ To run directly from the checkout:
 mise exec -- bundle exec ruby --yjit bin/rubyplayer [path ...]
 ```
 
-`mise exec -- bundle exec rake compile` builds the native audio shim (`lib/rubyplayer/native/librp_audio.dylib`) automatically as a prerequisite of `mise exec -- bundle exec rake test`; `bin/rubyplayer` expects it to already exist, so run `mise exec -- bundle exec rake compile` (or `mise exec -- bundle exec rake test`) at least once after a fresh checkout.
+`mise exec -- bundle exec rake compile` builds the native audio shim (`lib/rubyplayer/native/librp_audio.dylib`) and the SPC player (`lib/rubyplayer/native/librp_spc.dylib`, C++, needs `clang++`) automatically as a prerequisite of `mise exec -- bundle exec rake test`; `bin/rubyplayer` expects it to already exist, so run `mise exec -- bundle exec rake compile` (or `mise exec -- bundle exec rake test`) at least once after a fresh checkout.
 
 Startup checks every supported runtime dependency before taking over the terminal. Missing Homebrew packages are reported together with one `brew install ...` command. If only the bundled audio shim is missing, run `mise exec -- bundle exec rake compile`.
 
@@ -101,6 +101,22 @@ chips and partial DAC/stream cases are labeled in the page; for example,
 libgme's YM2612 priority makes mixed YM2612/YM2413 files unavailable for OPLL
 detail, and YM2151/T6W28 live detail is not provided. Switching to Info or
 closing the popup suspends live replay.
+
+For SPC (SNES) tracks, Now Playing opens on a full-screen **S-DSP** live page
+that uses the whole terminal: a global row (main/echo volume, FLG, key-on and
+end flags), all eight voices (sample, pitch, playback rate, pan, ADSR/GAIN,
+envelope level bar, output level, echo/noise/pitch-modulation flags, envelope
+phase), an echo/FIR panel with the filter's frequency response, the selected
+voice's sample with a waveform and loop point, a map of the SPC's 64 KB RAM, and
+the sample directory. Up/Down selects the voice whose sample is shown; `0`–`7`
+mute voices (numbered as in the table) and `S` solos the selected voice. Mute
+is heard once already-decoded audio drains (up to about 0.85 s with default
+buffers). The page shows the state of the audio being heard, refreshed about
+20 times a second; finer snapshots would change the emulation itself. `.spc`
+playback uses a native port of libgme's SPC player (`ext/rp_spc`), verified
+sample-for-sample against libgme; `config.backends[".spc"] = :gme` switches
+back to libgme playback (no live page), and the app does so automatically if
+`librp_spc.dylib` is missing.
 
 Artwork comes from embedded pictures in FFmpeg-backed files, falling back to
 images in the track's folder (such as `cover.jpg` or `folder.png`). Archived
@@ -184,7 +200,10 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | `artwork.rb` | `Artwork`: resolves embedded and folder cover art, caches results, and uses FFmpeg to downscale display images and derive accent colors. |
 | `runtime_dependencies.rb` | `RuntimeDependencies`: checks native libraries, command-line tools, and the audio shim before App loads, with actionable startup diagnostics. |
 | `event_bus.rb` | `EventBus`: thread-safe event queue with a self-pipe wakeup, so the main loop's `IO.select` can block on stdin *and* background events simultaneously instead of polling. |
-| `level_tap.rb` | `LevelTap`: feeds the bottom-line EQ animation. Runs a Goertzel-algorithm frequency analysis over a short rolling window of recently decoded track audio at log-spaced band frequencies. `push` runs on the decoder thread, `levels` on the UI thread, guarded by a mutex. |
+| `level_tap.rb` | `LevelTap`: feeds the bottom-line EQ animation. Runs a Goertzel-algorithm frequency analysis at log-spaced band frequencies over the window of audio the device is playing: `push` (decoder thread) tags audio with its output-timeline frame as it enters the ring; `levels` (UI thread) reads the window ending at `frames_played`. |
+| `playback_engine/spc_state.rb` | `PlaybackEngine::SpcState`: SPC live state for the engine — pushes each chunk's DSP snapshots into a timeline at the chunk's output frame, returns the snapshot being heard (`spc_live`), and queues voice muting for the decoder thread. |
+| `spc/snapshot.rb`, `spc/timeline.rb` | `Spc::Snapshot` (one decoded S-DSP state record), `Spc::LiveState`, and `Spc::Timeline`, which indexes packed snapshots by output-timeline frame. |
+| `spc/dsp.rb`, `spc/brr.rb`, `spc/fir.rb`, `spc/ram_map.rb` | Pure decoders for the live page: DSP registers, sample directory and BRR samples, echo FIR frequency response, and SPC RAM layout. |
 | `track_formatter.rb` | `TrackFormatter`: runs configured formatter lambdas against a track and helper context, then normalizes strings and conditional fragments into validated styled segments. |
 | `keymap.rb` | `Keymap`: maps normalized key names to action symbols, merging Ruby-config overrides over sensible single-letter defaults. Matching is case-insensitive. Pane-local bindings shadow global bindings. |
 | `theme.rb` | `Theme`: named color palettes for the TUI — a semantic role (`border`, `selection_bg`, `text_muted`, ...) mapped to either a named ANSI symbol or a `"#rrggbb"` truecolor string. `Theme::DEFAULT` reproduces the app's original hardcoded ANSI colors exactly; `Theme::THEMES` holds the selectable named palettes. Widgets receive the active theme per render call, not at construction time, so switching is instant. |
@@ -197,6 +216,7 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | `metadata_helper.rb` | Shared backend metadata helpers for presence checks and normalized file extensions. |
 | `gme.rb` | `Backends::Gme`: FFI bindings to libgme, plus `Handle` (an open, playable track) and metadata extraction for chiptune formats. Converts libgme's 16-bit PCM output to the app's canonical float32 format. |
 | `openmpt.rb` | `Backends::Openmpt`: FFI bindings to libopenmpt, plus `Handle` and metadata extraction for tracker module formats. libopenmpt renders float natively, so no format conversion is needed. |
+| `snes_spc.rb`, `snes_spc_lib.rb` | `Backends::SnesSpc`: plays `.spc` through `librp_spc` (handles also expose DSP snapshots, RAM, and voice muting); scanning and metadata stay on libgme. Requiring `snes_spc_lib.rb` loads the dylib and doubles as the availability check. |
 | `ffmpeg.rb` | `Backends::Ffmpeg`: probes ordinary audio files with ffprobe and decodes through an FFmpeg subprocess to float32 stereo PCM; supports seeking by restarting decoding at the requested offset. |
 
 ### Terminal UI (`lib/rubyplayer/ui/`)
@@ -204,6 +224,7 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | File | Purpose |
 |---|---|
 | `app.rb` | `UI::App`: wires every other component together and owns the main loop — key dispatch, event handling, config hot-reload, and the top-level `render`. This is the natural place to look first to see how a keypress becomes an action and how state changes reach the screen. |
+| `spc_live_view.rb` | `SpcLiveView`: the full-modal SPC live page. Renders a `Spc::LiveState` into a rectangle, choosing three-column, two-column, or stacked panels by size; graphs are memoized per input. |
 | `vgm_channels.rb`, `vgm_telemetry_controller.rb` | Snapshot-only live channel widget and visible-consumer refresh controller. The widget does not read files, query the engine, or depend on the Now Playing modal. |
 | `screen.rb` | `Screen`: the double-buffered renderer described above (`put`/`clear_back`/`flush`), plus truecolor and named ANSI color support. Has no knowledge of panes, tracks, or layout — purely a drawing primitive. |
 | `library_pane.rb` | `LibraryPane`: left-hand source tree with queue/history/favorites/Focus, five smart views, and folder hierarchy. Owns folder breadcrumbs, selection, scrolling, and overflow indicator. |
@@ -222,6 +243,13 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 |---|---|
 | `rp_audio.c` | A minimal playback shim over vendored miniaudio: owns a lock-free SPSC ring buffer of float32 interleaved stereo frames. The Ruby decoder thread produces PCM via `rp_write`, which retains the GVL for its bounded memory copy; miniaudio's own native callback consumes it and never touches Ruby. Compiled to `lib/rubyplayer/native/librp_audio.dylib` by `mise exec -- bundle exec rake compile`. |
 | `miniaudio.h` | Vendored single-header [miniaudio](https://miniaudio.docs/) library — the actual cross-platform audio device backend. Not modified. |
+
+### Native SPC player (`ext/rp_spc/`, `ext/snes_spc/`)
+
+| File | Purpose |
+|---|---|
+| `ext/snes_spc/` | Vendored SPC700 + S-DSP core, output filter, and resampler from libgme 0.6.5 (LGPL 2.1; see `ext/snes_spc/VENDOR.md` for files, build flags, and the one read-only accessor patch). |
+| `ext/rp_spc/rp_spc.{h,cpp}` | C API over that core: a faithful port of libgme's SPC playback control (resampling, gain, fade, silence handling) so output matches libgme exactly, plus S-DSP snapshots recorded once per emulator call (~50 ms). Compiled to `lib/rubyplayer/native/librp_spc.dylib` by `mise exec -- bundle exec rake compile`. `test/snes_spc_parity_test.rb` requires bit-exact output against libgme on every SPC fixture. |
 
 ### Other directories
 
@@ -352,7 +380,7 @@ restart.
 | `config.keymap.global` | `{}` | Global key/action overrides. |
 | `config.keymap.library` | `{}` | Library overrides; beat global bindings. |
 | `config.keymap.tracks` | `{}` | Tracks overrides; beat global bindings. |
-| `config.backends` | `{}` | Extension/backend overrides; dot optional. |
+| `config.backends` | `{}` | Extension/backend overrides; dot optional. `.spc` defaults to the native SPC player; `".spc" => :gme` restores libgme playback. |
 
 Map settings use bracket assignment:
 
