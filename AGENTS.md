@@ -36,6 +36,13 @@ Ruby comes from mise. Plain `bundle exec` may select wrong Ruby.
 - User-tunable values belong in `config.rb` `DEFAULTS`.
 - Internal algorithm/timing values use named local/class constants, not config.
 - Before commit: run full suite and relevant native compile.
+- Once a requested change passes the full suite and rubocop, commit it (one
+  commit per feature) and push to the current branch's remote without asking.
+  Ask before force-pushing or rewriting history.
+- To split work into several commits: stage one commit's files, run
+  `git stash push --keep-index --include-untracked`, run the tests, commit,
+  then `git stash pop`. `.githooks/pre-commit` rejects a staged Ruby file that
+  also has unstaged changes, because it runs `rubocop -a` and re-adds the file.
 
 ## Architecture invariants
 
