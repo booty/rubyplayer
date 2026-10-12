@@ -7,6 +7,9 @@ require_relative '../../rubyplayer'
 require_relative '../duration_formatter'
 require_relative '../audio_output'
 require_relative '../playback_engine'
+require_relative '../vgm/telemetry'
+require_relative 'vgm_channels'
+require_relative 'vgm_telemetry_controller'
 
 module RubyPlayer
   module UI
@@ -45,6 +48,15 @@ module RubyPlayer
           registry: @registry, audio: @audio, library: @library,
           event_bus: @bus, config: @config, archive_cache: @archive_cache,
           focus_player: @focus_player
+        )
+        @vgm_telemetry = Vgm::Telemetry.new(
+          event_bus: @bus, max_bytes: @config['ui', 'vgm_telemetry_max_bytes']
+        )
+        @vgm_channels = VgmChannels.new
+        @vgm_telemetry_controller = VgmTelemetryController.new(
+          engine: @engine, telemetry: @vgm_telemetry,
+          refresh_hz: [@config['ui', 'vgm_telemetry_fps'], @config['ui', 'frame_fps']].min,
+          clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) }
         )
         @scanner = Scanner.new(library: @library, registry: @registry)
         @pool = ExtractorPool.new(library: @library, registry: @registry,
@@ -126,6 +138,7 @@ module RubyPlayer
           ready = IO.select([$stdin, @bus.reader], nil, nil, select_timeout)
           read_input if ready&.first&.include?($stdin)
           handle_events
+          tick_vgm_telemetry
           handle_resize if @resized
           reload_config_if_changed
           render_if_needed
@@ -140,7 +153,8 @@ module RubyPlayer
         # Shutdown is best-effort across independent resources. Focus process
         # failure must not leave decoder thread, native audio, or SQLite open;
         # preserve the first error so callers still learn cleanup was incomplete.
-        [-> { @engine.shutdown }, -> { @audio.close }, -> { @db.close }].each do |cleanup|
+        [-> { @vgm_telemetry_controller.shutdown }, -> { @engine.shutdown },
+         -> { @audio.close }, -> { @db.close }].each do |cleanup|
           cleanup.call
         rescue StandardError => e
           first_error ||= e
@@ -238,7 +252,14 @@ module RubyPlayer
       end
 
       def handle_now_playing_key(key)
-        @show_now_playing = false if %w[o escape enter].include?(key)
+        if %w[o escape enter].include?(key)
+          close_now_playing
+        elsif key == 'tab'
+          toggle_now_playing_page if @engine.vgm_telemetry_request
+        elsif @now_playing_page == :live
+          mapped_key = { 'pgup' => 'pageup', 'pgdn' => 'pagedown' }.fetch(key, key)
+          invalidate_screen! if @now_playing_modal&.handle_live_key(mapped_key)
+        end
       end
 
       def handle_missing_purge_key(key)
@@ -521,13 +542,25 @@ module RubyPlayer
           @status_line.set_message('Nothing playing')
           return
         end
-        prepare_now_playing(track)
         @show_now_playing = true
+        prepare_now_playing(track)
+        @vgm_telemetry_controller.visible = (@now_playing_page == :live)
+        set_art(nil) if @now_playing_page == :live
+        invalidate_screen!
       end
 
       def prepare_now_playing(track)
-        modal = NowPlayingModal.new(track, extras: @library.track_metadata_for(track.id))
+        live = !@engine.vgm_telemetry_request.nil?
+        @now_playing_page = live ? :live : :info
+        @vgm_channels.update(nil)
+        modal = NowPlayingModal.new(track, extras: @library.track_metadata_for(track.id),
+                                           page: @now_playing_page, channels: @vgm_channels,
+                                           live_available: live)
         @now_playing_modal = modal
+        if @show_now_playing
+          @vgm_telemetry_controller.visible = live
+          live ? set_art(nil) : fetch_art(track)
+        end
         return unless %w[ffmpeg gme].include?(track.backend)
 
         # Existing library rows predate technical metadata. Probe once when
@@ -544,6 +577,30 @@ module RubyPlayer
           # File may have disappeared since playback began; retain cached facts.
           nil
         end
+      end
+
+      def toggle_now_playing_page
+        page = @now_playing_page == :live ? :info : :live
+        @now_playing_page = page
+        @now_playing_modal.page = page
+        if page == :live
+          @vgm_channels.update(nil)
+          @vgm_telemetry_controller.visible = true
+          set_art(nil)
+        else
+          @vgm_telemetry_controller.visible = false
+          fetch_art(@engine.state[:track])
+        end
+        invalidate_screen!
+      end
+
+      def close_now_playing
+        @show_now_playing = false
+        @vgm_telemetry_controller.visible = false
+        @now_playing_page = :info
+        track = @engine.state[:track]
+        fetch_art(track) if track && @art_bytes.nil?
+        invalidate_screen!
       end
 
       def cycle_art_mode
@@ -916,6 +973,8 @@ module RubyPlayer
               @now_playing_modal.update(payload[:metadata])
               invalidate_screen!
             end
+          when :vgm_telemetry_ready
+            handle_vgm_telemetry_event(payload)
           when :queue_changed, :track_ended then refresh = true
           when :art_ready
             # Compare against the *current* track: the decoder may have
@@ -939,6 +998,28 @@ module RubyPlayer
         elsif refresh_queued
           @queued_pane.reload!
         end
+        close_now_playing if @show_now_playing && @engine.state[:track].nil?
+      end
+
+      def handle_vgm_telemetry_event(payload)
+        return unless payload[:telemetry].equal?(@vgm_telemetry)
+
+        snapshot = @vgm_telemetry.take_snapshot
+        return unless @vgm_telemetry_controller.accept(snapshot)
+
+        @vgm_channels.update(@vgm_telemetry_controller.snapshot)
+        invalidate_screen!
+      end
+
+      def tick_vgm_telemetry
+        visible = @show_now_playing && @now_playing_page == :live && !modal_active?
+        @vgm_telemetry_controller.visible = visible
+        @vgm_channels.paused = @engine.state[:paused]
+        @vgm_telemetry_controller.tick
+        return unless @vgm_channels.snapshot && @vgm_telemetry_controller.snapshot.nil?
+
+        @vgm_channels.update(nil)
+        invalidate_screen!
       end
 
       def refresh_panes
@@ -978,6 +1059,10 @@ module RubyPlayer
         @hotkey_line = HotkeyLine.new(keymap: @keymap)
         @frame_interval = 1.0 / @config['ui', 'frame_fps']
         @idle_poll = @config['ui', 'idle_poll_seconds']
+        @vgm_telemetry.reconfigure(max_bytes: @config['ui', 'vgm_telemetry_max_bytes'])
+        @vgm_telemetry_controller.configure(
+          refresh_hz: [@config['ui', 'vgm_telemetry_fps'], @config['ui', 'frame_fps']].min
+        )
         @tracks_pane.update_config(@config)
         @queued_pane_enabled = @config['ui', 'queued_pane']
         normalize_active_pane!
@@ -1275,7 +1360,27 @@ module RubyPlayer
         (1...(h - 1)).each { |i| @screen.put(y + i, x + 1, ' ' * (w - 2), bg: @theme[:surface]) }
         draw_box(x, y, w, h, active: true, title: title)
         yield x, y if block_given?
-        @screen.put(y + h - 2, x + 2, hint[0, w - 4], fg: @theme[:text_muted], bg: hint_bg) if hint
+        return unless hint
+
+        hint_row = y + h - 2
+        if title == 'Now Playing' && @now_playing_page == :live
+          draw_live_modal_hint(hint_row, x + 2, w - 4, hint, hint_bg)
+        else
+          @screen.put(hint_row, x + 2, hint[0, w - 4], fg: @theme[:text_muted], bg: hint_bg)
+        end
+      end
+
+      def draw_live_modal_hint(row, column, width, hint, background)
+        remaining = width
+        hint.scan(/\[[^\]]+\]|[^\[]+/).each do |part|
+          break if remaining <= 0
+
+          text = part[0, remaining]
+          @screen.put(row, column, text, fg: @theme[:text_muted], bg: background,
+                                         bold: part.start_with?('['))
+          column += text.length
+          remaining -= text.length
+        end
       end
 
       def render_playlist_modal

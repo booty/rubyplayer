@@ -17,6 +17,8 @@ RubyPlayer.configure do |config|
   # config.ui.queued_pane = true
   # config.ui.queued_pane_width = 36
   # config.ui.seek_seconds = 10
+  # config.ui.vgm_telemetry_fps = 15
+  # config.ui.vgm_telemetry_max_bytes = 67_108_864
 
   # Audio and scanning
   # config.audio.sample_rate = "auto" # or 48_000

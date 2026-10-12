@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative 'vgm_channels'
+
 module RubyPlayer
   module UI
     # Owns a snapshot only: App loads metadata and delivers background updates.
@@ -10,11 +12,27 @@ module RubyPlayer
       COMPACT_FRAME_ROWS = 4
       private_constant :MAX_WIDTH, :ART_MIN_WIDTH, :FRAME_ROWS, :COMPACT_FRAME_ROWS
 
-      def initialize(track, extras:)
+      def initialize(track, extras:, page: :info, channels: nil, live_available: nil)
         @track = track
         @metadata = {}
         @extras = extras
+        @page = %i[info live].include?(page) ? page : :info
+        @channels = channels || VgmChannels.new
+        @live_available = if live_available.nil?
+                            %w[vgm vgz].include?(track.format.to_s.downcase)
+                          else
+                            !!live_available
+                          end
       end
+
+      attr_reader :page
+
+      def page=(page)
+        @page = %i[info live].include?(page) ? page : :info
+      end
+
+      def update_live(snapshot) = @channels.update(snapshot)
+      def handle_live_key(key) = @channels.handle_key(key)
 
       def matches?(track)
         track && [track.id, track.physical_path, track.archive_entry, track.subtune_index] ==
@@ -28,6 +46,7 @@ module RubyPlayer
 
       def render(screen, theme:, frame:, min_art_rows:)
         return if screen.rows < 5 || screen.cols < 8
+        return render_live(screen, theme: theme, frame: frame) if @page == :live
 
         width = (screen.cols - 2).clamp(4, MAX_WIDTH)
         max_height = screen.rows - 2
@@ -46,7 +65,7 @@ module RubyPlayer
         end
         height = top_height + tech.size + frame_rows
         art = nil
-        frame.call(title: 'Now Playing', w: width, h: height, hint: '[o/esc/enter] Close') do |x, y|
+        frame.call(title: 'Now Playing', w: width, h: height, hint: info_hint) do |x, y|
           text_x = x + 2 + (art_width.positive? ? art_width + 2 : 0)
           text_width = width - 4 - (text_x - x - 2)
           draw_section(screen, info, column: text_x, line: y + 1, width: text_width, title: 'Track', theme: theme)
@@ -58,6 +77,30 @@ module RubyPlayer
       end
 
       private
+
+      def render_live(screen, theme:, frame:)
+        width = (screen.cols - 2).clamp(4, MAX_WIDTH)
+        height = screen.rows - 2
+        hint = '[Tab] Info/Live [↑/↓] Select [PgUp/PgDn] Scroll [←/→] Detail [o/esc/enter] Close'
+        if height < 6
+          frame.call(title: 'Now Playing', w: width, h: height, hint: hint)
+          return nil
+        end
+
+        frame.call(title: 'Now Playing', w: width, h: height, hint: hint) do |x, y|
+          track_title = [value(:title), value(:artist)].compact.reject(&:empty?).join(' — ')
+          summary = ['VGM', @extras['sound_chips'], 'Info / Live'].compact.join(' · ')
+          screen.put(y + 1, x + 2, track_title[0, width - 4], fg: theme[:primary], bold: true)
+          screen.put(y + 2, x + 2, summary[0, width - 4], fg: theme[:text_muted])
+          @channels.render(screen, x: x + 2, y: y + 3, width: width - 4,
+                                   height: [height - 6, 1].max, theme: theme)
+        end
+        nil
+      end
+
+      def info_hint
+        @live_available ? '[Tab] Info / Live · [o/esc/enter] Close' : '[o/esc/enter] Close'
+      end
 
       def value(field)
         @metadata.key?(field) ? @metadata[field] : @track.public_send(field)
@@ -153,7 +196,7 @@ module RubyPlayer
 
       def render_tiny(theme:, frame:, screen:, width:, height:)
         rows = [['Track', value(:title).to_s]] + technical_rows
-        frame.call(title: 'Now Playing', w: width, h: height, hint: '[o/esc/enter] Close') do |x, y|
+        frame.call(title: 'Now Playing', w: width, h: height, hint: info_hint) do |x, y|
           draw_fields(screen, rows.first([height - 3, 0].max), column: x + 2, line: y + 1,
                                                                width: width - 4, theme: theme)
         end

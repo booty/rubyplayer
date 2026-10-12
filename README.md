@@ -63,6 +63,21 @@ Voice capabilities describe hardware, not live activity. Copyright, dumper,
 and comments appear when available. Opening the popup loads fresh details for
 ordinary audio files and chiptunes without a rescan. Unknown fields are omitted.
 
+For VGM/VGZ tracks, Now Playing opens on **Live channels** when the current
+playback source is a VGM stream. Press `Tab` to switch between **Info** and
+**Live**. Live shows register-derived YM2612/YM3438 FM rows, SN76489 PSG rows,
+and YM2413 OPLL rows when libgme renders those chips. Up/Down selects a channel,
+PageUp/PageDown scrolls, and Left/Right changes channel, patch, and chip details.
+The Live page reads VGM commands on one bounded background worker and follows
+the sample position already consumed by the audio output, so decoder read-ahead
+does not move the display early. GME also preserves VGM leading silence so the
+audio and register timelines begin together. These rows report register state;
+they do not estimate envelope release tails or prove audibility. Unsupported
+chips and partial DAC/stream cases are labeled in the page; for example,
+libgme's YM2612 priority makes mixed YM2612/YM2413 files unavailable for OPLL
+detail, and YM2151/T6W28 live detail is not provided. Switching to Info or
+closing the popup suspends live replay.
+
 Artwork comes from embedded pictures in FFmpeg-backed files, falling back to
 images in the track's folder (such as `cover.jpg` or `folder.png`). Archived
 tracks use the folder containing the on-disk archive. Loading and image
@@ -136,7 +151,8 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | `extractor_pool.rb` | `ExtractorPool`: phase 2 of a scan. A bounded thread pool (size configurable, default = CPU core count) that opens each `WorkItem` through the right backend to extract metadata, expands multi-subtune files into virtual folders + child tracks, and flags anything undecodable rather than losing it. Archives are unpacked via `ArchiveCache` and their entries (including nested archives and multi-subtune files) scanned recursively. |
 | `archive_cache.rb` | `ArchiveCache`: extracts `.zip`/`.7z`/`.rar` containers into a content-addressed on-disk cache (keyed by path+mtime+size) so the FFI backends — which can only read real files — can decode entries stored inside archives. Uses `bsdtar` (libarchive, bundled with macOS), which reads all three formats and refuses path-traversal entry names. `materialize` resolves a track's `(physical_path, archive_entry)` pair to a real extracted file, chaining through nested archives. The cache directory is safe to delete at any time. |
 | `play_queue.rb` | `PlayQueue`: the in-memory playback queue (`Track` objects, not DB rows). Head of the list is "currently playing" when the engine is playing. Supports insert-now/front/end, positional or by-id removal, and bounded undo/redo. |
-| `playback_engine.rb` | `PlaybackEngine`: owns the decoder thread, the queue, and the `AudioOutput` device for the process's lifetime. UI threads call its public methods (commands in); it publishes events out via `EventBus`. Handles play/pause/skip/seek, disliked-track auto-skip, and per-track playback-history recording once a track has played past a configurable percentage. |
+| `playback_engine.rb` | `PlaybackEngine`: owns the decoder thread, the queue, and the `AudioOutput` device for the process's lifetime. UI threads call its public methods (commands in); it publishes events out via `EventBus`. Handles play/pause/skip/seek, disliked-track auto-skip, and per-track playback-history recording once a track has played past a configurable percentage. Its VGM request API captures consumed audio time and transport identity without disk access. |
+| `vgm/reader.rb`, `vgm/cursor.rb`, `vgm/chips.rb`, `vgm/telemetry.rb` | Bounded plain/gzip VGM command reader, state-carrying loop/checkpoint replay, chip capability routing, and a lazy coalescing worker that publishes immutable snapshots. Chip adapters live under `vgm/chips/`. |
 | `audio_output.rb` | `AudioOutput`: thin FFI wrapper around the native shim (`RpAudio`) — init/start/stop the device, write float32 stereo frames into its ring buffer, query playback position, pause. One instance per process (the C side holds module-level state). |
 | `audio_format.rb` | `AudioFormat`: canonical little-endian float32 interleaved-stereo constants and frame sizes shared by audio producers and consumers. |
 | `focus_sounds.rb` | `FocusSound` and `FocusSounds`: immutable catalog of infinite SoX noise recipes, separate from finite library tracks. |
@@ -164,6 +180,7 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | File | Purpose |
 |---|---|
 | `app.rb` | `UI::App`: wires every other component together and owns the main loop — key dispatch, event handling, config hot-reload, and the top-level `render`. This is the natural place to look first to see how a keypress becomes an action and how state changes reach the screen. |
+| `vgm_channels.rb`, `vgm_telemetry_controller.rb` | Snapshot-only live channel widget and visible-consumer refresh controller. The widget does not read files, query the engine, or depend on the Now Playing modal. |
 | `screen.rb` | `Screen`: the double-buffered renderer described above (`put`/`clear_back`/`flush`), plus truecolor and named ANSI color support. Has no knowledge of panes, tracks, or layout — purely a drawing primitive. |
 | `library_pane.rb` | `LibraryPane`: left-hand source tree with queue/history/favorites/Focus, five smart views, and folder hierarchy. Owns folder breadcrumbs, selection, scrolling, and overflow indicator. |
 | `list_row_renderer.rb` | Shared stateless track-row construction, styled segment drawing, clipping, theme-color resolution, and section-header text. |
@@ -250,8 +267,8 @@ marked managed block at the end of `config.rb`. Rubyplayer replaces only the
 relevant block; user code and comments remain untouched.
 
 Hot reload immediately applies pane widths, Queued preference, seek interval,
-theme, keymap, History limit, star glyph, track formatters, frame rate, and idle
-poll interval. Settings captured when constructing audio, scanner, database,
+theme, keymap, History limit, star glyph, track formatters, frame rate, idle
+poll interval, VGM telemetry rate, and the VGM byte limit. Settings captured when constructing audio, scanner, database,
 archive cache, playback engine, artwork resolver, or status-line objects require
 restart.
 
@@ -261,6 +278,8 @@ restart.
 |---|---:|---|
 | `config.ui.library_pane_percent` | `33` | Library width, integer `1..99`. |
 | `config.ui.frame_fps` | `30` | Frame limit; positive integer. |
+| `config.ui.vgm_telemetry_fps` | `15` | Maximum Live-channel refresh rate, integer `1..30`, also capped by `frame_fps`. |
+| `config.ui.vgm_telemetry_max_bytes` | `67108864` | Maximum decompressed VGM/VGZ bytes held for telemetry; positive integer. Above-limit files continue playing without live detail. |
 | `config.ui.idle_poll_seconds` | `0.25` | Idle loop wake-up interval. |
 | `config.ui.status_message_seconds` | `5` | Status duration; positive integer. |
 | `config.ui.resize_settle_seconds` | `0.5` | Delay after resize before re-emitting art. |

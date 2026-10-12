@@ -1,5 +1,7 @@
 require 'test_helper'
 require 'stringio'
+require 'rubyplayer/vgm/snapshot'
+require 'rubyplayer/ui/vgm_channels'
 
 class NowPlayingModalTest < Minitest::Test
   def track
@@ -86,6 +88,26 @@ class NowPlayingModalTest < Minitest::Test
     refute_includes text, 'Artist: Artist'
     assert_includes text, 'Track: 8'
     refute_includes text, '8 of 2'
+  end
+
+  def test_live_page_hosts_channels_without_art_and_keeps_track_context
+    channels = RubyPlayer::UI::VgmChannels.new
+    modal = RubyPlayer::UI::NowPlayingModal.new(track, extras: {
+                                                  'sound_chips' => 'YM2612 + SN76489',
+                                                  'system' => 'Sega Mega Drive'
+                                                }, page: :live, channels: channels)
+    channels.update(RubyPlayer::Vgm::Snapshot.new(
+                      generation: 1, revision: 0, sample: 44_100, status: :ready,
+                      message: nil, loop_count: 2, chips: [], warnings: []
+                    ))
+
+    text, art = render_modal(modal, rows: 28, cols: 110)
+
+    assert_includes text, 'Live channels'
+    assert_includes text, 'Song — Artist'
+    assert_includes text, 'YM2612 + SN76489'
+    assert_includes text, 'Info / Live'
+    assert_nil art
   end
 
   def test_small_terminals_keep_both_sections_inside_the_modal

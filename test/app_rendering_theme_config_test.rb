@@ -372,6 +372,24 @@ class AppRenderingThemeConfigTest < Minitest::Test
     assert_equal "RELOADED #{track.title}", queued_track[:text]
   end
 
+  def test_hot_reload_reconfigures_live_vgm_rate_and_byte_limit
+    path = File.join(@tmp, 'config.rb')
+    File.write(path, <<~RUBY)
+      RubyPlayer.configure do |config|
+        config.ui.vgm_telemetry_fps = 8
+        config.ui.vgm_telemetry_max_bytes = 1_048_576
+      end
+    RUBY
+
+    force_config_reload
+
+    telemetry = @app.instance_variable_get(:@vgm_telemetry)
+    controller = @app.instance_variable_get(:@vgm_telemetry_controller)
+
+    assert_equal 1_048_576, telemetry.instance_variable_get(:@max_bytes)
+    assert_in_delta 0.125, controller.instance_variable_get(:@interval), 0.0001
+  end
+
   def test_invalid_queued_formatter_hot_reload_keeps_active_config_and_rows
     track = @app.instance_variable_get(:@library).recently_added.first
     @app.engine.enqueue_end([track])

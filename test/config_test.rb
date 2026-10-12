@@ -37,6 +37,22 @@ class ConfigTest < Minitest::Test
     assert_respond_to config['ui', 'format_track_queued'], :call
   end
 
+  def test_vgm_telemetry_settings_defaults_and_validate_ranges
+    assert_equal 15, RubyPlayer::DEFAULTS.dig('ui', 'vgm_telemetry_fps')
+    assert_equal 67_108_864, RubyPlayer::DEFAULTS.dig('ui', 'vgm_telemetry_max_bytes')
+
+    {
+      'config.ui.vgm_telemetry_fps = 0' => '1 to 30',
+      'config.ui.vgm_telemetry_fps = 31' => '1 to 30',
+      'config.ui.vgm_telemetry_fps = "15"' => 'Integer',
+      'config.ui.vgm_telemetry_max_bytes = 0' => 'positive Integer'
+    }.each do |assignment, expected|
+      write_config "RubyPlayer.configure { |config| #{assignment} }\n"
+      error = assert_raises(RubyPlayer::ConfigError) { RubyPlayer::ConfigStore.new(path: @path) }
+      assert_includes error.message, expected
+    end
+  end
+
   def test_boolean_settings_accept_false
     write_config <<~RUBY
       RubyPlayer.configure do |config|

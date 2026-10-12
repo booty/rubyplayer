@@ -154,8 +154,17 @@ module RubyPlayer
     private_class_method :validate_value_type!
 
     def validate_special_values!(data)
+      validate_positive_values!(data)
+      validate_vgm_values!(data)
+      validate_library_values!(data)
+      validate_audio_values!(data)
+      validate_theme_value!(data)
+    end
+
+    def validate_positive_values!(data)
       positive = %w[
         ui.frame_fps ui.status_message_seconds ui.seek_seconds ui.queued_pane_width
+        ui.vgm_telemetry_max_bytes
         audio.ring_buffer_ms audio.decode_chunk_frames
         library.backup_retention library.history_limit
         library.history_min_seconds_unknown library.undo_depth
@@ -165,7 +174,14 @@ module RubyPlayer
         value = dig(data, setting)
         raise SettingError, "#{setting} must be a positive Integer" unless value.is_a?(Integer) && value.positive?
       end
+    end
 
+    def validate_vgm_values!(data)
+      telemetry_fps = dig(data, 'ui.vgm_telemetry_fps')
+      raise SettingError, 'ui.vgm_telemetry_fps must be an Integer from 1 to 30' unless telemetry_fps.is_a?(Integer) && telemetry_fps.between?(1, 30)
+    end
+
+    def validate_library_values!(data)
       pane_percent = dig(data, 'ui.library_pane_percent')
       raise SettingError, 'ui.library_pane_percent must be an Integer from 1 to 99' unless pane_percent.is_a?(Integer) && pane_percent.between?(1, 99)
 
@@ -174,10 +190,14 @@ module RubyPlayer
 
       history_percent = dig(data, 'library.history_min_percent')
       raise SettingError, 'library.history_min_percent must be an Integer from 0 to 100' unless history_percent.is_a?(Integer) && history_percent.between?(0, 100)
+    end
 
+    def validate_audio_values!(data)
       sample_rate = dig(data, 'audio.sample_rate')
       raise SettingError, 'audio.sample_rate must be "auto" or a positive Integer' unless sample_rate == 'auto' || (sample_rate.is_a?(Integer) && sample_rate.positive?)
+    end
 
+    def validate_theme_value!(data)
       theme = dig(data, 'ui.theme')
       raise SettingError, 'ui.theme must name a known theme' unless Theme::ALL_IDS.include?(theme.to_sym)
     end

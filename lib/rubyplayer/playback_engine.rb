@@ -3,6 +3,8 @@
 require 'time'
 require_relative 'audio_output'
 require_relative 'level_tap'
+require_relative 'vgm/reader'
+require_relative 'vgm/snapshot'
 
 module RubyPlayer
   # Owns the decoder thread, the authoritative PlayQueue, and the AudioOutput.
@@ -14,11 +16,14 @@ module RubyPlayer
     ACTIVE_COMMAND_POLL_TIMEOUT_SECONDS = 0
     BUFFER_FULL_POLL_INTERVAL_SECONDS = 0.005
     MILLISECONDS_PER_SECOND = 1000
+    VGM_SAMPLE_RATE = 44_100
+    VGM_DECODER_CAPABILITIES = { sn76489: true, ym2612: true, ym2413: true }.freeze
     PREVIOUS_TRACK_THRESHOLD_MS = 3_000
     PREVIOUS_TRACK_LIMIT = 100
     private_constant :THREAD_JOIN_TIMEOUT_SECONDS, :ACTIVE_COMMAND_POLL_TIMEOUT_SECONDS,
                      :BUFFER_FULL_POLL_INTERVAL_SECONDS,
-                     :MILLISECONDS_PER_SECOND, :PREVIOUS_TRACK_THRESHOLD_MS,
+                     :MILLISECONDS_PER_SECOND, :VGM_SAMPLE_RATE,
+                     :VGM_DECODER_CAPABILITIES, :PREVIOUS_TRACK_THRESHOLD_MS,
                      :PREVIOUS_TRACK_LIMIT
 
     def initialize(queue:, registry:, audio:, library:, event_bus:, config:, focus_player:,
@@ -54,6 +59,9 @@ module RubyPlayer
       @frames_base = 0
       @seek_offset_ms = 0
       @started_at = nil
+      @vgm_generation = 0
+      @vgm_revision = 0
+      @vgm_source = nil
       @published_second = nil
       # Decoder-owned navigation history includes short plays that do not
       # qualify for the library's persistent listening history.
@@ -188,6 +196,19 @@ module RubyPlayer
         { track: @current, playing: @playing, paused: @paused,
           position_ms: position_ms, skip_disliked: @skip_disliked,
           focus_sound: @focus_sound, next_track: next_track }
+      end
+    end
+
+    # Uses the audio callback's consumed-source counter, never decoder read-ahead.
+    def vgm_telemetry_request
+      @mutex.synchronize do
+        return unless @playing && @vgm_source && !@focus_sound
+
+        consumed_frames = [@audio.frames_played - @frames_base, 0].max
+        seek_samples = [@seek_offset_ms, 0].max * VGM_SAMPLE_RATE / MILLISECONDS_PER_SECOND
+        elapsed_samples = consumed_frames * VGM_SAMPLE_RATE / @audio.sample_rate
+        Vgm::Request.new(source: @vgm_source, revision: @vgm_revision,
+                         sample: seek_samples + elapsed_samples, paused: @paused)
       end
     end
 
@@ -373,6 +394,7 @@ module RubyPlayer
       backend = @registry.backend_for(path)
       @handle = backend.open(path, track.subtune_index,
                              sample_rate: @audio.sample_rate)
+      vgm = track.backend.to_s == 'gme' && Vgm::Reader.vgm_stream?(path)
       @audio.paused = true
       @audio.flush
       @audio.paused = false
@@ -388,6 +410,9 @@ module RubyPlayer
         @paused = false
         @frames_base = @audio.frames_played
         @seek_offset_ms = 0
+        @vgm_generation += 1
+        @vgm_revision = 0
+        @vgm_source = vgm ? build_vgm_source(track, path) : nil
         @started_at = Time.now.utc
       end
       @level_tap.reset
@@ -396,6 +421,18 @@ module RubyPlayer
       safe_publish(:playback_state, playing: true, paused: false)
     rescue StandardError => e
       recover_from_track_error(track, e)
+    end
+
+    def build_vgm_source(track, path)
+      Vgm::Source.new(
+        generation: @vgm_generation,
+        track_identity: [track.id, track.physical_path, track.archive_entry.to_s,
+                         track.subtune_index],
+        path: path, format: File.extname(path).delete_prefix('.').downcase.to_sym,
+        sample_rate: @audio.sample_rate,
+        timeline_policy: :libgme_vgm_samples,
+        decoder_capabilities: VGM_DECODER_CAPABILITIES
+      )
     end
 
     # Applies the skip-rated-1 rule, advancing past disliked tracks.
@@ -501,6 +538,7 @@ module RubyPlayer
         @mutex.synchronize do
           @seek_offset_ms = ms
           @frames_base = @audio.frames_played
+          @vgm_revision += 1 if @vgm_source
         end
         @published_second = nil
       end
@@ -528,6 +566,10 @@ module RubyPlayer
       @handle&.close
       @handle = nil
       @pending = nil
+      @mutex.synchronize do
+        @vgm_source = nil
+        @vgm_revision = 0
+      end
     end
 
     # Publish calls happen from inside code that may already hold @mutex

@@ -46,3 +46,13 @@ the authority for workflow and invariants.
   reuse one hardware snapshot across subtunes, and decompress only a bounded
   VGM/VGZ header. Mask clock flags before displaying Hz; bit flags can indicate
   dual chips or variants. Preserve uncertainty in legacy FM identification.
+- VGM live state uses its own bounded reader/replayer. Keep the decoder as the
+  audio authority, preserve VGM leading silence, and derive requests from
+  `AudioOutput#frames_played` rather than decoder read-ahead. Coalesce worker
+  requests and EventBus tokens; suspend must cancel replay and release the
+  cursor without clearing a still-queued notification token. Make both bounded
+  decompression and command-boundary validation cancellable, since a small VGM
+  can still contain millions of short commands. YM2612 global key/DAC/special
+  mode writes belong to port 0; keep pre-1.10 legacy FM clocks explicitly
+  ambiguous. Wrap and paginate operator fields at narrow sizes, and keep
+  warnings off the patch page so they cannot hide register details.

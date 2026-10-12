@@ -3,6 +3,7 @@
 require 'ffi'
 require_relative '../runtime_dependencies'
 require_relative '../audio_format'
+require_relative '../vgm/reader'
 require_relative 'metadata_helper'
 require_relative 'chiptune_metadata'
 
@@ -23,6 +24,7 @@ module RubyPlayer
       # across cores instead of serializing on the GVL.
       attach_function :gme_open_file, %i[string pointer int], :string, blocking: true
       attach_function :gme_track_count, [:pointer], :int
+      attach_function :gme_ignore_silence, %i[pointer int], :void
       attach_function :gme_start_track, %i[pointer int], :string
       attach_function :gme_play, %i[pointer int pointer], :string, blocking: true
       attach_function :gme_track_ended, [:pointer], :int
@@ -77,6 +79,9 @@ module RubyPlayer
 
       def open(path, subtune_index, sample_rate:)
         emu = open_emu(path, sample_rate)
+        # VGM command time includes leading silence. Keeping it prevents the
+        # decoder and register telemetry from developing different time bases.
+        GmeLib.gme_ignore_silence(emu, 1) if Vgm::Reader.vgm_stream?(path)
         err = GmeLib.gme_start_track(emu, subtune_index)
         if err
           GmeLib.gme_delete(emu)

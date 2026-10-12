@@ -38,6 +38,8 @@ module RubyPlayer
     'ui' => {
       'library_pane_percent' => 33,
       'frame_fps' => 30,
+      'vgm_telemetry_fps' => 15,
+      'vgm_telemetry_max_bytes' => 67_108_864,
       # Idle wake-up cadence when nothing is animating. Bounded above by how
       # long a terminal resize may go unnoticed: SIGWINCH only sets a flag
       # the loop polls, so this is the worst-case resize latency.
