@@ -20,8 +20,13 @@ module RubyPlayer
 
       attr_reader :rows, :cols
 
+      # Distinct styles seen before the cell cache starts over; themes use a
+      # few dozen, so this only bounds pathological callers.
+      MAX_CACHED_STYLES = 1_024
+
       def initialize(out:, rows:, cols:)
         @out = out
+        @cell_cache = {}
         resize(rows, cols)
       end
 
@@ -43,10 +48,10 @@ module RubyPlayer
         return if row.negative? || row >= @rows
 
         # Cells are never mutated once placed, so one frozen cell per distinct
-        # character can fill many positions: a full-width background fill
-        # allocates one cell, not one per column, which matters for
-        # full-screen modals redrawn at the frame rate.
-        cells = {}
+        # character and style is shared across positions and frames: full-
+        # screen pages redrawn at the frame rate would otherwise allocate a
+        # cell per character per frame.
+        cells = styled_cells(fg, bg, bold, italic, underline, dim)
         text.each_char.with_index do |ch, i|
           c = col + i
           next if c.negative?
@@ -55,6 +60,12 @@ module RubyPlayer
           @back[row][c] = cells[ch] ||= Cell.new(ch, fg, bg, bold, italic, underline, dim).freeze
         end
       end
+
+      def styled_cells(*style)
+        @cell_cache.clear if @cell_cache.size >= MAX_CACHED_STYLES && !@cell_cache.key?(style)
+        @cell_cache[style] ||= {}
+      end
+      private :styled_cells
 
       # Same result as put(row, col, ch * width, ...), but one shared cell and
       # one Array#fill instead of a per-character loop: full-screen modals

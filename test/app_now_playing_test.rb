@@ -156,13 +156,37 @@ class AppNowPlayingTest < Minitest::Test
     refute controller.instance_variable_get(:@visible)
   end
 
+  # The fixture declares a YM2612 and an SN76489: libgme voices FM 1-6,
+  # PCM, and the PSG as one.
+  def test_vgm_live_keys_mute_and_solo_the_selected_channel
+    start_live_vgm_track
+    use_screen(rows: 40, cols: 160)
+    @app.handle_key('o')
+    wait_for_live_vgm_rows(@app.instance_variable_get(:@vgm_telemetry_controller))
+    @app.handle_key('m')
+
+    assert_equal 0b1, @app.engine.voice_mute_mask
+    @app.render
+
+    assert_match(/^.*1 FM 1 .* M\b/, back_buffer_text)
+    @app.handle_key('m')
+
+    assert_equal 0, @app.engine.voice_mute_mask
+    @app.handle_key('s')
+
+    assert_equal 0xff & ~0b1, @app.engine.voice_mute_mask
+    @app.handle_key('s')
+
+    assert_equal 0, @app.engine.voice_mute_mask
+  end
+
   def test_vgm_seek_clears_the_previous_snapshot_before_the_worker_catches_up
     start_live_vgm_track
     use_screen(rows: 32, cols: 110)
     @app.handle_key('o')
     controller = @app.instance_variable_get(:@vgm_telemetry_controller)
     wait_for_live_vgm_rows(controller)
-    channels = @app.instance_variable_get(:@vgm_channels)
+    channels = @app.instance_variable_get(:@vgm_live_view)
     previous_snapshot = channels.instance_variable_get(:@snapshot)
 
     refute_nil previous_snapshot
@@ -182,7 +206,7 @@ class AppNowPlayingTest < Minitest::Test
     @app.handle_key('o')
     controller = @app.instance_variable_get(:@vgm_telemetry_controller)
     wait_for_live_vgm_rows(controller)
-    channels = @app.instance_variable_get(:@vgm_channels)
+    channels = @app.instance_variable_get(:@vgm_live_view)
 
     refute_nil channels.snapshot
     @app.instance_variable_set(:@config_error, 'configuration error')

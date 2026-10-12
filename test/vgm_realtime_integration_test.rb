@@ -10,7 +10,7 @@ require 'rubyplayer/playback_engine'
 require 'rubyplayer/vgm/reader'
 require 'rubyplayer/vgm/cursor'
 require 'rubyplayer/vgm/telemetry'
-require 'rubyplayer/ui/vgm_channels'
+require 'rubyplayer/ui/vgm_live_view'
 require 'rubyplayer/ui/vgm_telemetry_controller'
 require_relative 'support/vgm_builder'
 
@@ -137,10 +137,10 @@ class VgmRealtimeIntegrationTest < Minitest::Test
 
     screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 12, cols: 90)
     @widget.render(screen, x: 0, y: 0, width: 90, height: 12,
-                           theme: RubyPlayer::Theme::DEFAULT)
+                           theme: RubyPlayer::Theme::DEFAULT, now_sample: 44_100)
     rendered = screen.instance_variable_get(:@back).map { |row| row.map(&:ch).join }.join("\n")
 
-    assert_includes rendered, 'KEY OFF'
+    assert_match(/^1 FM 1 .* key off/, rendered)
   end
 
   private
@@ -166,7 +166,7 @@ class VgmRealtimeIntegrationTest < Minitest::Test
     @controller = RubyPlayer::UI::VgmTelemetryController.new(
       engine: @engine, telemetry: @telemetry, refresh_hz: 15, clock: -> { @now }
     )
-    @widget = RubyPlayer::UI::VgmChannels.new
+    @widget = RubyPlayer::UI::VgmLiveView.new
     @engine.start
     track = RubyPlayer::Track.new(id: 1, folder_id: 1, physical_path: path,
                                   archive_entry: '', subtune_index: 0, backend: 'gme',

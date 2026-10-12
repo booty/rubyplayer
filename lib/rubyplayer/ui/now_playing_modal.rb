@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative 'vgm_channels'
+require_relative 'vgm_live_view'
 require_relative 'spc_live_view'
 
 module RubyPlayer
@@ -14,20 +14,23 @@ module RubyPlayer
       private_constant :MAX_WIDTH, :ART_MIN_WIDTH, :FRAME_ROWS, :COMPACT_FRAME_ROWS
 
       SPC_LIVE_HINT = '[Tab] Info/Live [↑/↓] Voice [0-7] Mute [S] Solo [o/esc/enter] Close'
-      private_constant :SPC_LIVE_HINT
+      VGM_LIVE_HINT = '[Tab] Info/Live [↑/↓] Channel [M] Mute [S] Solo [o/esc/enter] Close'
+      private_constant :SPC_LIVE_HINT, :VGM_LIVE_HINT
 
       # live_kind is :vgm or :spc when a live page exists for this track.
-      def initialize(track, extras:, page: :info, channels: nil, live_available: nil, live_kind: nil,
+      def initialize(track, extras:, page: :info, vgm_view: nil, live_available: nil, live_kind: nil,
                      spc_view: nil)
         @track = track
         @metadata = {}
         @extras = extras
         @page = %i[info live].include?(page) ? page : :info
-        @channels = channels || VgmChannels.new
+        @vgm_view = vgm_view || VgmLiveView.new
         @spc_view = spc_view || SpcLiveView.new
         @live_kind = live_kind
         @spc_state = nil
         @position_ms = nil
+        @now_sample = nil
+        @mute_mask = 0
         @live_available = if live_kind
                             true
                           elsif live_available.nil?
@@ -45,11 +48,18 @@ module RubyPlayer
         @position_ms = position_ms
       end
 
+      # The App hands over the sample being heard and the voice mute mask
+      # before each render, so VGM levels move between telemetry snapshots.
+      def update_vgm(now_sample:, mute_mask:)
+        @now_sample = now_sample
+        @mute_mask = mute_mask
+      end
+
       def page=(page)
         @page = %i[info live].include?(page) ? page : :info
       end
 
-      def handle_live_key(key) = @live_kind == :spc ? @spc_view.handle_key(key) : @channels.handle_key(key)
+      def handle_live_key(key) = @live_kind == :spc ? @spc_view.handle_key(key) : @vgm_view.handle_key(key)
 
       def matches?(track)
         track && [track.id, track.physical_path, track.archive_entry, track.subtune_index] ==
@@ -96,39 +106,30 @@ module RubyPlayer
 
       private
 
+      # Live pages fill the screen: every channel and panel at once.
       def render_live(screen, theme:, frame:)
-        width = (screen.cols - 2).clamp(4, MAX_WIDTH)
+        width = [screen.cols - 2, 4].max
         height = screen.rows - 2
-        hint = '[Tab] Info/Live [↑/↓] Select [PgUp/PgDn] Scroll [←/→] Detail [o/esc/enter] Close'
-        if height < 6
-          frame.call(title: 'Now Playing', w: width, h: height, hint: hint, styled_hint: true)
-          return nil
-        end
-
-        frame.call(title: 'Now Playing', w: width, h: height, hint: hint, styled_hint: true) do |x, y|
-          track_title = [value(:title), value(:artist)].compact.reject(&:empty?).join(' — ')
-          summary = ['VGM', @extras['sound_chips'], 'Info / Live'].compact.join(' · ')
-          screen.put(y + 1, x + 2, track_title[0, width - 4], fg: theme[:primary], bold: true)
-          screen.put(y + 2, x + 2, summary[0, width - 4], fg: theme[:text_muted])
-          @channels.render(screen, x: x + 2, y: y + 3, width: width - 4,
-                                   height: [height - 6, 1].max, theme: theme)
+        frame.call(title: 'Now Playing', w: width, h: height, hint: VGM_LIVE_HINT, styled_hint: true) do |x, y|
+          @vgm_view.render(screen, x: x + 2, y: y + 1, width: width - 4, height: [height - 3, 0].max,
+                                   theme: theme, track_title: live_title, now_sample: @now_sample,
+                                   mute_mask: @mute_mask)
         end
         nil
       end
 
-      # Unlike the VGM page, the SPC page fills the screen: it shows every
-      # voice, panel, and the sample directory at once.
       def render_spc_live(screen, theme:, frame:)
         width = [screen.cols - 2, 4].max
         height = screen.rows - 2
         frame.call(title: 'Now Playing', w: width, h: height, hint: SPC_LIVE_HINT, styled_hint: true) do |x, y|
-          track_title = [value(:title), value(:artist)].compact.reject(&:empty?).join(' — ')
           @spc_view.render(screen, x: x + 2, y: y + 1, width: width - 4, height: [height - 3, 0].max,
-                                   theme: theme, state: @spc_state, track_title: track_title,
+                                   theme: theme, state: @spc_state, track_title: live_title,
                                    position_ms: @position_ms)
         end
         nil
       end
+
+      def live_title = [value(:title), value(:artist)].compact.reject(&:empty?).join(' — ')
 
       def info_hint
         @live_available ? '[Tab] Info / Live · [o/esc/enter] Close' : '[o/esc/enter] Close'

@@ -5,6 +5,7 @@ require_relative '../spc/dsp'
 require_relative '../spc/brr'
 require_relative '../spc/fir'
 require_relative '../spc/ram_map'
+require_relative 'live_glyphs'
 
 module RubyPlayer
   module UI
@@ -12,6 +13,8 @@ module RubyPlayer
     # rectangle, using all of it: header, global row, all 8 voices, then echo,
     # sample, RAM, and sample-directory panels as space allows.
     class SpcLiveView
+      include LiveGlyphs
+
       VOICES = Spc::VOICES
       TABLE_ROWS = VOICES + 1 # heading + one row per voice
       COMPACT_MIN_HEIGHT = 12 # below this: header + voice rows only
@@ -37,8 +40,6 @@ module RubyPlayer
       EDGE_HOLD_FRAMES = 4_800
       WAVEFORM_SAMPLES = 4_096
       ENV_MAX = 0x7ff
-      LEVEL_GLYPHS = ' ▁▂▃▄▅▆▇█'
-      BAR_PARTIALS = ['', '▏', '▎', '▍', '▌', '▋', '▊', '▉'].freeze
       RAM_GLYPHS = { samples: '▓', echo: '▒', directory: '█', other: '░' }.freeze
       GAIN_LABELS = { direct: 'dir', linear_decrease: 'lin-', exp_decrease: 'exp-',
                       linear_increase: 'lin+', bent_increase: 'bent+' }.freeze
@@ -48,7 +49,7 @@ module RubyPlayer
                        :ECHO_FIXED_ROWS, :SAMPLE_FIXED_ROWS, :RAM_FIXED_ROWS, :RAM_LABEL, :RAM_SLICE_ALIGN,
                        :WIDE_FIXED_COLUMNS,
                        :NARROW_FIXED_COLUMNS, :COLUMN_GAP, :EDGE_HOLD_FRAMES,
-                       :WAVEFORM_SAMPLES, :ENV_MAX, :LEVEL_GLYPHS, :BAR_PARTIALS, :RAM_GLYPHS,
+                       :WAVEFORM_SAMPLES, :ENV_MAX, :RAM_GLYPHS,
                        :GAIN_LABELS
 
       attr_reader :selected_voice
@@ -428,19 +429,6 @@ module RubyPlayer
         end.join
       end
 
-      # Vertical bar graph, `rows` tall, one column per value, in eighth blocks.
-      def graph(values, maximum, rows)
-        heights = values.map { |value| (value.clamp(0, maximum) * rows * 8 / maximum.to_f).round }
-        Array.new(rows) do |row|
-          floor = (rows - 1 - row) * 8
-          text = heights.map do |height|
-            filled = (height - floor).clamp(0, 8)
-            filled.zero? ? ' ' : LEVEL_GLYPHS[filled]
-          end.join
-          { text: text, color: :primary, graph: true }
-        end
-      end
-
       # -- formatting -------------------------------------------------------
 
       def wide_table? = @width >= WIDE_TABLE_WIDTH
@@ -448,17 +436,6 @@ module RubyPlayer
       # The ENVX bar takes whatever the fixed columns leave, within reason.
       def bar_width
         (@width - (wide_table? ? WIDE_FIXED_COLUMNS : NARROW_FIXED_COLUMNS)).clamp(4, 32)
-      end
-
-      def level_bar(value, maximum, width)
-        eighths = (value.clamp(0, maximum) * width * 8) / maximum
-        bar = ('█' * (eighths / 8)) + BAR_PARTIALS[eighths % 8]
-        bar.ljust(width)
-      end
-
-      def level_glyph(value, maximum)
-        index = ((value.clamp(0, maximum) * (LEVEL_GLYPHS.length - 1)) / maximum.to_f).round
-        LEVEL_GLYPHS[index]
       end
 
       def envelope_text(voice)

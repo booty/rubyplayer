@@ -8,7 +8,7 @@ require_relative '../duration_formatter'
 require_relative '../audio_output'
 require_relative '../playback_engine'
 require_relative '../vgm/telemetry'
-require_relative 'vgm_channels'
+require_relative 'vgm_live_view'
 require_relative 'spc_live_view'
 require_relative 'vgm_telemetry_controller'
 
@@ -53,7 +53,7 @@ module RubyPlayer
         @vgm_telemetry = Vgm::Telemetry.new(
           event_bus: @bus, max_bytes: @config['ui', 'vgm_telemetry_max_bytes']
         )
-        @vgm_channels = VgmChannels.new
+        @vgm_live_view = VgmLiveView.new
         @spc_live_view = SpcLiveView.new
         @vgm_telemetry_controller = VgmTelemetryController.new(
           engine: @engine, telemetry: @vgm_telemetry,
@@ -259,20 +259,26 @@ module RubyPlayer
         elsif key == 'tab'
           toggle_now_playing_page if live_kind
         elsif @now_playing_page == :live
-          return invalidate_screen! if handle_spc_mute_key(key)
+          return invalidate_screen! if handle_mute_key(key)
 
           mapped_key = { 'pgup' => 'pageup', 'pgdn' => 'pagedown' }.fetch(key, key)
           invalidate_screen! if @now_playing_modal&.handle_live_key(mapped_key)
         end
       end
 
+      # Returns whether the key was consumed.
+      def handle_mute_key(key)
+        case @now_playing_modal&.live_kind
+        when :spc then handle_spc_mute_key(key)
+        when :vgm then handle_vgm_mute_key(key)
+        else false
+        end
+      end
+
       # Digits toggle S-DSP voices 0-7 (as numbered in the table); S solos the
-      # selected voice, or unmutes everything if it is already soloed. Returns
-      # whether the key was consumed.
+      # selected voice, or unmutes everything if it is already soloed.
       # rubocop:disable Naming/PredicateMethod
       def handle_spc_mute_key(key)
-        return false unless @now_playing_modal&.live_kind == :spc
-
         live = @engine.spc_live
         return false unless live
 
@@ -283,6 +289,23 @@ module RubyPlayer
           solo = 0xff & ~(1 << @spc_live_view.selected_voice)
           @engine.mute_voices(mask == solo ? 0 : solo)
         else return false
+        end
+        true
+      end
+
+      # M mutes or unmutes the selected channel's libgme voice (some channels
+      # share one); S solos it, or unmutes everything if it is already soloed.
+      def handle_vgm_mute_key(key)
+        mask = @engine.voice_mute_mask
+        bits = @vgm_live_view.selected_mute_bits
+        return false unless mask && %w[m s].include?(key.to_s.downcase)
+        return true if bits.zero?
+
+        if key.to_s.casecmp?('m')
+          @engine.mute_voices(mask.allbits?(bits) ? mask & ~bits : mask | bits)
+        else
+          solo = @vgm_live_view.all_mute_bits & ~bits
+          @engine.mute_voices(mask == solo ? 0 : solo)
         end
         true
       end
@@ -587,9 +610,9 @@ module RubyPlayer
         kind = live_kind
         live = !kind.nil?
         @now_playing_page = live ? :live : :info
-        @vgm_channels.update(nil)
+        @vgm_live_view.update(nil)
         modal = NowPlayingModal.new(track, extras: @library.track_metadata_for(track.id),
-                                           page: @now_playing_page, channels: @vgm_channels,
+                                           page: @now_playing_page, vgm_view: @vgm_live_view,
                                            live_available: live, live_kind: kind, spc_view: @spc_live_view)
         @now_playing_modal = modal
         if @show_now_playing
@@ -619,7 +642,7 @@ module RubyPlayer
         @now_playing_page = page
         @now_playing_modal.page = page
         if page == :live
-          @vgm_channels.update(nil)
+          @vgm_live_view.update(nil)
           @vgm_telemetry_controller.visible = @now_playing_modal.live_kind == :vgm
           set_art(nil)
         else
@@ -1042,7 +1065,7 @@ module RubyPlayer
         snapshot = @vgm_telemetry.take_snapshot
         return unless @vgm_telemetry_controller.accept(snapshot)
 
-        @vgm_channels.update(@vgm_telemetry_controller.snapshot)
+        @vgm_live_view.update(@vgm_telemetry_controller.snapshot)
         invalidate_screen!
       end
 
@@ -1053,19 +1076,19 @@ module RubyPlayer
         # so stale rows must be dropped even on the hidden early return.
         @vgm_telemetry_controller.visible = visible
         unless visible
-          clear_stale_vgm_channels
+          clear_stale_vgm_view
           return
         end
 
-        @vgm_channels.paused = @engine.state[:paused]
+        @vgm_live_view.paused = @engine.state[:paused]
         @vgm_telemetry_controller.tick
-        clear_stale_vgm_channels
+        clear_stale_vgm_view
       end
 
-      def clear_stale_vgm_channels
-        return unless @vgm_channels.snapshot && @vgm_telemetry_controller.snapshot.nil?
+      def clear_stale_vgm_view
+        return unless @vgm_live_view.snapshot && @vgm_telemetry_controller.snapshot.nil?
 
-        @vgm_channels.update(nil)
+        @vgm_live_view.update(nil)
         invalidate_screen!
       end
 
@@ -1361,8 +1384,12 @@ module RubyPlayer
 
         return unless @now_playing_modal&.matches?(track)
 
-        if @now_playing_modal.live_kind == :spc
+        case @now_playing_modal.live_kind
+        when :spc
           @now_playing_modal.update_spc(state: @engine.spc_live, position_ms: @engine.state[:position_ms])
+        when :vgm
+          @now_playing_modal.update_vgm(now_sample: @engine.vgm_telemetry_request&.sample,
+                                        mute_mask: @engine.voice_mute_mask)
         end
         @art_region = @now_playing_modal.render(@screen, theme: @theme, frame: method(:render_modal),
                                                          min_art_rows: @config['ui', 'art_min_rows'])
