@@ -9,6 +9,7 @@ require_relative '../audio_output'
 require_relative '../playback_engine'
 require_relative '../vgm/telemetry'
 require_relative 'vgm_channels'
+require_relative 'spc_live_view'
 require_relative 'vgm_telemetry_controller'
 
 module RubyPlayer
@@ -53,6 +54,7 @@ module RubyPlayer
           event_bus: @bus, max_bytes: @config['ui', 'vgm_telemetry_max_bytes']
         )
         @vgm_channels = VgmChannels.new
+        @spc_live_view = SpcLiveView.new
         @vgm_telemetry_controller = VgmTelemetryController.new(
           engine: @engine, telemetry: @vgm_telemetry,
           refresh_hz: [@config['ui', 'vgm_telemetry_fps'], @config['ui', 'frame_fps']].min,
@@ -255,7 +257,7 @@ module RubyPlayer
         if %w[o escape enter].include?(key)
           close_now_playing
         elsif key == 'tab'
-          toggle_now_playing_page if @engine.vgm_telemetry_request
+          toggle_now_playing_page if live_kind
         elsif @now_playing_page == :live
           mapped_key = { 'pgup' => 'pageup', 'pgdn' => 'pagedown' }.fetch(key, key)
           invalidate_screen! if @now_playing_modal&.handle_live_key(mapped_key)
@@ -548,16 +550,26 @@ module RubyPlayer
         invalidate_screen!
       end
 
+      # Which live page the current playback supports: VGM register telemetry,
+      # SPC DSP snapshots, or none.
+      def live_kind
+        return :vgm if @engine.vgm_telemetry_request
+        return :spc if @engine.spc_live
+
+        nil
+      end
+
       def prepare_now_playing(track)
-        live = !@engine.vgm_telemetry_request.nil?
+        kind = live_kind
+        live = !kind.nil?
         @now_playing_page = live ? :live : :info
         @vgm_channels.update(nil)
         modal = NowPlayingModal.new(track, extras: @library.track_metadata_for(track.id),
                                            page: @now_playing_page, channels: @vgm_channels,
-                                           live_available: live)
+                                           live_available: live, live_kind: kind, spc_view: @spc_live_view)
         @now_playing_modal = modal
         if @show_now_playing
-          @vgm_telemetry_controller.visible = live
+          @vgm_telemetry_controller.visible = kind == :vgm
           live ? set_art(nil) : fetch_art(track)
         end
         return unless %w[ffmpeg gme snes_spc].include?(track.backend)
@@ -584,7 +596,7 @@ module RubyPlayer
         @now_playing_modal.page = page
         if page == :live
           @vgm_channels.update(nil)
-          @vgm_telemetry_controller.visible = true
+          @vgm_telemetry_controller.visible = @now_playing_modal.live_kind == :vgm
           set_art(nil)
         else
           @vgm_telemetry_controller.visible = false
@@ -1011,7 +1023,8 @@ module RubyPlayer
       end
 
       def tick_vgm_telemetry
-        visible = @show_now_playing && @now_playing_page == :live && !modal_active?
+        visible = @show_now_playing && @now_playing_page == :live && !modal_active? &&
+                  @now_playing_modal&.live_kind != :spc
         # Visibility handling suspends the worker and clears the controller,
         # so stale rows must be dropped even on the hidden early return.
         @vgm_telemetry_controller.visible = visible
@@ -1324,6 +1337,9 @@ module RubyPlayer
 
         return unless @now_playing_modal&.matches?(track)
 
+        if @now_playing_modal.live_kind == :spc
+          @now_playing_modal.update_spc(state: @engine.spc_live, position_ms: @engine.state[:position_ms])
+        end
         @art_region = @now_playing_modal.render(@screen, theme: @theme, frame: method(:render_modal),
                                                          min_art_rows: @config['ui', 'art_min_rows'])
         render_art_placeholder

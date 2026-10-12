@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative 'vgm_channels'
+require_relative 'spc_live_view'
 
 module RubyPlayer
   module UI
@@ -12,26 +13,43 @@ module RubyPlayer
       COMPACT_FRAME_ROWS = 4
       private_constant :MAX_WIDTH, :ART_MIN_WIDTH, :FRAME_ROWS, :COMPACT_FRAME_ROWS
 
-      def initialize(track, extras:, page: :info, channels: nil, live_available: nil)
+      SPC_LIVE_HINT = '[Tab] Info/Live [↑/↓] Voice [o/esc/enter] Close'
+      private_constant :SPC_LIVE_HINT
+
+      # live_kind is :vgm or :spc when a live page exists for this track.
+      def initialize(track, extras:, page: :info, channels: nil, live_available: nil, live_kind: nil,
+                     spc_view: nil)
         @track = track
         @metadata = {}
         @extras = extras
         @page = %i[info live].include?(page) ? page : :info
         @channels = channels || VgmChannels.new
-        @live_available = if live_available.nil?
+        @spc_view = spc_view || SpcLiveView.new
+        @live_kind = live_kind
+        @spc_state = nil
+        @position_ms = nil
+        @live_available = if live_kind
+                            true
+                          elsif live_available.nil?
                             %w[vgm vgz].include?(track.format.to_s.downcase)
                           else
-                            !!live_available
+                            live_available ? true : false
                           end
       end
 
-      attr_reader :page
+      attr_reader :page, :live_kind
+
+      # The App hands over the engine's SPC state before each render.
+      def update_spc(state:, position_ms:)
+        @spc_state = state
+        @position_ms = position_ms
+      end
 
       def page=(page)
         @page = %i[info live].include?(page) ? page : :info
       end
 
-      def handle_live_key(key) = @channels.handle_key(key)
+      def handle_live_key(key) = @live_kind == :spc ? @spc_view.handle_key(key) : @channels.handle_key(key)
 
       def matches?(track)
         track && [track.id, track.physical_path, track.archive_entry, track.subtune_index] ==
@@ -45,6 +63,7 @@ module RubyPlayer
 
       def render(screen, theme:, frame:, min_art_rows:)
         return if screen.rows < 5 || screen.cols < 8
+        return render_spc_live(screen, theme: theme, frame: frame) if @page == :live && @live_kind == :spc
         return render_live(screen, theme: theme, frame: frame) if @page == :live
 
         width = (screen.cols - 2).clamp(4, MAX_WIDTH)
@@ -93,6 +112,20 @@ module RubyPlayer
           screen.put(y + 2, x + 2, summary[0, width - 4], fg: theme[:text_muted])
           @channels.render(screen, x: x + 2, y: y + 3, width: width - 4,
                                    height: [height - 6, 1].max, theme: theme)
+        end
+        nil
+      end
+
+      # Unlike the VGM page, the SPC page fills the screen: it shows every
+      # voice, panel, and the sample directory at once.
+      def render_spc_live(screen, theme:, frame:)
+        width = [screen.cols - 2, 4].max
+        height = screen.rows - 2
+        frame.call(title: 'Now Playing', w: width, h: height, hint: SPC_LIVE_HINT, styled_hint: true) do |x, y|
+          track_title = [value(:title), value(:artist)].compact.reject(&:empty?).join(' — ')
+          @spc_view.render(screen, x: x + 2, y: y + 1, width: width - 4, height: [height - 3, 0].max,
+                                   theme: theme, state: @spc_state, track_title: track_title,
+                                   position_ms: @position_ms)
         end
         nil
       end

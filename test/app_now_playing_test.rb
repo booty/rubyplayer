@@ -47,6 +47,8 @@ class AppNowPlayingTest < Minitest::Test
     @app.handle_events
     use_screen(rows: 40, cols: 110)
     @app.handle_key('o')
+    # SPC opens on the live page; the refreshed details are on Info.
+    @app.handle_key('tab') if @app.instance_variable_get(:@now_playing_page) == :live
 
     wait_until do
       @app.handle_events
