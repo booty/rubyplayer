@@ -18,8 +18,10 @@ module RubyPlayer
 
       SPC_LIVE_HINT = '[Tab] Info/Live [↑/↓] Voice [0-7] Mute [S] Solo [o/esc/enter] Close'
       CHIP_LIVE_HINT = '[Tab] Info/Live [↑/↓] Channel [M] Mute [S] Solo [o/esc/enter] Close'
+      # The VGM overview is the one live page with a page after it, so `o` advances instead of closing.
+      VGM_LIVE_HINT = '[o] Tracker [Tab] Info [↑/↓] Channel [M] Mute [S] Solo [esc/enter] Close'
       TRACKER_LIVE_HINT = '[o] Next/Close [Tab] Info [Left/Right] Channels [esc/enter] Close'
-      private_constant :SPC_LIVE_HINT, :CHIP_LIVE_HINT, :TRACKER_LIVE_HINT
+      private_constant :SPC_LIVE_HINT, :CHIP_LIVE_HINT, :VGM_LIVE_HINT, :TRACKER_LIVE_HINT
 
       # live_kind is :vgm or :spc when a live page exists for this track.
       def initialize(track, extras:, page: :info, chip_view: nil, live_available: nil, live_kind: nil,
@@ -130,7 +132,8 @@ module RubyPlayer
 
       # Every channel and panel at once.
       def render_live(screen, theme:, frame:)
-        with_live_frame(screen, frame: frame, hint: CHIP_LIVE_HINT) do |left, top, content_width, content_height|
+        hint = @live_kind == :vgm ? VGM_LIVE_HINT : CHIP_LIVE_HINT
+        with_live_frame(screen, frame: frame, hint: hint) do |left, top, content_width, content_height|
           @chip_view.render(screen, x: left, y: top, width: content_width, height: content_height, theme: theme,
                                     track_title: live_title, now_sample: @now_sample, mute_mask: @mute_mask,
                                     position_ms: @position_ms)

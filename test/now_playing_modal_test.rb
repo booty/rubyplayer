@@ -137,6 +137,22 @@ class NowPlayingModalTest < Minitest::Test
     assert_equal :info, vgm.page
   end
 
+  def test_live_hint_names_what_o_does_on_each_kind
+    hints = %i[vgm gbs nsf].to_h do |kind|
+      modal = RubyPlayer::UI::NowPlayingModal.new(track, extras: {}, live_kind: kind, page: :live)
+      screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 28, cols: 160)
+      captured_hint = nil
+      modal.render(screen, theme: RubyPlayer::Theme::DEFAULT, min_art_rows: 3,
+                           frame: ->(hint:, **_options) { captured_hint = hint })
+      [kind, captured_hint]
+    end
+
+    assert_includes hints[:vgm], '[o] Tracker'
+    refute_includes hints[:vgm], '[o/esc/enter] Close'
+    assert_includes hints[:gbs], '[o/esc/enter] Close'
+    assert_includes hints[:nsf], '[o/esc/enter] Close'
+  end
+
   def test_tracker_page_uses_full_screen_frame_and_its_own_hint
     vgm = RubyPlayer::Track.new(id: 3, title: 'Chip song', format: 'vgm')
     modal = RubyPlayer::UI::NowPlayingModal.new(vgm, extras: {}, live_kind: :vgm,
