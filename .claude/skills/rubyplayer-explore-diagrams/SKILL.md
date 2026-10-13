@@ -82,13 +82,15 @@ and calling method:
 
 ### 4. Write diagram 2 — `internals.mmd`
 
-Pick the type that fits the file, not a fixed template:
+Pick the type that fits the file, not a fixed template. Use only types
+`mermaid-ascii` renders (`flowchart`, `erDiagram`, `sequenceDiagram`);
+`classDiagram` and `stateDiagram-v2` produce an SVG but no terminal render.
 
 | File shape | Diagram |
 | --- | --- |
 | Owns state, collections, value objects | `erDiagram` (add `direction TB`) |
-| Class hierarchy, mixins, interfaces | `classDiagram` |
-| Lifecycle, modes, playback states | `stateDiagram-v2` |
+| Class hierarchy, mixins, interfaces | `flowchart TD` with `inherits` / `includes` edges |
+| Lifecycle, modes, playback states | `flowchart TD` with one node per state, transitions as edges |
 | Pipeline or branched control flow | `flowchart TD` |
 | Ordered calls between collaborators | `sequenceDiagram` |
 
@@ -106,6 +108,17 @@ The user may ask for terminal renders later, so write Mermaid that
 - Short labels; keep each terminal render under 150 columns.
 - In vertical flowchart edges, the line is drawn through the label's middle
   character; a label whose middle character is a space shows a stray `│`.
+- One edge per node pair. Parallel edges between the same two nodes overlap
+  and merge their labels (`2 manual edits` + `3 playback moves` rendered as
+  `32playbackemoves`); use one edge and break it down in `legend.txt`.
+- Avoid self-loops (`A --> A`); they share lines with neighboring edges.
+  Say "recursive" in the node label instead.
+
+After rendering (step 6), run `$R text` on each `.mmd` and compare it with
+the SVG. Edges that converge on one junction can swap labels in the
+terminal render even when the SVG is right. Rearrange the edges or drop
+the edge to the legend; if the render still lies, keep the SVG as the
+authority and say which labels are wrong when showing the terminal render.
 
 ### 6. Render and stack
 
