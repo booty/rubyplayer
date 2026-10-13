@@ -29,6 +29,8 @@ module RubyPlayer
       RATE_ACTIONS = { rate_0: nil, rate_1: 1, rate_2: 2, rate_3: 3,
                        rate_4: 4, rate_5: 5, rate_6: 6 }.freeze
       ART_MODES = %i[off inset pane corner].freeze
+      SCAN_REFRESH_INTERVAL_SECONDS = 0.25
+      private_constant :SCAN_REFRESH_INTERVAL_SECONDS
       # One chip format's Now Playing pages, fed by native chip snapshots
       # (GBS, NSF, HES): the Live page view, the format's ChipTracker that
       # turns snapshots into their model, and the Tracker page view (shown
@@ -1132,22 +1134,49 @@ module RubyPlayer
           when :playback_state
             set_art(nil) unless payload[:playing]
             refresh_queued = true
+          when :scan_progress
+            handle_scan_progress(payload)
           when :scan_complete
-            @status_line.set_message(
-              "Scan complete: #{payload[:processed]} files, #{payload[:errored]} errors"
-            )
+            handle_scan_complete(payload)
             refresh = true
           when :track_error
             @status_line.set_message("Error playing #{payload[:track]&.title}: skipped")
           end
         end
         if refresh
+          @scan_refresh_pending = false
+          @last_scan_refresh_at = monotonic_time
           refresh_panes
-        elsif refresh_queued
+        elsif refresh_scan_progress_if_due != :refreshed && refresh_queued
           @queued_pane.reload!
         end
         close_now_playing if @show_now_playing && @engine.state[:track].nil?
       end
+
+      def handle_scan_progress(payload)
+        @scan_refresh_pending = true
+        @status_line.set_message("Scanning: #{payload[:processed]}/#{payload[:total]} files")
+      end
+
+      def handle_scan_complete(payload)
+        @status_line.set_message(
+          "Scan complete: #{payload[:processed]} files, #{payload[:errored]} errors"
+        )
+      end
+
+      def refresh_scan_progress_if_due
+        return unless @scan_refresh_pending
+
+        now = monotonic_time
+        return if @last_scan_refresh_at && now - @last_scan_refresh_at < SCAN_REFRESH_INTERVAL_SECONDS
+
+        @scan_refresh_pending = false
+        @last_scan_refresh_at = now
+        refresh_panes
+        :refreshed
+      end
+
+      def monotonic_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
       def handle_vgm_telemetry_event(payload)
         return unless payload[:telemetry].equal?(@vgm_telemetry)

@@ -231,7 +231,11 @@ class ExtractorPoolTest < Minitest::Test
     pool = RubyPlayer::ExtractorPool.new(library: @lib, registry: @reg, thread_count: 2, event_bus: bus)
     pool.process(@scanner.reconcile(@music))
 
-    assert_equal(3, events.count { |t, _| t == :scan_progress })
+    progress = events.filter_map { |type, payload| payload if type == :scan_progress }
+
+    assert_equal 3, progress.size
+    assert_equal [1, 2, 3], progress.map { |payload| payload[:processed] }.sort
+    assert_equal [3], progress.map { |payload| payload[:total] }.uniq
     assert_equal(1, events.count { |t, _| t == :scan_complete })
   end
 

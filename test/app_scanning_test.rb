@@ -21,4 +21,54 @@ class AppScanningTest < Minitest::Test
 
     assert counts.all?(&:zero?)
   end
+
+  def test_scan_progress_reloads_tracks_before_completion
+    @app.handle_events
+    select_tracks_for(:all)
+    library = @app.instance_variable_get(:@library)
+    root = library.roots.first
+    library.upsert_track(
+      folder_id: root['id'], physical_path: File.join(@music, 'new.vgm'),
+      backend: 'gme', format: 'vgm', title: 'New during scan'
+    )
+    @app.instance_variable_set(
+      :@last_scan_refresh_at,
+      Process.clock_gettime(Process::CLOCK_MONOTONIC) - 1
+    )
+    @app.instance_variable_get(:@bus).publish(:scan_progress, processed: 1, total: 2)
+
+    @app.handle_events
+
+    assert_includes @app.tracks_pane.visible_tracks.map(&:title), 'New during scan'
+  end
+
+  def test_scan_progress_refresh_is_throttled_and_deferred
+    @app.handle_events
+    refreshes = 0
+    original = @app.method(:refresh_panes)
+    @app.define_singleton_method(:refresh_panes) do
+      refreshes += 1
+      original.call
+    end
+    bus = @app.instance_variable_get(:@bus)
+    @app.instance_variable_set(
+      :@last_scan_refresh_at,
+      Process.clock_gettime(Process::CLOCK_MONOTONIC) - 1
+    )
+
+    bus.publish(:scan_progress, processed: 1, total: 3)
+    @app.handle_events
+    bus.publish(:scan_progress, processed: 2, total: 3)
+    @app.handle_events
+
+    assert_equal 1, refreshes
+
+    @app.instance_variable_set(
+      :@last_scan_refresh_at,
+      Process.clock_gettime(Process::CLOCK_MONOTONIC) - 1
+    )
+    @app.handle_events
+
+    assert_equal 2, refreshes
+  end
 end

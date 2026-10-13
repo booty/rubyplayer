@@ -22,17 +22,24 @@ module RubyPlayer
       work_items.each { |w| queue << w }
       worker_count.times { queue << :done }
       errored = 0
+      processed = 0
       mutex = Mutex.new
 
       threads = Array.new(worker_count) do
         Thread.new do
           while (item = queue.pop) != :done
             ok = extract(item)
-            mutex.synchronize { errored += 1 unless ok }
+            progress = mutex.synchronize do
+              errored += 1 unless ok
+              processed += 1
+              processed
+            end
             # Progress notification is telemetry, not core work: a raising bus must
             # not escape the worker thread, or Thread#join re-raises it and skips
             # recompute_counts!/:scan_complete while leaving sibling workers orphaned.
-            safe_publish(:scan_progress, path: item.path)
+            safe_publish(
+              :scan_progress, path: item.path, processed: progress, total: work_items.size
+            )
           end
         end
       end

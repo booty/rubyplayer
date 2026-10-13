@@ -52,7 +52,7 @@ sequenceDiagram
     end
     Bus-->>App: Self-pipe wakes IO.select
     App->>Bus: drain
-    Note over App: On scan_complete, show counts and refresh library, tracks, and queue panes
+    Note over App: Throttle progress refreshes to 250 ms; always refresh on scan_complete
 ```
 
 ## Why phase order matters
@@ -80,12 +80,14 @@ changed missing flags without discovering anything to decode.
 
 ## Events and counts
 
-Progress is published per top-level WorkItem, and completion follows worker
-joins and count recomputation. `processed` counts WorkItems, not resulting tracks:
+Progress is published per top-level WorkItem with completed and total counts,
+and completion follows worker joins and count recomputation. `processed` counts WorkItems, not resulting tracks:
 one archive or multi-subtune file can yield many tracks. `errored` counts failed
 WorkItems; individual entry failures can be isolated inside an otherwise
-successfully processed archive. App handles completion by refreshing panes;
-it does not decode files on the UI thread.
+successfully processed archive. App progressively reloads panes at most once
+every 250 ms so extracted metadata appears during a large scan without making
+each completed file trigger a full pane rebuild. Completion always performs a
+final refresh after folder counts are recomputed. The UI never decodes files.
 
 The final UI steps in the diagram can occur throughout the scan as events arrive.
 Completion is emitted per root because App invokes `process` separately for
