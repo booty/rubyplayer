@@ -8,6 +8,8 @@ module RubyPlayer
       include ScrollableList
 
       SELECTABLE_ROW_TYPES = %i[track focus playlist].freeze
+      EXTEND_ACTIONS = { extend_selection_up: :nav_up, extend_selection_down: :nav_down }.freeze
+      private_constant :EXTEND_ACTIONS
 
       attr_reader :selection, :filter
 
@@ -26,6 +28,9 @@ module RubyPlayer
         @view_states = {}
         @page_size = ScrollableList::PAGE_SIZE_FALLBACK
         @queue_selection = QueueSelection.new
+        # Range selection: the track Shift+arrows started from; the range runs
+        # from it to the cursor. Kept by id so a reload (a rating) keeps it.
+        @anchor_track_id = nil
         update_config(config)
       end
 
@@ -39,6 +44,7 @@ module RubyPlayer
 
       def show(library_row, breadcrumb: nil)
         save_view_state if @mode
+        @anchor_track_id = nil
         @mode =
           case library_row.kind
           when :folder then [:folder, library_row.folder['id']]
@@ -70,6 +76,8 @@ module RubyPlayer
           count = "#{filtered_tracks.size} of #{@tracks.size} (Filter: '#{term}')"
         end
         text = "#{label} · #{count}"
+        marked = range_row_indexes&.count { |index| display_rows[index][:type] == :track }
+        text += " · #{marked} selected" if marked && marked > 1
         return text unless max_width && text.size > max_width
         return text[-max_width, max_width] if max_width <= 1
 
@@ -93,6 +101,7 @@ module RubyPlayer
 
       def filter=(value)
         identity = selected_identity
+        @anchor_track_id = nil
         @filter = value.to_s
         invalidate_rows!
         if @mode == :queue
@@ -149,6 +158,13 @@ module RubyPlayer
           return [:disabled, 'Playlist order is fixed — ctrl+arrows move tracks']
         end
 
+        return extend_selection(EXTEND_ACTIONS[action]) if EXTEND_ACTIONS.key?(action)
+
+        # Escape, and any other movement, sort, or grouping, ends a range.
+        had_range = !@anchor_track_id.nil?
+        @anchor_track_id = nil
+        return had_range if action == :clear_selection
+
         if @mode == :queue && %i[nav_up nav_down nav_page_up nav_page_down].include?(action)
           handled = @queue_selection.handle_action(action)
           sync_queue_cursor
@@ -203,6 +219,29 @@ module RubyPlayer
         row && row[:type] == :track ? row[:track] : nil
       end
 
+      # The tracks an action applies to: the range's, in list order, or the
+      # cursor's track alone.
+      def selected_tracks
+        indexes = range_row_indexes
+        return [selected_track].compact unless indexes
+
+        rows = display_rows
+        indexes.filter_map { |index| rows[index][:track] if rows[index][:type] == :track }
+      end
+
+      def range_selected? = !range_row_indexes.nil?
+
+      # Track positions (headers skipped) of selected_tracks: the range's,
+      # or the cursor's alone.
+      def selected_track_indexes
+        indexes = range_row_indexes
+        return [selected_track_index].compact unless indexes
+
+        rows = display_rows
+        position = rows[0...indexes.first].count { |row| row[:type] == :track }
+        indexes.select { |index| rows[index][:type] == :track }.each_index.map { |offset| position + offset }
+      end
+
       def selected_focus_sound
         # Callers must opt into the Focus type explicitly; selected_track stays
         # nil in this mode so generic enqueue paths cannot accept these rows.
@@ -245,6 +284,7 @@ module RubyPlayer
 
       def render(screen, x:, y:, w:, h:, active:, theme:)
         rows = display_rows
+        range = range_row_indexes
         if @mode == :queue
           @queue_selection.set_page_size(h)
           @queue_selection.follow_selection(h)
@@ -260,8 +300,10 @@ module RubyPlayer
           selected = (@scroll + i) == @selection
           bg = if selected
                  active ? theme[:selection_bg] : theme[:surface_alt]
+               elsif range&.cover?(@scroll + i)
+                 theme[:surface_alt]
                end
-          screen.put(y + i, x, ' ' * content_w, bg: bg) if selected
+          screen.put(y + i, x, ' ' * content_w, bg: bg) if bg
           if row[:type] == :header
             screen.put(y + i, x, ListRowRenderer.header_line(row[:text], content_w),
                        fg: theme[:info], bg: bg, bold: true)
@@ -281,6 +323,35 @@ module RubyPlayer
       end
 
       private
+
+      # Only track lists take ranges: the queue view keeps one selection, and
+      # Focus and Playlists rows are not tracks.
+      def extend_selection(nav_action)
+        return handle_action(nav_action) if %i[queue focus playlists].include?(@mode) || !selected_track
+
+        anchor = @anchor_track_id || selected_track.id
+        move_selection(nav_action == :nav_up ? -1 : 1)
+        @anchor_track_id = anchor
+        true
+      end
+
+      # Display-row indexes from the anchor to the cursor, or nil without a
+      # range (or once the anchor's track has left the view). Cached per
+      # row list, since render and title ask every frame.
+      def range_row_indexes
+        return unless @anchor_track_id
+
+        rows = display_rows
+        cache = @anchor_cache
+        unless cache && cache[0].equal?(rows) && cache[1] == @anchor_track_id
+          index = rows.index { |row| row[:type] == :track && row[:track].id == @anchor_track_id }
+          @anchor_cache = [rows, @anchor_track_id, index]
+        end
+        anchor = @anchor_cache.last
+        return @anchor_track_id = nil unless anchor
+
+        anchor < @selection ? (anchor..@selection) : (@selection..anchor)
+      end
 
       def invalidate_rows!
         @rows_cache = nil

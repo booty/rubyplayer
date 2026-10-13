@@ -882,10 +882,10 @@ module RubyPlayer
       end
 
       def request_add_to_playlist
-        track = @active_pane == :tracks && @tracks_pane.selected_track
-        return @status_line.set_message('Select a track to add to a playlist') unless track
+        tracks = @active_pane == :tracks ? @tracks_pane.selected_tracks : []
+        return @status_line.set_message('Select a track to add to a playlist') if tracks.empty?
 
-        @playlist_modal = PlaylistModal.new(library: @library, track: track,
+        @playlist_modal = PlaylistModal.new(library: @library, tracks: tracks,
                                             recent_count: @config['ui', 'playlist_recent_count'])
       end
 
@@ -896,26 +896,26 @@ module RubyPlayer
         when :cancel then @playlist_modal = nil
         when :add
           @playlist_modal = nil
-          add_track_to_playlist(value, modal.track)
-        when :create then create_playlist_and_add(value, modal.track)
+          add_tracks_to_playlist(value, modal.tracks)
+        when :create then create_playlist_and_add(value, modal.tracks)
         end
       end
 
-      def add_track_to_playlist(playlist, track)
-        @library.add_to_playlist(playlist['id'], track.id)
+      def add_tracks_to_playlist(playlist, tracks)
+        tracks.each { |track| @library.add_to_playlist(playlist['id'], track.id) }
         @library_pane.rebuild!
         @tracks_pane.reload!
-        @status_line.set_message("Added to \"#{playlist['name']}\"")
+        @status_line.set_message("Added #{track_count_text(tracks)} to \"#{playlist['name']}\"")
       rescue Library::PlaylistError => e
         @status_line.set_message(e.message)
       end
 
-      def create_playlist_and_add(name, track)
+      def create_playlist_and_add(name, tracks)
         id = @library.create_playlist(name)
         @playlist_modal = nil
-        @library.add_to_playlist(id, track.id)
+        tracks.each { |track| @library.add_to_playlist(id, track.id) }
         @library_pane.rebuild!
-        @status_line.set_message("Created \"#{name}\" and added track")
+        @status_line.set_message("Created \"#{name}\" and added #{track_count_text(tracks)}")
       rescue Library::PlaylistNameTaken => e
         # Keep the modal open so the user can adjust the name in place.
         @playlist_modal.error = e.message if @playlist_modal
@@ -995,6 +995,8 @@ module RubyPlayer
         # longer matches the playlist's visible position, so a move would hit
         # the wrong entry. Refuse instead of guessing.
         return @status_line.set_message('Clear the filter before reordering') unless @tracks_pane.filter.empty?
+        return @status_line.set_message('Move one track at a time (Esc clears the selection)') if
+          @tracks_pane.range_selected?
 
         index = @tracks_pane.selected_track_index
         return unless index
@@ -1013,16 +1015,20 @@ module RubyPlayer
         return unless id
         return @status_line.set_message('Clear the filter before removing') unless @tracks_pane.filter.empty?
 
-        index = @tracks_pane.selected_track_index
-        return unless index
+        indexes = @tracks_pane.selected_track_indexes
+        return if indexes.empty?
 
-        removed = @library.remove_playlist_entry(id, index)
-        return unless removed
+        # Last first, so each removal leaves the earlier positions in place.
+        removed = indexes.reverse.count { |index| @library.remove_playlist_entry(id, index) }
+        return if removed.zero?
 
+        @tracks_pane.handle_action(:clear_selection)
         @tracks_pane.reload!
         @library_pane.rebuild!
-        @status_line.set_message('Removed from playlist')
+        @status_line.set_message("Removed #{removed == 1 ? 'track' : "#{removed} tracks"} from playlist")
       end
+
+      def track_count_text(tracks) = tracks.size == 1 ? 'track' : "#{tracks.size} tracks"
 
       def play_focus(sound)
         # Decoder thread owns both normal-track and Focus writes. This command
@@ -1055,7 +1061,7 @@ module RubyPlayer
           # field VALUES ([id, folder_id, ...]) rather than wrap it — which would
           # enqueue an Integer id as a "track". Wrap-and-compact keeps the Track
           # (and yields [] when nothing is selected).
-          [@tracks_pane.selected_track].compact
+          @tracks_pane.selected_tracks
         else
           row = @library_pane.selected
           if row&.kind == :folder
@@ -1076,28 +1082,32 @@ module RubyPlayer
       # from the Now Playing pane, so a list's cursor never rates the song
       # that happens to be playing.
       def rate_track(rating)
-        track, missing = rating_target
-        return @status_line.set_message(missing) unless track
+        tracks, missing = rating_targets
+        return @status_line.set_message(missing) if tracks.empty?
 
-        @library.set_rating(track.id, rating)
-        @now_playing_rating = [track.id, rating] if track.id == @engine.state[:track]&.id
-        @status_line.set_message(rating ? "Rated #{rating}/6" : 'Rating cleared')
+        tracks.each { |track| @library.set_rating(track.id, rating) }
+        playing_id = @engine.state[:track]&.id
+        @now_playing_rating = [playing_id, rating] if tracks.any? { |track| track.id == playing_id }
+        suffix = tracks.size == 1 ? '' : " (#{tracks.size} tracks)"
+        @status_line.set_message("#{rating ? "Rated #{rating}/6" : 'Rating cleared'}#{suffix}")
         @tracks_pane.reload!
         @queued_pane.reload!
       end
 
-      # The track 0-6 would rate, or nil and why there is none.
-      def rating_target
+      # The tracks 0-6 would rate (Tracks' whole range), and why there are
+      # none when the list is empty.
+      def rating_targets
         case @active_pane
-        when :now_playing then [@engine.state[:track], 'Play a library track before rating']
-        when :tracks then [@tracks_pane.selected_track, 'Select a track to rate']
-        when :queued then [@queued_pane.selected_track, 'Select a track to rate']
+        when :now_playing then [[@engine.state[:track]].compact, 'Play a library track before rating']
+        when :tracks then [@tracks_pane.selected_tracks, 'Select a track to rate']
+        when :queued then [[@queued_pane.selected_track].compact, 'Select a track to rate']
         else
-          [nil, if focusable_panes.include?(:now_playing)
-                  'Tab to Now Playing to rate the playing track'
-                else
-                  'Select a track in Tracks to rate'
-                end]
+          hint = if focusable_panes.include?(:now_playing)
+                   'Tab to Now Playing to rate the playing track'
+                 else
+                   'Select a track in Tracks to rate'
+                 end
+          [[], hint]
         end
       end
 

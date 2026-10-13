@@ -728,4 +728,84 @@ class TracksPaneTest < Minitest::Test
 
     assert_equal(['Battle Themes'], @pane.display_rows.map { |r| r[:playlist]['name'] })
   end
+
+  # Shift+arrows extend a range from where the selection began; actions take
+  # its tracks in list order.
+  def test_extending_selects_a_range_in_list_order
+    @pane.show(@folder_row)
+    order = titles
+    2.times { @pane.handle_action(:extend_selection_down) }
+
+    assert_equal order, @pane.selected_tracks.map(&:title)
+    assert_equal 'Tracks · 3 · 3 selected', @pane.title
+    2.times { @pane.handle_action(:extend_selection_up) }
+
+    assert_equal order.first(1), @pane.selected_tracks.map(&:title)
+    refute_includes @pane.title, 'selected'
+  end
+
+  def test_extending_upward_keeps_list_order
+    @pane.show(@folder_row)
+    order = titles
+    2.times { @pane.handle_action(:nav_down) }
+    @pane.handle_action(:extend_selection_up)
+
+    assert_equal order.last(2), @pane.selected_tracks.map(&:title)
+  end
+
+  def test_plain_navigation_escape_and_filtering_end_the_range
+    @pane.show(@folder_row)
+    @pane.handle_action(:extend_selection_down)
+    @pane.handle_action(:nav_down)
+
+    assert_equal 1, @pane.selected_tracks.size
+    @pane.handle_action(:extend_selection_up)
+
+    assert_equal 2, @pane.selected_tracks.size
+    @pane.handle_action(:clear_selection)
+
+    assert_equal 1, @pane.selected_tracks.size
+    @pane.handle_action(:extend_selection_down)
+    @pane.filter = 'a'
+
+    assert_equal 1, @pane.selected_tracks.size
+  end
+
+  # Ratings reload the pane; the range must survive it.
+  def test_range_survives_reload
+    @pane.show(@folder_row)
+    @pane.handle_action(:extend_selection_down)
+    @pane.reload!
+
+    assert_equal 2, @pane.selected_tracks.size
+  end
+
+  def test_grouped_ranges_skip_album_headers
+    @pane.show(@folder_row)
+    @pane.handle_action(:toggle_group)
+    3.times { @pane.handle_action(:extend_selection_down) }
+
+    assert_equal 3, @pane.selected_tracks.size
+    assert(@pane.selected_tracks.all?(RubyPlayer::Track))
+  end
+
+  def test_range_rows_are_drawn_marked
+    @pane.show(@folder_row)
+    @pane.handle_action(:extend_selection_down)
+    screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 5, cols: 40)
+    @pane.render(screen, x: 0, y: 0, w: 40, h: 5, active: true, theme: RubyPlayer::Theme::DEFAULT)
+    backgrounds = screen.instance_variable_get(:@back).first(3).map { |row| row.last.bg }
+
+    assert_equal [RubyPlayer::Theme::DEFAULT[:surface_alt], RubyPlayer::Theme::DEFAULT[:selection_bg], nil],
+                 backgrounds
+  end
+
+  # The Playback Queue view keeps single selection.
+  def test_queue_view_extends_like_plain_navigation
+    @queue = @lib.tracks_under(@folder)
+    @pane.show(RubyPlayer::UI::LibraryPane::Row.new(kind: :queue, depth: 0))
+    @pane.handle_action(:extend_selection_down)
+
+    assert_equal [@queue[1].id], @pane.selected_tracks.map(&:id)
+  end
 end

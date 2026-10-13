@@ -40,10 +40,14 @@ class KeymapTest < Minitest::Test
     end
   end
 
-  # Shift+arrows are left free for extending a selection.
-  def test_shift_arrows_are_unbound
+  # Shift+arrows extend a selection in Tracks only; they do not page.
+  def test_shift_arrows_extend_the_tracks_selection
     k = RubyPlayer::Keymap.new
-    %i[library tracks queued].each do |pane|
+
+    assert_equal :extend_selection_up, k.action_for('shift_up', pane: :tracks)
+    assert_equal :extend_selection_down, k.action_for('shift_down', pane: :tracks)
+    assert_equal :clear_selection, k.action_for('escape', pane: :tracks)
+    %i[library queued].each do |pane|
       assert_nil k.action_for('shift_up', pane: pane)
       assert_nil k.action_for('shift_down', pane: pane)
     end

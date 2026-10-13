@@ -4,12 +4,13 @@ module RubyPlayer
   module UI
     # Snapshot-backed picker. Returns user intents; App owns mutations and refresh.
     class PlaylistModal
-      attr_reader :track, :filter, :selection, :confirm
+      attr_reader :tracks, :filter, :selection, :confirm
       attr_accessor :error
 
-      def initialize(library:, track:, recent_count:)
+      # `tracks`: what to add (a Tracks range, or the highlighted track).
+      def initialize(library:, tracks:, recent_count:)
         @library = library
-        @track = track
+        @tracks = tracks
         @recent = library.playlists(sort: :recency).first(recent_count)
         @all = library.playlists(sort: :alpha)
         @filter = ''
@@ -98,7 +99,8 @@ module RubyPlayer
         return [:create, @filter.strip] if row[:kind] == :create
 
         playlist = row[:playlist]
-        if @library.playlist_contains?(playlist['id'], @track.id)
+        @duplicate_count = @tracks.count { |track| @library.playlist_contains?(playlist['id'], track.id) }
+        if @duplicate_count.positive?
           @confirm = playlist
           nil
         else
@@ -114,7 +116,11 @@ module RubyPlayer
       end
 
       def render_confirmation(screen, theme:, frame:)
-        message = "Already in \"#{@confirm['name']}\". Add again?"
+        message = if @tracks.size == 1
+                    "Already in \"#{@confirm['name']}\". Add again?"
+                  else
+                    "#{@duplicate_count} of #{@tracks.size} already in \"#{@confirm['name']}\". Add all?"
+                  end
         prompt = '[y] Add duplicate    [n/esc] Back'
         w = [message.size, prompt.size].max + 4
         frame.call(title: 'Add to Playlist', w: w, h: 5) do |x, y|

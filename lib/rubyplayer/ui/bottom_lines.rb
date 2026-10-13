@@ -96,7 +96,8 @@ module RubyPlayer
         filter_tracks: 'filter', cycle_art_mode: 'art', toggle_queued_pane: 'queue bar',
         show_now_playing: 'now playing',
         add_to_playlist: 'playlist+', duplicate_playlist: 'dup playlist',
-        rename_playlist: 'rename', move_entry_up: nil, move_entry_down: nil
+        rename_playlist: 'rename', move_entry_up: nil, move_entry_down: nil,
+        extend_selection_up: 'select up', extend_selection_down: 'select down', clear_selection: 'clear selection'
       }.freeze
 
       ROWS = 3
