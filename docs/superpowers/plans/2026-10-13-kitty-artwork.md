@@ -2,7 +2,8 @@
 
 > **For agentic workers:** Use superpowers:subagent-driven-development or superpowers:executing-plans. ROCKLEE (Luna, high effort) implements; the parent reviews and requests revisions. User explicitly authorized automatic plan approval.
 
-**Status:** current, approved 2026-10-13; implemented, reviewed and verified; commit/push pending.
+**Status:** complete, reviewed and verified 2026-10-13; pushed to `origin/main`.
+**Implementation commit:** `076bc7e658e5b18907c40bd0f77ec733afa54d8a` (Tasks 1–3).
 **Baseline:** `5aa234e` on `main`.
 **Goal:** Use one Kitty graphics renderer for artwork in Kitty and compatible iTerm2 terminals.
 **Architecture:** Normalize artwork to cached PNG on the existing artwork worker. A small stateful terminal renderer owns one uploaded cover and placement. App supplies visibility and geometry, preserving current modal, resize and layout behavior; Screen remains a text drawing primitive.
@@ -60,7 +61,7 @@
 - [x] Remove iTerm-specific implementation/references and update README's terminal requirements and file map. Add concise tested lessons to memories without duplicating prior entries.
 - [x] Run focused integration tests, then `mise exec -- bundle exec rake test` and `RUBOCOP_CACHE_ROOT=/private/tmp/rubyplayer-rubocop-cache mise exec -- bundle exec rubocop`. Record exact results.
 - [x] ROCKLEE provides implementation report and diff summary to parent, without committing/pushing; parent reviews code and protocol behavior and sends revisions to ROCKLEE.
-- [ ] Resolve revisions, rerun affected tests and final gates, then parent commits and pushes to the verified current branch remote. Update this plan with final commit hash and verification evidence.
+- [x] Resolve revisions, rerun affected tests and final gates, then parent commits and pushes to the verified current branch remote. Update this plan with final commit hash and verification evidence.
 
 ## References
 
@@ -83,4 +84,5 @@
 - Task 3 focused GREEN: `mise exec -- bundle exec ruby -Itest test/app_artwork_test.rb` — 8 runs, 50 assertions, 0 failures; `mise exec -- bundle exec ruby -Itest test/app_rendering_theme_config_test.rb` — 62 runs, 204 assertions, 0 failures. Includes Kitty app detection, all placements, Info/Live/close reuse, overlay hide/restore, resize shrink/grow, no-art cleanup and terminal teardown. App test output: `/private/tmp/rubyplayer-rocklee-app-artwork.log`.
 - Parent review revisions: extracted `handle_track_started`, renamed the iTerm version predicate, and simplified integer checks to satisfy RuboCop. Corrected the artwork cache test to assert success object reuse before stubbing the converter, then prove failure conversion runs once per distinct pixel limit.
 - Final focused tests after revisions: `test/artwork_test.rb` — 19 runs, 36 assertions; `test/kitty_image_test.rb` — 8 runs, 41 assertions; `test/app_artwork_test.rb` — 8 runs, 50 assertions; `test/app_rendering_theme_config_test.rb` — 62 runs, 204 assertions; all passed. Logs: `/private/tmp/rubyplayer-rocklee-artwork-final.log`, `/private/tmp/rubyplayer-rocklee-kitty-final.log`, `/private/tmp/rubyplayer-rocklee-app-artwork-final.log`, `/private/tmp/rubyplayer-rocklee-app-rendering-final.log`.
-- Final lint: `RUBOCOP_CACHE_ROOT=/private/tmp/rubyplayer-rubocop-cache mise exec -- bundle exec rubocop` — 213 files inspected, no offenses. Full suite was started earlier but its final summary was not retained; parent is running the full suite on the reviewed state.
+- Final lint: `RUBOCOP_CACHE_ROOT=/private/tmp/rubyplayer-rubocop-cache mise exec -- bundle exec rubocop` — 213 files inspected, no offenses. Parent's subsequent full-suite results are recorded above.
+- Commit `076bc7e658e5b18907c40bd0f77ec733afa54d8a` pushed successfully to `origin/main`; no outstanding implementation or review work. This documentation checkpoint records the resulting hash after the feature commit.
