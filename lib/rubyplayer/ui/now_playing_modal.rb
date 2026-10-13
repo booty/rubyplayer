@@ -108,25 +108,32 @@ module RubyPlayer
 
       private
 
-      # Live pages fill the screen: every channel and panel at once.
+      # Every channel and panel at once.
       def render_live(screen, theme:, frame:)
-        width = [screen.cols - 2, 4].max
-        height = screen.rows - 2
-        frame.call(title: 'Now Playing', w: width, h: height, hint: VGM_LIVE_HINT, styled_hint: true) do |x, y|
-          @vgm_view.render(screen, x: x + 2, y: y + 1, width: width - 4, height: [height - 3, 0].max,
-                                   theme: theme, track_title: live_title, now_sample: @now_sample,
-                                   mute_mask: @mute_mask, position_ms: @position_ms)
+        with_live_frame(screen, frame: frame, hint: VGM_LIVE_HINT) do |left, top, content_width, content_height|
+          @vgm_view.render(screen, x: left, y: top, width: content_width, height: content_height, theme: theme,
+                                   track_title: live_title, now_sample: @now_sample, mute_mask: @mute_mask,
+                                   position_ms: @position_ms)
         end
-        nil
       end
 
       def render_spc_live(screen, theme:, frame:)
+        with_live_frame(screen, frame: frame, hint: SPC_LIVE_HINT) do |left, top, content_width, content_height|
+          @spc_view.render(screen, x: left, y: top, width: content_width, height: content_height, theme: theme,
+                                   state: @spc_state, track_title: live_title, position_ms: @position_ms)
+        end
+      end
+
+      # Live pages fill the screen. Yields the content rectangle inside the
+      # frame's border and margins: left, top, width, height. Returns nil (no
+      # art region).
+      def with_live_frame(screen, frame:, hint:)
         width = [screen.cols - 2, 4].max
         height = screen.rows - 2
-        frame.call(title: 'Now Playing', w: width, h: height, hint: SPC_LIVE_HINT, styled_hint: true) do |x, y|
-          @spc_view.render(screen, x: x + 2, y: y + 1, width: width - 4, height: [height - 3, 0].max,
-                                   theme: theme, state: @spc_state, track_title: live_title,
-                                   position_ms: @position_ms)
+        content_width = width - 4
+        content_height = [height - 3, 0].max
+        frame.call(title: 'Now Playing', w: width, h: height, hint: hint, styled_hint: true) do |x, y|
+          yield x + 2, y + 1, content_width, content_height
         end
         nil
       end
