@@ -96,7 +96,7 @@ the current playback source is a VGM stream. Press `O` again for the
 **Tracker** page, then `O` once more to close Now Playing. `Tab` switches
 between **Info** and whichever live page was last open; `Escape` and `Enter`
 close from any page. Other formats with one live page close on the second `O`.
-The Tracker stays open when the next track is also a VGM.
+The Tracker stays open when the next track also has one (VGM or HES).
 The VGM overview covers YM2612/YM3438 FM, SN76489 PSG, and YM2413
 OPLL chips when libgme renders them, and uses the whole terminal: one line per
 chip (LFO, channel 3 mode, DAC stream rate, timers; PSG noise mode and stereo;
@@ -124,15 +124,15 @@ detail, and YM2151/T6W28 live detail is not provided. Switching to Info or
 closing the popup suspends live replay.
 
 The **Tracker** page scrolls a FastTracker-style time grid upward beneath the
-playhead. Each row is 50 ms, with an elapsed timestamp and columns for the VGM
-chip channels. Note starts, pitch changes, and releases come from the existing
-VGM note history. A cell shows a start as `C-4`, a pitch change as `>D-4`, and
+playhead. Each row is 50 ms, with the track time and columns for the chip
+channels. Note starts, pitch changes, and releases come from the existing
+note history. A cell shows a start as `C-4`, a pitch change as `>D-4`, and
 a release with a trailing `!` or `===`; a note that starts and glides in one
 row shows both (`C-4>D-4`), and one that also ends there stays visible.
 `Left`/`Right` moves between channel columns when they do not all fit. This is
-a view of timed VGM events: VGM has no pattern rows or reliable tempo, and the
-page does not infer historical instruments, volume, or effects from the current
-registers. Mute and solo remain on the VGM overview.
+a view of timed chip events: VGM and HES have no pattern rows or reliable
+tempo, and the page does not infer historical instruments, volume, or effects
+from the current registers. Mute and solo remain on the overview page.
 
 For SPC (SNES) tracks, Now Playing opens on a full-screen **S-DSP** live page
 that uses the whole terminal: a global row (main/echo volume, FLG, key-on and
@@ -193,7 +193,9 @@ balance, and libgme's output gain, the selected wave's 32 samples, and note
 history. Noise and DAC voices show no note. Levels are libgme's gain, not the
 sound, so they are labeled estimates; the PSG has no envelopes, and libgme
 plays neither its LFO nor the CD-ROM ADPCM voice. Each voice mutes and solos
-as its own libgme voice. `.hes` plays through libgme's own HES emulator
+as its own libgme voice. A second `O` opens the same **Tracker** page as VGM
+for the six voices.
+`.hes` plays through libgme's own HES emulator
 (`ext/rp_hes`), verified sample-for-sample against Homebrew libgme;
 `config.backends[".hes"] = :gme` switches back, and the app does so
 automatically if `librp_hes.dylib` is missing.

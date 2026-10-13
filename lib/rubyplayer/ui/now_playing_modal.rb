@@ -9,7 +9,7 @@ module RubyPlayer
     # Owns a snapshot only: App loads metadata and delivers background updates.
     class NowPlayingModal
       LIVE_PAGES = { vgm: %i[live tracker].freeze, spc: [:live].freeze,
-                     gbs: [:live].freeze, nsf: [:live].freeze, hes: [:live].freeze }.freeze
+                     gbs: [:live].freeze, nsf: [:live].freeze, hes: %i[live tracker].freeze }.freeze
       MAX_WIDTH = 88
       ART_MIN_WIDTH = 64
       FRAME_ROWS = 6
@@ -18,10 +18,10 @@ module RubyPlayer
 
       SPC_LIVE_HINT = '[Tab] Info/Live [↑/↓] Voice [0-7] Mute [S] Solo [o/esc/enter] Close'
       CHIP_LIVE_HINT = '[Tab] Info/Live [↑/↓] Channel [M] Mute [S] Solo [o/esc/enter] Close'
-      # The VGM overview is the one live page with a page after it, so `o` advances instead of closing.
-      VGM_LIVE_HINT = '[o] Tracker [Tab] Info [↑/↓] Channel [M] Mute [S] Solo [esc/enter] Close'
+      # An overview with a Tracker after it (VGM, HES): `o` advances instead of closing.
+      TRACKER_NEXT_LIVE_HINT = '[o] Tracker [Tab] Info [↑/↓] Channel [M] Mute [S] Solo [esc/enter] Close'
       TRACKER_LIVE_HINT = '[o] Next/Close [Tab] Info [←/→] Channels [esc/enter] Close'
-      private_constant :SPC_LIVE_HINT, :CHIP_LIVE_HINT, :VGM_LIVE_HINT, :TRACKER_LIVE_HINT
+      private_constant :SPC_LIVE_HINT, :CHIP_LIVE_HINT, :TRACKER_NEXT_LIVE_HINT, :TRACKER_LIVE_HINT
 
       # live_kind names the track's live pages (LIVE_PAGES) when it has any.
       def initialize(track, extras:, page: :info, chip_view: nil, live_available: nil, live_kind: nil,
@@ -130,7 +130,7 @@ module RubyPlayer
 
       # Every channel and panel at once.
       def render_live(screen, theme:, frame:)
-        hint = @live_kind == :vgm ? VGM_LIVE_HINT : CHIP_LIVE_HINT
+        hint = next_live_page == :tracker ? TRACKER_NEXT_LIVE_HINT : CHIP_LIVE_HINT
         with_live_frame(screen, frame: frame, hint: hint) do |left, top, content_width, content_height|
           @chip_view.render(screen, x: left, y: top, width: content_width, height: content_height, theme: theme,
                                     track_title: live_title, now_sample: @now_sample, mute_mask: @mute_mask,
@@ -148,7 +148,8 @@ module RubyPlayer
       def render_tracker_live(screen, theme:, frame:)
         with_live_frame(screen, frame: frame, hint: TRACKER_LIVE_HINT) do |left, top, content_width, content_height|
           @tracker_view.render(screen, x: left, y: top, width: content_width, height: content_height, theme: theme,
-                                       track_title: live_title, now_sample: @now_sample)
+                                       track_title: live_title, now_sample: @now_sample,
+                                       position_ms: @position_ms)
         end
       end
 

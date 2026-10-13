@@ -24,9 +24,15 @@ module RubyPlayer
       RATE_ACTIONS = { rate_0: nil, rate_1: 1, rate_2: 2, rate_3: 3,
                        rate_4: 4, rate_5: 5, rate_6: 6 }.freeze
       ART_MODES = %i[off inset pane corner].freeze
-      # A live page fed by native chip snapshots (GBS, NSF): the shared view
-      # and the format's tracker that turns snapshots into its model.
-      ChipPage = Data.define(:view, :tracker)
+      # Live pages fed by native chip snapshots (GBS, NSF, HES): the shared
+      # overview, the format's tracker that turns snapshots into their model,
+      # and the Tracker page view (shown where LIVE_PAGES lists it).
+      ChipPage = Data.define(:view, :tracker, :tracker_view) do
+        def self.for(source, tracker)
+          new(view: ChipLiveView.new(source: source), tracker: tracker,
+              tracker_view: ChipTrackerView.new(source: source))
+        end
+      end
 
       attr_reader :engine, :library_pane, :tracks_pane, :queued_pane, :active_pane, :input_buffer,
                   :pending_delete, :info_track, :show_help, :theme_id, :theme_picker,
@@ -65,9 +71,8 @@ module RubyPlayer
         @spc_live_view = SpcLiveView.new
         # GBS, NSF, and HES reuse the VGM page; their rows come from chip
         # snapshots, each kind through its own tracker.
-        @chip_pages = { gbs: ChipPage.new(view: ChipLiveView.new(source: 'GBS'), tracker: Gbs::Tracker.new),
-                        nsf: ChipPage.new(view: ChipLiveView.new(source: 'NSF'), tracker: Nsf::Tracker.new),
-                        hes: ChipPage.new(view: ChipLiveView.new(source: 'HES'), tracker: Hes::Tracker.new) }
+        @chip_pages = { gbs: ChipPage.for('GBS', Gbs::Tracker.new), nsf: ChipPage.for('NSF', Nsf::Tracker.new),
+                        hes: ChipPage.for('HES', Hes::Tracker.new) }
         @vgm_telemetry_controller = VgmTelemetryController.new(
           engine: @engine, telemetry: @vgm_telemetry,
           refresh_hz: [@config['ui', 'vgm_telemetry_fps'], @config['ui', 'frame_fps']].min,
@@ -659,7 +664,7 @@ module RubyPlayer
                                            page: @now_playing_page,
                                            chip_view: @chip_pages[kind]&.view || @vgm_live_view,
                                            live_available: live, live_kind: (kind if live), spc_view: @spc_live_view,
-                                           tracker_view: @vgm_tracker_view)
+                                           tracker_view: @chip_pages[kind]&.tracker_view || @vgm_tracker_view)
         @now_playing_modal = modal
         if @show_now_playing
           @vgm_telemetry_controller.visible = kind == :vgm
@@ -1478,10 +1483,10 @@ module RubyPlayer
         return unless live
 
         page = @chip_pages.fetch(kind)
-        view = page.view
         tracker = page.tracker
-        view.update(tracker.snapshot) if tracker.update(live) || view.snapshot.nil?
-        view.paused = live.paused
+        changed = tracker.update(live)
+        [page.view, page.tracker_view].each { |view| view.update(tracker.snapshot) if changed || view.snapshot.nil? }
+        page.view.paused = live.paused
         @now_playing_modal.update_chip(now_sample: tracker.now_sample, mute_mask: live.mute_mask,
                                        position_ms: @engine.state[:position_ms])
       end

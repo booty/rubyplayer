@@ -34,7 +34,7 @@ class AppHesLiveTest < Minitest::Test
     assert_includes text, 'HuC6280 PSG · 7.16 MHz'
   end
 
-  def test_tab_switches_between_info_and_live_and_second_o_closes
+  def test_tab_switches_between_info_and_live_and_o_advances
     @app.handle_key('o')
     wait_for_rows
     @app.handle_key('tab')
@@ -46,7 +46,8 @@ class AppHesLiveTest < Minitest::Test
     assert_includes wait_for_rows, 'HES LIVE'
     @app.handle_key('o')
 
-    refute @app.show_now_playing
+    assert_equal :tracker, @app.instance_variable_get(:@now_playing_page)
+    assert @app.show_now_playing
   end
 
   # Each PSG voice is its own libgme voice; a solo mutes the other five.
@@ -86,6 +87,30 @@ class AppHesLiveTest < Minitest::Test
     end
 
     assert(note_samples(tracker).all? { |sample| sample >= seek_sample })
+  end
+
+  # The second `o` opens the Tracker; its clock is the track position, not
+  # the output frames the HES tracker counts since launch.
+  def test_o_opens_the_tracker_at_the_track_position_and_closes_after
+    @app.handle_key('o')
+    wait_for_rows
+    @app.handle_key('o')
+
+    assert_equal :tracker, @app.instance_variable_get(:@now_playing_page)
+    text = nil
+    wait_until(timeout: 3, interval: 0.01, failure_message: 'no HES tracker notes') do
+      text = rendered_text
+      text.match?(/\d:\d\d\.\d\d +.*[A-G][-#]\d/)
+    end
+
+    assert_includes text, 'HuC6280 PSG'
+    assert_includes text, 'Wave 1'
+    minutes, seconds = text[/HES TRACKER · (\d+:\d+\.\d+)/, 1].split(':').map(&:to_f)
+
+    assert_in_delta @app.engine.state[:position_ms] / 1000.0, (minutes * 60) + seconds, 0.5
+    @app.handle_key('o')
+
+    refute @app.show_now_playing
   end
 
   def test_hes_live_page_does_not_start_vgm_telemetry

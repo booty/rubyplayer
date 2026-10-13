@@ -121,6 +121,9 @@ class NowPlayingModalTest < Minitest::Test
     assert_predicate vgm, :live_page?
     assert_nil vgm.next_live_page
 
+    hes = RubyPlayer::UI::NowPlayingModal.new(track, extras: {}, live_kind: :hes, page: :live)
+
+    assert_equal %i[live tracker], hes.live_pages
     %i[spc gbs nsf].each do |kind|
       modal = RubyPlayer::UI::NowPlayingModal.new(track, extras: {}, live_kind: kind, page: :live)
 
@@ -138,7 +141,7 @@ class NowPlayingModalTest < Minitest::Test
   end
 
   def test_live_hint_names_what_o_does_on_each_kind
-    hints = %i[vgm gbs nsf].to_h do |kind|
+    hints = %i[vgm hes gbs nsf].to_h do |kind|
       modal = RubyPlayer::UI::NowPlayingModal.new(track, extras: {}, live_kind: kind, page: :live)
       screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 28, cols: 160)
       captured_hint = nil
@@ -149,6 +152,7 @@ class NowPlayingModalTest < Minitest::Test
 
     assert_includes hints[:vgm], '[o] Tracker'
     refute_includes hints[:vgm], '[o/esc/enter] Close'
+    assert_includes hints[:hes], '[o] Tracker'
     assert_includes hints[:gbs], '[o/esc/enter] Close'
     assert_includes hints[:nsf], '[o/esc/enter] Close'
   end
