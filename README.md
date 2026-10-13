@@ -96,6 +96,7 @@ the current playback source is a VGM stream. Press `O` again for the
 **Tracker** page, then `O` once more to close Now Playing. `Tab` switches
 between **Info** and whichever live page was last open; `Escape` and `Enter`
 close from any page. Other formats with one live page close on the second `O`.
+The Tracker stays open when the next track is also a VGM.
 The VGM overview covers YM2612/YM3438 FM, SN76489 PSG, and YM2413
 OPLL chips when libgme renders them, and uses the whole terminal: one line per
 chip (LFO, channel 3 mode, DAC stream rate, timers; PSG noise mode and stereo;

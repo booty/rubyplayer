@@ -641,11 +641,15 @@ module RubyPlayer
         @engine.chip_live_kind
       end
 
-      def prepare_now_playing(track)
+      # A track change passes the page being shown, so a live page the new
+      # track also offers (such as the VGM Tracker) stays open. Anything else
+      # opens on the first live page, or Info when there is none.
+      def prepare_now_playing(track, preferred_page: nil)
         kind = live_kind
         live = !kind.nil?
         @now_playing_page = live ? :live : :info
-        @last_live_page = live ? :live : nil
+        @now_playing_page = preferred_page if NowPlayingModal::LIVE_PAGES.fetch(kind, []).include?(preferred_page)
+        @last_live_page = live ? @now_playing_page : nil
         @vgm_live_view.update(nil)
         @vgm_tracker_view.update(nil)
         modal = NowPlayingModal.new(track, extras: @library.track_metadata_for(track.id),
@@ -1085,7 +1089,9 @@ module RubyPlayer
           when :track_started
             refresh = true
             fetch_art(payload[:track])
-            prepare_now_playing(payload[:track]) if @show_now_playing && @engine.state[:track]&.id == payload[:track].id
+            if @show_now_playing && @engine.state[:track]&.id == payload[:track].id
+              prepare_now_playing(payload[:track], preferred_page: @now_playing_page)
+            end
           when :now_playing_metadata_ready
             if @show_now_playing && payload[:modal].equal?(@now_playing_modal) &&
                @now_playing_modal.matches?(@engine.state[:track])

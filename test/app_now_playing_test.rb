@@ -374,6 +374,29 @@ class AppNowPlayingTest < Minitest::Test
     assert_nil @app.instance_variable_get(:@vgm_tracker_view).snapshot
   end
 
+  def test_track_change_from_vgm_tracker_stays_on_tracker_for_another_vgm
+    start_live_vgm_track
+    use_screen(rows: 32, cols: 110)
+    @app.handle_key('o')
+    @app.handle_key('o')
+    library = @app.instance_variable_get(:@library)
+    path = File.join(@music, 'next.vgm')
+    File.binwrite(path, VgmBuilder.new(ym2612_clock: 7_670_454).ym2612(0, 0x28, 0xf0).wait(500_000).end.bytes)
+    next_id = library.upsert_track(folder_id: library.all_tracks.first.folder_id, physical_path: path,
+                                   backend: 'gme', format: 'vgm', title: 'Next FM', artist: 'Chip')
+    @app.engine.enqueue_now([library.find_track(next_id)])
+    wait_until { @app.engine.state[:track]&.id == next_id }
+    @app.handle_events
+    modal = @app.instance_variable_get(:@now_playing_modal)
+
+    assert_equal :tracker, @app.instance_variable_get(:@now_playing_page)
+    assert_equal :tracker, modal.page
+    @app.handle_key('tab')
+    @app.handle_key('tab')
+
+    assert_equal :tracker, modal.page
+  end
+
   def test_vgm_telemetry_suspends_when_a_higher_modal_covers_now_playing
     start_live_vgm_track
     use_screen(rows: 32, cols: 110)
