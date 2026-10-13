@@ -110,6 +110,9 @@ module RubyPlayer
       COMPACT_VIEW_GROUPS = [%i[cycle_pane filter_tracks toggle_group show_track_info]].freeze
       LIBRARY_GROUPS = [%i[cycle_pane filter_tracks], %i[add_path remove_library_item],
                         %i[duplicate_playlist rename_playlist]].freeze
+      # The Now Playing pane has no list: 0-6 rate the playing track there.
+      NOW_PLAYING_GROUPS = [%i[cycle_pane cycle_art_mode]].freeze
+      CONTEXT_TITLES = { library: 'LIBRARY', now_playing: 'NOW PLAYING' }.freeze
       FOOTER_LABELS = { toggle_play: 'pause', seek_back: 'back', seek_forward: 'forward',
                         toggle_skip_disliked: 'skip disliked' }.freeze
       COMPACT_LABELS = { previous_track: 'prev/start', seek_forward: 'fwd',
@@ -118,8 +121,8 @@ module RubyPlayer
       STYLES = { category: { italic: true }, key: { bold: true }, muted: { dim: true } }.freeze
       TOGGLE_ACTIONS = %i[toggle_skip_disliked toggle_group].freeze
       private_constant :COMPACT_WIDTH, :PLAY_GROUPS, :QUEUE_GROUPS, :VIEW_GROUPS,
-                       :COMPACT_VIEW_GROUPS, :LIBRARY_GROUPS, :FOOTER_LABELS, :COMPACT_LABELS,
-                       :STYLES, :TOGGLE_ACTIONS
+                       :COMPACT_VIEW_GROUPS, :LIBRARY_GROUPS, :NOW_PLAYING_GROUPS, :CONTEXT_TITLES,
+                       :FOOTER_LABELS, :COMPACT_LABELS, :STYLES, :TOGGLE_ACTIONS
 
       def self.key_label(key)
         key.to_s.upcase.sub(/\ACTRL[_+]/, '^').sub(/\ASPACE\z/, 'Space')
@@ -127,14 +130,14 @@ module RubyPlayer
       end
 
       def initialize(keymap:)
-        @bindings = %i[library tracks queued].to_h do |pane|
+        @bindings = %i[library tracks queued now_playing].to_h do |pane|
           [pane, keymap.bindings_for(pane).group_by(&:last)]
         end
       end
 
       def render(screen, row:, w:, pane:, theme:, h: ROWS, toggle_states: {})
         bindings = @bindings.fetch(pane.to_sym)
-        context = pane.to_sym == :library ? 'LIBRARY' : 'VIEW'
+        context = CONTEXT_TITLES.fetch(pane.to_sym, 'VIEW')
         groups = context_groups(pane, w)
         help_key = bindings[:show_help]&.last&.first
         labels = hint_labels(toggle_states, compact: w < COMPACT_WIDTH)
@@ -152,6 +155,7 @@ module RubyPlayer
 
       def context_groups(pane, width)
         return LIBRARY_GROUPS if pane.to_sym == :library
+        return NOW_PLAYING_GROUPS if pane.to_sym == :now_playing
 
         width < COMPACT_WIDTH ? COMPACT_VIEW_GROUPS : VIEW_GROUPS
       end

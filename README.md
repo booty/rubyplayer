@@ -67,6 +67,8 @@ Select **Focus** in the Library pane, then choose a noise recipe in Tracks and p
 - Pane-edge scrollbar appears only when rows overflow viewport.
 - Terminals narrower than 72 columns show one full-width pane; Tab switches panes. Wider terminals retain two-pane layout.
 - Wide terminals show a **Queued** pane with upcoming tracks and the three latest playback-history entries. Tab selects it while visible; upcoming rows support the same queue actions as the top-level **Playback Queue** view, while history rows are informational. Press `B` to toggle it. It hides when the terminal cannot retain 72 columns for Library + Tracks and while the top-level **Playback Queue** view is selected; hidden Queued is excluded from Tab traversal.
+- A **Now Playing** pane between Tracks and Queued shows the playing track's title, album, artist, and rating (album art too in `pane` art mode). It shows whenever the terminal keeps 72 columns for Library + Tracks after Queued; Tab selects it while visible.
+- Keys `1`–`6` rate a track and `0` clears its rating: the highlighted track in Tracks or Queued, or the playing track from the Now Playing pane. The Library pane rates nothing.
 - Fixed smart views expose **Recently Added**, **Unrated**, **Missing**, **Failed to Scan**, and **Most Played** track lists.
 - In **Missing**, press `Ctrl+X` to permanently purge currently filtered/visible tracks and their playback history after confirmation.
 - Playback footer shows current track timing and queued next track. During Focus playback it identifies active recipe, infinite duration, paused queue, and next queued track.
@@ -452,7 +454,7 @@ restart.
 | `config.ui.queued_pane_width` | `36` | Queued pane width; positive integer columns. |
 | `config.ui.theme` | `"default"` | Id from `Theme::ALL_IDS`. |
 | `config.ui.art_mode` | `"off"` | Album-art placement: off, inset, pane, or corner. |
-| `config.ui.art_pane_width` | `30` | Dedicated album-art pane width. |
+| `config.ui.art_pane_width` | `30` | Now Playing pane width (it holds the album art in `pane` mode). |
 | `config.ui.art_display_max_px` | `480` | Longest emitted album-art side in pixels. |
 | `config.ui.art_corner_rows` | `8` | Album-art corner height in rows. |
 | `config.ui.art_min_rows` | `3` | Minimum usable album-art height in rows. |

@@ -203,6 +203,9 @@ class AppRenderingThemeConfigTest < Minitest::Test
     assert_equal :tracks, @app.active_pane
     @app.handle_key('tab')
 
+    assert_equal :now_playing, @app.active_pane
+    @app.handle_key('tab')
+
     assert_equal :queued, @app.active_pane
     @app.handle_key('tab')
 
@@ -217,15 +220,14 @@ class AppRenderingThemeConfigTest < Minitest::Test
     6.times do
       @app.handle_key('tab')
 
-      assert_includes %i[library tracks], @app.active_pane
+      assert_includes %i[library tracks now_playing], @app.active_pane
     end
   end
 
   def test_active_queued_border_uses_focus_style
     select_library_kind(:folder)
     use_screen(cols: 140)
-    @app.handle_key('tab')
-    @app.handle_key('tab')
+    3.times { @app.handle_key('tab') }
     @app.render
 
     screen = @app.instance_variable_get(:@screen)
@@ -238,8 +240,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
   def test_hiding_active_queued_moves_to_another_eligible_pane
     select_library_kind(:folder)
     use_screen(cols: 140)
-    @app.handle_key('tab')
-    @app.handle_key('tab')
+    3.times { @app.handle_key('tab') }
 
     assert_equal :queued, @app.active_pane
 
@@ -247,14 +248,13 @@ class AppRenderingThemeConfigTest < Minitest::Test
     @app.render
 
     refute_equal :queued, @app.active_pane
-    assert_includes %i[library tracks], @app.active_pane
+    assert_includes %i[library tracks now_playing], @app.active_pane
   end
 
   def test_resizing_hides_active_queued_and_moves_focus
     select_library_kind(:folder)
     use_screen(cols: 140)
-    @app.handle_key('tab')
-    @app.handle_key('tab')
+    3.times { @app.handle_key('tab') }
 
     assert_equal :queued, @app.active_pane
 
@@ -262,14 +262,13 @@ class AppRenderingThemeConfigTest < Minitest::Test
     @app.render
 
     refute_equal :queued, @app.active_pane
-    assert_includes %i[library tracks], @app.active_pane
+    assert_includes %i[library tracks now_playing], @app.active_pane
   end
 
   def test_help_scope_includes_queued_navigation_when_queued_is_active
     select_library_kind(:folder)
     use_screen(cols: 140)
-    @app.handle_key('tab')
-    @app.handle_key('tab')
+    3.times { @app.handle_key('tab') }
     @app.handle_key('?')
     @app.render
 
