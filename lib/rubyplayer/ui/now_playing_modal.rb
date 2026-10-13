@@ -38,7 +38,6 @@ module RubyPlayer
         @position_ms = nil
         @now_sample = nil
         @mute_mask = 0
-        @paused = false
         @live_available = if live_kind
                             true
                           elsif live_available.nil?
@@ -67,11 +66,10 @@ module RubyPlayer
       # The App hands over the sample being heard and the voice mute mask
       # before each render, so VGM levels move between telemetry snapshots.
       # GBS also passes the track position for the header clock.
-      def update_chip(now_sample:, mute_mask:, position_ms: nil, paused: false)
+      def update_chip(now_sample:, mute_mask:, position_ms: nil)
         @now_sample = now_sample
         @mute_mask = mute_mask
         @position_ms = position_ms
-        @paused = paused
       end
 
       def page=(page)
@@ -150,7 +148,7 @@ module RubyPlayer
       def render_tracker_live(screen, theme:, frame:)
         with_live_frame(screen, frame: frame, hint: TRACKER_LIVE_HINT) do |left, top, content_width, content_height|
           @tracker_view.render(screen, x: left, y: top, width: content_width, height: content_height, theme: theme,
-                                       track_title: live_title, now_sample: @now_sample, paused: @paused)
+                                       track_title: live_title, now_sample: @now_sample)
         end
       end
 

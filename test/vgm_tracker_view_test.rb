@@ -82,10 +82,11 @@ class VgmTrackerViewTest < Minitest::Test
     assert_includes render(width: 50, height: 10).join("\n"), 'Error'
 
     @view.update(snapshot(chips: [chip('ym2612:0', 'YM2612', ['FM1'], Vgm::NoteLog.new)]))
-    paused = render(width: 50, height: 10, now_sample: 4_410, paused: true)
+    # Pausing stops the heard sample, so the playhead row holds still.
+    paused = render(width: 50, height: 10, now_sample: 4_410)
 
     assert paused.any? { |row| row.include?('0:00.10') }
-    assert_equal paused, render(width: 50, height: 10, now_sample: 4_410, paused: true)
+    assert_equal paused, render(width: 50, height: 10, now_sample: 4_410)
   end
 
   def test_rendering_stays_inside_its_rectangle
@@ -93,7 +94,7 @@ class VgmTrackerViewTest < Minitest::Test
     [[26, 8], [12, 5]].each do |width, height|
       screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: height + 4, cols: width + 6)
       @view.render(screen, x: 3, y: 2, width: width, height: height, theme: THEME,
-                           track_title: 'Song', now_sample: 0, paused: false)
+                           track_title: 'Song', now_sample: 0)
       screen.instance_variable_get(:@back).each_with_index do |row, row_index|
         row.each_with_index do |cell, column|
           next if row_index.between?(2, height + 1) && column.between?(3, width + 2)
@@ -121,10 +122,10 @@ class VgmTrackerViewTest < Minitest::Test
                           details: { events: notes.packed })
   end
 
-  def render(width:, height:, now_sample: 0, paused: false)
+  def render(width:, height:, now_sample: 0)
     screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: height, cols: width)
     @view.render(screen, x: 0, y: 0, width: width, height: height, theme: THEME,
-                         track_title: 'Song', now_sample: now_sample, paused: paused)
+                         track_title: 'Song', now_sample: now_sample)
     screen.instance_variable_get(:@back).map { |row| row.map(&:ch).join }
   end
 end

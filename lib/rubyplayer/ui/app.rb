@@ -699,8 +699,9 @@ module RubyPlayer
 
       def change_now_playing_page(page)
         was_live = @now_playing_modal.live_page?
-        @now_playing_page = page
+        # The modal normalizes pages its track does not offer; mirror its choice.
         @now_playing_modal.page = page
+        @now_playing_page = @now_playing_modal.page
         is_live = @now_playing_modal.live_page?
         if is_live && !was_live
           @vgm_live_view.update(nil)
@@ -1459,7 +1460,7 @@ module RubyPlayer
           @now_playing_modal.update_spc(state: @engine.spc_live, position_ms: @engine.state[:position_ms])
         when :vgm
           @now_playing_modal.update_chip(now_sample: @engine.vgm_telemetry_request&.sample,
-                                         mute_mask: @engine.voice_mute_mask, paused: @engine.state[:paused])
+                                         mute_mask: @engine.voice_mute_mask)
         when :gbs, :nsf then update_chip_live(@now_playing_modal.live_kind)
         end
         @art_region = @now_playing_modal.render(@screen, theme: @theme, frame: method(:render_modal),

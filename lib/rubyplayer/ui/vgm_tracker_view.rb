@@ -57,7 +57,7 @@ module RubyPlayer
 
       # Screen uses short x/y coordinates as its drawing convention.
       # rubocop:disable Naming/MethodParameterName
-      def render(screen, x:, y:, width:, height:, theme:, track_title:, now_sample:, paused:)
+      def render(screen, x:, y:, width:, height:, theme:, track_title:, now_sample:)
         return if width <= 0 || height <= 0
 
         visible_count = if @channels.empty?
@@ -81,7 +81,7 @@ module RubyPlayer
         return if height <= HEADER_ROWS
 
         draw_headers(screen, x, y, width, height, theme, visible_count)
-        draw_rows(screen, x, y, width, height, theme, current_bucket, visible_count, paused)
+        draw_rows(screen, x, y, width, height, theme, current_bucket, visible_count)
       end
 
       private
@@ -107,10 +107,11 @@ module RubyPlayer
         return if packed == @packed_by_chip[chip.id]
 
         @packed_by_chip[chip.id] = packed
-        cells = Hash.new { |hash, key| hash[key] = {} }
+        # No default proc: render's dig must not add empty rows for silent voices.
+        cells = {}
         Vgm::NoteLog.decode(packed).each do |event|
           bucket = event.sample / ROW_SAMPLES
-          cell = (cells[event.channel][bucket] ||= {})
+          cell = ((cells[event.channel] ||= {})[bucket] ||= {})
           # A start and a later glide in one row both show (C-4>D-4); a
           # newer start replaces both, since the earlier note has ended.
           case event.kind
@@ -157,7 +158,7 @@ module RubyPlayer
         end
       end
 
-      def draw_rows(screen, x, y, width, height, theme, current_bucket, visible_count, _paused)
+      def draw_rows(screen, x, y, width, height, theme, current_bucket, visible_count)
         grid_rows = height - HEADER_ROWS
         current_row = [grid_rows - 2, 0].max
         first_bucket = current_bucket - current_row
