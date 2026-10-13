@@ -22,6 +22,9 @@ module RubyPlayer
       RATE_ACTIONS = { rate_0: nil, rate_1: 1, rate_2: 2, rate_3: 3,
                        rate_4: 4, rate_5: 5, rate_6: 6 }.freeze
       ART_MODES = %i[off inset pane corner].freeze
+      # A live page fed by native chip snapshots (GBS, NSF): the shared view
+      # and the format's tracker that turns snapshots into its model.
+      ChipPage = Data.define(:view, :tracker)
 
       attr_reader :engine, :library_pane, :tracks_pane, :queued_pane, :active_pane, :input_buffer,
                   :pending_delete, :info_track, :show_help, :theme_id, :theme_picker,
@@ -59,8 +62,8 @@ module RubyPlayer
         @spc_live_view = SpcLiveView.new
         # GBS and NSF reuse the VGM page; their rows come from chip snapshots,
         # each kind through its own tracker.
-        @chip_pages = { gbs: [VgmLiveView.new(source: 'GBS'), Gbs::Tracker.new],
-                        nsf: [VgmLiveView.new(source: 'NSF'), Nsf::Tracker.new] }
+        @chip_pages = { gbs: ChipPage.new(view: VgmLiveView.new(source: 'GBS'), tracker: Gbs::Tracker.new),
+                        nsf: ChipPage.new(view: VgmLiveView.new(source: 'NSF'), tracker: Nsf::Tracker.new) }
         @vgm_telemetry_controller = VgmTelemetryController.new(
           engine: @engine, telemetry: @vgm_telemetry,
           refresh_hz: [@config['ui', 'vgm_telemetry_fps'], @config['ui', 'frame_fps']].min,
@@ -286,7 +289,7 @@ module RubyPlayer
         case @now_playing_modal&.live_kind
         when :spc then handle_spc_mute_key(key)
         when :vgm then handle_channel_mute_key(key, @vgm_live_view)
-        when :gbs, :nsf then handle_channel_mute_key(key, @chip_pages.fetch(@now_playing_modal.live_kind).first)
+        when :gbs, :nsf then handle_channel_mute_key(key, @chip_pages.fetch(@now_playing_modal.live_kind).view)
         else false
         end
       end
@@ -302,8 +305,8 @@ module RubyPlayer
         case key.to_s.downcase
         when /\A[0-7]\z/ then @engine.mute_voices(mask ^ (1 << key.to_i))
         when 's'
-          solo = 0xff & ~(1 << @spc_live_view.selected_voice)
-          @engine.mute_voices(mask == solo ? 0 : solo)
+          solo_mute_mask = 0xff & ~(1 << @spc_live_view.selected_voice)
+          @engine.mute_voices(mask == solo_mute_mask ? 0 : solo_mute_mask)
         else return false
         end
         true
@@ -314,15 +317,17 @@ module RubyPlayer
       # already soloed.
       def handle_channel_mute_key(key, view)
         mask = @engine.voice_mute_mask
-        bits = view.selected_mute_bits
+        selected_voice_bits = view.selected_mute_bits
         return false unless mask && %w[m s].include?(key.to_s.downcase)
-        return true if bits.zero?
+        return true if selected_voice_bits.zero?
 
         if key.to_s.casecmp?('m')
-          @engine.mute_voices(mask.allbits?(bits) ? mask & ~bits : mask | bits)
+          muted = mask.allbits?(selected_voice_bits)
+          @engine.mute_voices(muted ? mask & ~selected_voice_bits : mask | selected_voice_bits)
         else
-          solo = view.all_mute_bits & ~bits
-          @engine.mute_voices(mask == solo ? 0 : solo)
+          # Soloing mutes every other voice.
+          solo_mute_mask = view.all_mute_bits & ~selected_voice_bits
+          @engine.mute_voices(mask == solo_mute_mask ? 0 : solo_mute_mask)
         end
         true
       end
@@ -639,7 +644,7 @@ module RubyPlayer
         @vgm_live_view.update(nil)
         modal = NowPlayingModal.new(track, extras: @library.track_metadata_for(track.id),
                                            page: @now_playing_page,
-                                           vgm_view: @chip_pages.dig(kind, 0) || @vgm_live_view,
+                                           vgm_view: @chip_pages[kind]&.view || @vgm_live_view,
                                            live_available: live, live_kind: kind, spc_view: @spc_live_view)
         @now_playing_modal = modal
         if @show_now_playing
@@ -1430,7 +1435,9 @@ module RubyPlayer
         live = @engine.chip_live
         return unless live
 
-        view, tracker = @chip_pages.fetch(kind)
+        page = @chip_pages.fetch(kind)
+        view = page.view
+        tracker = page.tracker
         view.update(tracker.snapshot) if tracker.update(live) || view.snapshot.nil?
         view.paused = live.paused
         @now_playing_modal.update_vgm(now_sample: tracker.now_sample, mute_mask: live.mute_mask,

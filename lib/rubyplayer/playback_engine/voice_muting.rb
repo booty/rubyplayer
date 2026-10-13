@@ -13,7 +13,7 @@ module RubyPlayer
       # rubocop:disable Naming/PredicateMethod
       def mute_voices(mask)
         @mutex.synchronize do
-          return false unless @playing && @mutable_voices
+          return false unless @playing && @voice_muting_supported
 
           @voice_mute_mask = mask
           @commands << [:voice_mute, mask, @voice_generation]
@@ -24,27 +24,27 @@ module RubyPlayer
 
       # The current track's mask, or nil when its handle cannot mute.
       def voice_mute_mask
-        @mutex.synchronize { @voice_mute_mask if @playing && @mutable_voices }
+        @mutex.synchronize { @voice_mute_mask if @playing && @voice_muting_supported }
       end
 
       private
 
       def initialize_voice_muting
-        @mutable_voices = false
+        @voice_muting_supported = false
         @voice_mute_mask = 0
         @voice_generation = 0
       end
 
       # Caller holds @mutex: every track starts unmuted.
       def start_voice_muting
-        @mutable_voices = @handle.respond_to?(:mute)
+        @voice_muting_supported = @handle.respond_to?(:mute)
         @voice_mute_mask = 0
         @voice_generation += 1
       end
 
       # Caller holds @mutex.
       def stop_voice_muting
-        @mutable_voices = false
+        @voice_muting_supported = false
       end
 
       # Decoder thread: apply a queued mute unless its track has been replaced.
