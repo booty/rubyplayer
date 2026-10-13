@@ -5,6 +5,7 @@ require 'rubyplayer/audio_output'
 require 'rubyplayer/playback_engine'
 require 'rubyplayer/spc/snapshot'
 require 'rubyplayer/gbs/snapshot'
+require 'rubyplayer/hes/snapshot'
 
 # The engine must show the chip state (SPC S-DSP, GBS APU) of the audio being
 # heard, not of the chunk the decoder just produced (up to a ring buffer and
@@ -111,6 +112,20 @@ class PlaybackEngineSpcTest < Minitest::Test
       regs[1] = index
       [frame, *regs, *Array.new(4, 0), 0, 0, 0, *Array.new(4, 0), 0, 70_224, 4_194_304]
         .pack(RubyPlayer::Gbs::Snapshot::FORMAT)
+    end
+  end
+
+  # A GBS-shaped fake that names HES records, to check the engine's live kind.
+  class HesHandle < GbsHandle
+    def snapshot_type = RubyPlayer::Hes::Snapshot
+    def take_snapshots = [record(0), 1]
+    def capture_now = take_snapshots
+
+    private
+
+    def record(frame)
+      [frame, *Array.new(4, 0), *Array.new(30, 0), "\0" * 192, *Array.new(12, 0), 119_210, 7_159_091]
+        .pack(RubyPlayer::Hes::Snapshot::FORMAT)
     end
   end
 
@@ -254,6 +269,13 @@ class PlaybackEngineSpcTest < Minitest::Test
     refute_equal before.generation, after.generation
     assert_equal before.track_generation, after.track_generation
     assert after.paused
+  end
+
+  def test_hes_handles_report_the_hes_live_kind
+    start(HesHandle)
+
+    assert_equal :hes, @engine.chip_live_kind
+    assert_equal [0], @engine.chip_live.snapshots.map(&:frame)
   end
 
   def test_no_live_state_for_handles_without_snapshots

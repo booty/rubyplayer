@@ -53,15 +53,17 @@ class RegistryTest < Minitest::Test
     require 'rubyplayer/backends/snes_spc'
     require 'rubyplayer/backends/gbs_native'
     require 'rubyplayer/backends/nsf_native'
+    require 'rubyplayer/backends/hes_native'
     gme = @reg.backend_for('/x/a.vgm')
     { '/x/a.spc' => RubyPlayer::Backends::SnesSpc, '/x/a.gbs' => RubyPlayer::Backends::GbsNative,
-      '/x/a.nsf' => RubyPlayer::Backends::NsfNative }.each do |path, backend|
+      '/x/a.nsf' => RubyPlayer::Backends::NsfNative,
+      '/x/a.hes' => RubyPlayer::Backends::HesNative }.each do |path, backend|
       backend.stub(:available?, false) { assert_same gme, @reg.backend_for(path), path }
     end
   end
 
   def test_native_players_are_memoized_when_available
-    %w[/x/a.spc /x/a.gbs /x/a.nsf].each do |path|
+    %w[/x/a.spc /x/a.gbs /x/a.nsf /x/a.hes].each do |path|
       backend = @reg.backend_for(path)
 
       assert_same backend, @reg.backend_for(path), path

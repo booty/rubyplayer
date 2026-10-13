@@ -110,10 +110,10 @@ The native API uses the same signatures as `rp_gbs_*` for `open`, `close`, `load
 
 **Interfaces:** `Backends::HesNative < NativeGme` supplies `Native.new(lib_file: 'hes_native_lib', lib: :HesNativeLib, prefix: 'rp_hes', snapshot_type: Hes::Snapshot, label: 'HES', max_bytes: 4 * 1024 * 1024)`. `Registry#backend_name_for('.hes')` returns `:hes_native`; `PlaybackEngine#chip_live_kind` returns `:hes` for `Hes::Snapshot`.
 
-- [ ] Write failing tests for registry routing, one native HES handle's `read`, `seek`, `mute`, `take_snapshots`, and `capture_now`, and unchanged metadata/track count/title/length from `RipFixtures.path(:air_zonk)` and one archive rip. Test that the engine reports `:hes`, returns heard snapshots, and resets generation on seek/track change.
-- [ ] Run `mise exec -- bundle exec ruby -Itest test/hes_native_backend_test.rb` and `test/registry_test.rb`; expect failure on the missing backend/route.
-- [ ] Add `HesNative` with the `NativeGme` handle. Register `.hes` as one more row in Task 1's native-backend table. Add `Hes::Snapshot` to `CHIP_LIVE_KINDS`; do not add HES-specific frame arithmetic to `PlaybackEngine`. Existing `ChipTimeline` owns output-frame timing and the post-seek capture.
-- [ ] Run targeted backend, registry, parity, and snapshot tests. Commit the playable HES route.
+- [x] Write failing tests for registry routing, one native HES handle's `read`, `seek`, `mute`, `take_snapshots`, and `capture_now`, and unchanged metadata/track count/title/length from `RipFixtures.path(:air_zonk)` and one archive rip. Test that the engine reports `:hes`, returns heard snapshots, and resets generation on seek/track change.
+- [x] Run `mise exec -- bundle exec ruby -Itest test/hes_native_backend_test.rb` and `test/registry_test.rb`; expect failure on the missing backend/route.
+- [x] Add `HesNative` with the `NativeGme` handle. Register `.hes` as one more row in Task 1's native-backend table. Add `Hes::Snapshot` to `CHIP_LIVE_KINDS`; do not add HES-specific frame arithmetic to `PlaybackEngine`. Existing `ChipTimeline` owns output-frame timing and the post-seek capture.
+- [x] Run targeted backend, registry, parity, and snapshot tests. Commit the playable HES route.
 
 ### Task 5: Convert PSG state to notes and channel rows
 

@@ -277,6 +277,7 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | `chip_tracker.rb` | `ChipTracker`: the lifecycle the GBS and NSF trackers share. It reads an engine live state's native snapshots in order, restarts history on a new generation, records note starts, pitch changes, and stops, and builds the live page's view snapshot. |
 | `gbs/snapshot.rb`, `gbs/tracker.rb` | `Gbs::Snapshot` (one decoded Game Boy APU record) and `Gbs::Tracker`, which turns the snapshot stream into the VGM live page's channel model and note history. |
 | `nsf/snapshot.rb`, `nsf/chips.rb`, `nsf/vrc7.rb`, `nsf/tracker.rb` | `Nsf::Snapshot` (one decoded 2A03-plus-expansion record) and `Nsf::Voices` (libgme's voice numbering per chip set); `Nsf::Chips`, which reads each chip's channels (pitch, level, settings) from a record; `Nsf::Vrc7`, the YM2413 model with VRC7's channel count and instrument names; and `Nsf::Tracker`, which builds the VGM live page's channel model and per-chip note history. |
+| `hes/snapshot.rb` | `Hes::Snapshot`: one decoded HuC6280 PSG record (six voices' key, mode, period, gains, and 32-step waves). |
 | `spc/dsp.rb`, `spc/brr.rb`, `spc/fir.rb`, `spc/ram_map.rb` | Pure decoders for the live page: DSP registers, sample directory and BRR samples, echo FIR frequency response, and SPC RAM layout. |
 | `track_formatter.rb` | `TrackFormatter`: runs configured formatter lambdas against a track and helper context, then normalizes strings and conditional fragments into validated styled segments. |
 | `keymap.rb` | `Keymap`: maps normalized key names to action symbols, merging Ruby-config overrides over sensible single-letter defaults. Matching is case-insensitive. Pane-local bindings shadow global bindings. |
@@ -292,7 +293,7 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | `openmpt.rb` | `Backends::Openmpt`: FFI bindings to libopenmpt, plus `Handle` and metadata extraction for tracker module formats. libopenmpt renders float natively, so no format conversion is needed. |
 | `snes_spc.rb`, `snes_spc_lib.rb` | `Backends::SnesSpc`: plays `.spc` through `librp_spc` (handles also expose DSP snapshots, RAM, and voice muting); scanning and metadata stay on libgme. Requiring `snes_spc_lib.rb` loads the dylib and doubles as the availability check. |
 | `native_gme.rb`, `gzip_content.rb` | `Backends::NativeGme`: the shared backend and handle for native libgme players (snapshots, voice muting, a sibling `.m3u` as libgme loads it); scanning and metadata stay on libgme. `GzipContent` inflates gzip content (with a size limit) as libgme's file loader does. |
-| `gbs_native.rb`, `gbs_native_lib.rb`, `nsf_native.rb`, `nsf_native_lib.rb` | `Backends::GbsNative` and `NsfNative`: `.gbs` through `librp_gbs`, `.nsf`/`.nsfe` through `librp_nsf`. Requiring a `*_lib.rb` binding doubles as the availability check; each attaches the shared player API through `native_gme_lib.rb`. |
+| `gbs_native.rb`, `gbs_native_lib.rb`, `nsf_native.rb`, `nsf_native_lib.rb`, `hes_native.rb`, `hes_native_lib.rb` | `Backends::GbsNative`, `NsfNative`, and `HesNative`: `.gbs` through `librp_gbs`, `.nsf`/`.nsfe` through `librp_nsf`, `.hes` through `librp_hes`. Requiring a `*_lib.rb` binding doubles as the availability check; each attaches the shared player API through `native_gme_lib.rb`. |
 | `ffmpeg.rb` | `Backends::Ffmpeg`: probes ordinary audio files with ffprobe and decodes through an FFmpeg subprocess to float32 stereo PCM; supports seeking by restarting decoding at the requested offset. |
 
 ### Terminal UI (`lib/rubyplayer/ui/`)
@@ -339,7 +340,7 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | `ext/rp_gme/rp_recorder.h` | What the players share: an emulator subclass that records snapshots from libgme's hooks and maps them from emulator clocks to output frames across leading-silence skipping, keeping those ahead of output so a seek shows the state heard at its target; and the C API plumbing built on it. |
 | `ext/rp_gbs/rp_gbs.{h,cpp}`, `rp_gbs_hooks.h` | C API that builds the GBS emulator through libgme's own `gme_new_emu` path (so output is libgme's), plus APU snapshots taken through libgme's `GME_APU_HOOK`/`GME_FRAME_HOOK` macros at each trigger, length or envelope change, and driver call. Compiled with hidden symbols to `lib/rubyplayer/native/librp_gbs.dylib`. `test/gbs_native_parity_test.rb` requires bit-exact output against libgme. |
 | `ext/rp_nsf/rp_nsf.{h,cpp}`, `rp_nsf_hooks.h` | The same for NSF and NSFe: 2A03 and expansion chip snapshots at each trigger, key on, length or envelope change, and driver call. The 2A03 and MMC5 frame counters are simulated on copies between hooks rather than advanced (libgme's triangle keeps phase differently across extra time splits while muted). Compiled to `lib/rubyplayer/native/librp_nsf.dylib`; `test/nsf_native_parity_test.rb` requires bit-exact output against libgme on every NSF fixture. |
-| `ext/rp_hes/rp_hes.{h,cpp}`, `rp_hes_hooks.h` | The same for HES, built through libgme's `gme_new_emu` path. Compiled to `lib/rubyplayer/native/librp_hes.dylib`; PSG snapshots come from libgme's write and driver hooks alone (the PSG has no envelopes or length counters): one at each key or mode change, even within a driver call, plus the registers each driver call leaves, at most 240 a second. `test/hes_native_parity_test.rb` requires bit-exact output against libgme on every HES fixture, including playlists, seeks, fades, and muting. Playback is not routed here yet. |
+| `ext/rp_hes/rp_hes.{h,cpp}`, `rp_hes_hooks.h` | The same for HES, built through libgme's `gme_new_emu` path. Compiled to `lib/rubyplayer/native/librp_hes.dylib`; PSG snapshots come from libgme's write and driver hooks alone (the PSG has no envelopes or length counters): one at each key or mode change, even within a driver call, plus the registers each driver call leaves, at most 240 a second. `test/hes_native_parity_test.rb` requires bit-exact output against libgme on every HES fixture, including playlists, seeks, fades, and muting. `.hes` playback uses it by default and falls back to libgme when the dylib is missing. |
 
 ### Other directories
 
@@ -470,7 +471,7 @@ restart.
 | `config.keymap.global` | `{}` | Global key/action overrides. |
 | `config.keymap.library` | `{}` | Library overrides; beat global bindings. |
 | `config.keymap.tracks` | `{}` | Tracks overrides; beat global bindings. |
-| `config.backends` | `{}` | Extension/backend overrides; dot optional. `.spc`, `.gbs`, and `.nsf`/`.nsfe` default to the native SPC, GBS, and NSF players; for example `".nsf" => :gme` restores libgme playback. |
+| `config.backends` | `{}` | Extension/backend overrides; dot optional. `.spc`, `.gbs`, `.nsf`/`.nsfe`, and `.hes` default to the native SPC, GBS, NSF, and HES players; for example `".nsf" => :gme` restores libgme playback. |
 
 Map settings use bracket assignment:
 

@@ -39,7 +39,7 @@ module RubyPlayer
         @now_sample = nil
         @mute_mask = 0
         @live_available = if live_kind
-                            true
+                            live_pages.any?
                           elsif live_available.nil?
                             %w[vgm vgz].include?(track.format.to_s.downcase)
                           else

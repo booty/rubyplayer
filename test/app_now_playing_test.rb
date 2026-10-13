@@ -263,6 +263,24 @@ class AppNowPlayingTest < Minitest::Test
     assert controller.instance_variable_get(:@visible)
   end
 
+  # A playback kind that records live state but has no page yet must open a
+  # plain Info page: artwork, no Tab hint, nothing for Tab to return to.
+  def test_live_kind_without_pages_opens_plain_info
+    library = @app.instance_variable_get(:@library)
+    track = library.all_tracks.find { |entry| entry.format == 'mod' }
+    @app.engine.enqueue_now([track])
+    wait_until { @app.engine.state[:track]&.id == track.id }
+    @app.handle_events
+    use_screen(rows: 40, cols: 110)
+    @app.stub(:live_kind, :pageless) { @app.handle_key('o') }
+    @app.render
+
+    assert_equal :info, @app.instance_variable_get(:@now_playing_page)
+    assert_nil @app.instance_variable_get(:@last_live_page)
+    refute_includes back_buffer_text, 'Info / Live'
+    refute @app.instance_variable_get(:@vgm_telemetry_controller).instance_variable_get(:@visible)
+  end
+
   def test_o_closes_info_for_a_track_without_live_pages
     library = @app.instance_variable_get(:@library)
     track = library.all_tracks.find { |entry| entry.format == 'mod' }

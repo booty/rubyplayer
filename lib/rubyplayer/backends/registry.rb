@@ -18,7 +18,8 @@ module RubyPlayer
       NATIVE_BACKENDS = {
         snes_spc: %w[snes_spc SnesSpc],
         gbs_native: %w[gbs_native GbsNative],
-        nsf_native: %w[nsf_native NsfNative]
+        nsf_native: %w[nsf_native NsfNative],
+        hes_native: %w[hes_native HesNative]
       }.freeze
 
       def initialize(overrides = {})
@@ -30,6 +31,7 @@ module RubyPlayer
         @map['.spc'] = :snes_spc
         @map['.gbs'] = :gbs_native
         @map['.nsf'] = @map['.nsfe'] = :nsf_native
+        @map['.hes'] = :hes_native
         (overrides || {}).each do |ext, name|
           e = ext.start_with?('.') ? ext.downcase : ".#{ext.downcase}"
           @map[e] = name.to_sym

@@ -168,7 +168,7 @@ class ExtractorPoolTest < Minitest::Test
   # beside it must still name and time every subtune.
   def test_zipped_rips_scan_titles_and_lengths_from_their_m3u
     {
-      alien_crush: ['gme', 'Alien Crush', 17, [['Title', 41_000], ['Lunar Eclipse', 50_000]]],
+      alien_crush: ['hes_native', 'Alien Crush', 17, [['Title', 41_000], ['Lunar Eclipse', 50_000]]],
       lagrange_point: ['nsf_native', 'Lagrange Point', 31, [['Theme of Isis', 104_409], ['Find Shutolte', 115_553]]]
     }.each do |name, (backend, album, count, first_tracks)|
       FileUtils.cp(TestSupport::RipFixtures.zip(name), @music)

@@ -643,26 +643,27 @@ module RubyPlayer
 
       # A track change passes the page being shown, so a live page the new
       # track also offers (such as the VGM Tracker) stays open. Anything else
-      # opens on the first live page, or Info when there is none.
+      # opens on the first live page, or Info when the kind has none (no live
+      # state, or a kind whose page does not exist yet).
       def prepare_now_playing(track, preferred_page: nil)
         kind = live_kind
-        live = !kind.nil?
-        @now_playing_page = live ? :live : :info
-        @now_playing_page = preferred_page if NowPlayingModal::LIVE_PAGES.fetch(kind, []).include?(preferred_page)
+        pages = NowPlayingModal::LIVE_PAGES.fetch(kind, [])
+        live = pages.any?
+        @now_playing_page = pages.include?(preferred_page) ? preferred_page : pages.first || :info
         @last_live_page = live ? @now_playing_page : nil
         @vgm_live_view.update(nil)
         @vgm_tracker_view.update(nil)
         modal = NowPlayingModal.new(track, extras: @library.track_metadata_for(track.id),
                                            page: @now_playing_page,
                                            chip_view: @chip_pages[kind]&.view || @vgm_live_view,
-                                           live_available: live, live_kind: kind, spc_view: @spc_live_view,
+                                           live_available: live, live_kind: (kind if live), spc_view: @spc_live_view,
                                            tracker_view: @vgm_tracker_view)
         @now_playing_modal = modal
         if @show_now_playing
           @vgm_telemetry_controller.visible = kind == :vgm
           live ? set_art(nil) : fetch_art(track)
         end
-        return unless %w[ffmpeg gme snes_spc gbs_native nsf_native].include?(track.backend)
+        return unless %w[ffmpeg gme snes_spc gbs_native nsf_native hes_native].include?(track.backend)
 
         # Existing library rows predate technical metadata. Probe once when
         # opening, off the UI thread, rather than requiring a destructive rescan.

@@ -4,6 +4,7 @@ require_relative '../chip_timeline'
 require_relative '../spc/snapshot'
 require_relative '../gbs/snapshot'
 require_relative '../nsf/snapshot'
+require_relative '../hes/snapshot'
 
 module RubyPlayer
   class PlaybackEngine
@@ -16,7 +17,8 @@ module RubyPlayer
       # reopen; the page's history only spans seconds.
       MAX_CHIP_SNAPSHOTS_PER_CALL = 2_048
       # Native records each live kind is named by.
-      CHIP_LIVE_KINDS = { Spc::Snapshot => :spc, Gbs::Snapshot => :gbs, Nsf::Snapshot => :nsf }.freeze
+      CHIP_LIVE_KINDS = { Spc::Snapshot => :spc, Gbs::Snapshot => :gbs, Nsf::Snapshot => :nsf,
+                          Hes::Snapshot => :hes }.freeze
 
       # S-DSP state at the frame the device is playing, for SPC handles;
       # nil otherwise.
@@ -28,7 +30,7 @@ module RubyPlayer
                            mute_mask: mute_mask)
       end
 
-      # GBS or NSF snapshots heard since the previous call, for handles that
+      # GBS, NSF, or HES snapshots heard since the previous call, for handles that
       # record them; nil otherwise. Consumes them: one caller (the live page)
       # only.
       def chip_live
@@ -45,7 +47,7 @@ module RubyPlayer
                           paused: paused, mute_mask: mute_mask)
       end
 
-      # Which native live state the current track records (:spc, :gbs, :nsf),
+      # Which native live state the current track records (:spc, :gbs, :nsf, :hes),
       # or nil. Unlike chip_live it consumes nothing.
       def chip_live_kind
         kind = CHIP_LIVE_KINDS.fetch(@chip_snapshot_type, nil)
