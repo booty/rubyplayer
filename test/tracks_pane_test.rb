@@ -235,6 +235,17 @@ class TracksPaneTest < Minitest::Test
     }.map { |r| r[:track].track_number }.sort
   end
 
+  # A range across an album header counts only its tracks.
+  def test_grouped_range_title_counts_tracks_not_headers
+    @pane.show(@folder_row)
+    @pane.handle_action(:toggle_group) # Apple, Alpha, Bravo, Zebra, Charlie
+    @pane.handle_action(:nav_down)
+    @pane.handle_action(:extend_selection_down)
+
+    assert_equal 4, @pane.selected_row_range.max
+    assert_includes @pane.title, '2 selected'
+  end
+
   def test_grouping_inserts_album_headers_sorted_by_album
     @pane.show(@folder_row)
     @pane.handle_action(:toggle_group)

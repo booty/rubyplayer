@@ -207,6 +207,22 @@ class QueuedPaneTest < Minitest::Test
     assert_includes lines[2], '--- Previously'
   end
 
+  # Range rows are shaded by queue position, without building the
+  # selected track list each frame.
+  def test_render_shades_range_rows_by_position
+    @upcoming = Array.new(3) { |index| track(index, title: "Song #{index}", duration_ms: 60_000) }
+    @pane.reload!
+    @pane.handle_action(:extend_selection_down)
+    selection = @pane.instance_variable_get(:@selection)
+    selection.define_singleton_method(:selected_tracks) { raise 'built per frame' }
+    screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 8, cols: 30)
+    theme = RubyPlayer::Theme::DEFAULT
+    @pane.render(screen, x: 0, y: 0, w: 30, h: 8, theme: theme, active: true)
+    backgrounds = screen.instance_variable_get(:@back).first(4).map { |row| row.first.bg }
+
+    assert_equal [nil, theme[:surface_alt], theme[:selection_bg], nil], backgrounds
+  end
+
   def test_render_highlights_selected_upcoming_row_only_when_active
     @upcoming = [
       track(1, title: 'First', duration_ms: 60_000),

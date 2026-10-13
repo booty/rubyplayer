@@ -47,14 +47,17 @@ module RubyPlayer
         selected_track ? @selection : nil
       end
 
+      # Item indexes from the anchor to the cursor, or nil without a range.
+      def selected_range
+        anchor = anchor_index
+        return unless anchor
+
+        anchor < @selection ? (anchor..@selection) : (@selection..anchor)
+      end
+
       # Item indexes an action applies to: the range's, in queue order, or
       # the cursor's alone.
-      def selected_indexes
-        anchor = anchor_index
-        return [selected_index].compact unless anchor
-
-        anchor < @selection ? (anchor..@selection).to_a : (@selection..anchor).to_a
-      end
+      def selected_indexes = selected_range&.to_a || [selected_index].compact
 
       def selected_tracks = selected_indexes.map { |index| @items[index] }
 

@@ -77,7 +77,7 @@ module RubyPlayer
           count = "#{filtered_tracks.size} of #{@tracks.size} (Filter: '#{term}')"
         end
         text = "#{label} · #{count}"
-        marked = range_row_indexes&.count { |index| display_rows[index][:type] == :track }
+        marked = range_track_count
         text += " · #{marked} selected" if marked && marked > 1
         return text unless max_width && text.size > max_width
         return text[-max_width, max_width] if max_width <= 1
@@ -230,26 +230,44 @@ module RubyPlayer
       def selected_tracks
         return @queue_selection.selected_tracks if @mode == :queue
 
-        indexes = range_row_indexes
-        return [selected_track].compact unless indexes
+        range = selected_row_range
+        return [selected_track].compact unless range
 
-        rows = display_rows
-        indexes.filter_map { |index| rows[index][:track] if rows[index][:type] == :track }
+        display_rows[range].filter_map { |row| row[:track] if row[:type] == :track }
       end
 
-      def range_selected? = !range_row_indexes.nil?
+      def range_selected? = !selected_row_range.nil?
+
+      # Display-row indexes from the anchor to the cursor, or nil without a
+      # range (or once the anchor's occurrence has left the view). The anchor's
+      # row is cached per row list, since render and title ask every frame.
+      def selected_row_range
+        # Queue rows are flat, so item indexes are row indexes.
+        return @queue_selection.selected_range if @mode == :queue
+        return unless @anchor_occurrence
+
+        rows = display_rows
+        cache = @anchor_cache
+        unless cache && cache[0].equal?(rows) && cache[1] == @anchor_occurrence
+          @anchor_cache = [rows, @anchor_occurrence, row_index_of(*@anchor_occurrence)]
+        end
+        anchor = @anchor_cache.last
+        return @anchor_occurrence = nil unless anchor
+
+        anchor < @selection ? (anchor..@selection) : (@selection..anchor)
+      end
 
       # Track positions (headers skipped) of selected_tracks: the range's,
       # or the cursor's alone.
       def selected_track_indexes
         return @queue_selection.selected_indexes if @mode == :queue
 
-        indexes = range_row_indexes
-        return [selected_track_index].compact unless indexes
+        range = selected_row_range
+        return [selected_track_index].compact unless range
 
         rows = display_rows
-        position = rows[0...indexes.first].count { |row| row[:type] == :track }
-        indexes.select { |index| rows[index][:type] == :track }.each_index.map { |offset| position + offset }
+        position = rows[0...range.min].count { |row| row[:type] == :track }
+        Array.new(range_track_count) { |offset| position + offset }
       end
 
       def selected_focus_sound
@@ -294,7 +312,7 @@ module RubyPlayer
 
       def render(screen, x:, y:, w:, h:, active:, theme:)
         rows = display_rows
-        range = range_row_indexes
+        range = selected_row_range
         if @mode == :queue
           @queue_selection.set_page_size(h)
           @queue_selection.follow_selection(h)
@@ -345,26 +363,19 @@ module RubyPlayer
         true
       end
 
-      # Display-row indexes from the anchor to the cursor, or nil without a
-      # range (or once the anchor's occurrence has left the view). Cached per
-      # row list, since render and title ask every frame.
-      def range_row_indexes
-        if @mode == :queue
-          # Queue rows are flat, so item indexes are row indexes.
-          indexes = @queue_selection.selected_indexes
-          return @queue_selection.range? ? (indexes.first..indexes.last) : nil
-        end
-        return unless @anchor_occurrence
+      # Track rows in the range: grouped views put album headers inside it.
+      # Cached per row list and range, since the title asks every frame.
+      def range_track_count
+        range = selected_row_range
+        return unless range
+        return range.size unless grouped?
 
         rows = display_rows
-        cache = @anchor_cache
-        unless cache && cache[0].equal?(rows) && cache[1] == @anchor_occurrence
-          @anchor_cache = [rows, @anchor_occurrence, row_index_of(*@anchor_occurrence)]
+        cache = @range_count_cache
+        unless cache && cache[0].equal?(rows) && cache[1] == range
+          @range_count_cache = [rows, range, rows[range].count { |row| row[:type] == :track }]
         end
-        anchor = @anchor_cache.last
-        return @anchor_occurrence = nil unless anchor
-
-        anchor < @selection ? (anchor..@selection) : (@selection..anchor)
+        @range_count_cache.last
       end
 
       def invalidate_rows!

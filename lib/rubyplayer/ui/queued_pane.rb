@@ -52,7 +52,7 @@ module RubyPlayer
         PreparedConfig.new(
           formatter: formatter,
           star_glyph: star_glyph,
-          upcoming_rows: build_rows(@upcoming, formatter:, star_glyph:),
+          upcoming_rows: build_rows(@upcoming, formatter:, star_glyph:, indexed: true),
           previous_rows: build_rows(@previous, formatter:, star_glyph:)
         )
       end
@@ -82,7 +82,7 @@ module RubyPlayer
       end
 
       def render(screen, x:, y:, w:, h:, theme:, active: false) # rubocop:disable Naming/MethodParameterName
-        ranged = @selection.range? ? @selection.selected_tracks : []
+        range = @selection.selected_range
         display_rows(h).each_with_index do |row, index|
           case row[:type]
           when :header
@@ -91,9 +91,11 @@ module RubyPlayer
           when :empty
             screen.put(y + index, x, row[:text][0, w], fg: theme[:text_muted])
           else
-            selected = active && row[:track].equal?(selected_track)
+            # Upcoming rows carry their queue position; history rows don't.
+            position = row[:queue_index]
+            selected = active && position && position == @selection.selection
             # Rows of a Shift+arrow range are shaded behind the cursor.
-            bg = theme[:surface_alt] if !selected && ranged.any? { |track| track.equal?(row[:track]) }
+            bg = theme[:surface_alt] if !selected && position && range&.cover?(position)
             screen.put(y + index, x, ' ' * w, bg: bg) if bg
             ListRowRenderer.render_track(
               screen, row, x: x, y: y + index, w: w,
@@ -107,13 +109,15 @@ module RubyPlayer
       private
 
       def rebuild_rows
-        @upcoming_rows = build_rows(@upcoming, formatter: @formatter, star_glyph: @star_glyph)
+        @upcoming_rows = build_rows(@upcoming, formatter: @formatter, star_glyph: @star_glyph, indexed: true)
         @previous_rows = build_rows(@previous, formatter: @formatter, star_glyph: @star_glyph)
       end
 
-      def build_rows(tracks, formatter:, star_glyph:)
-        tracks.map do |track|
-          ListRowRenderer.track(track, formatter: formatter, star_glyph: star_glyph)
+      # `indexed` rows record their queue position for selection drawing.
+      def build_rows(tracks, formatter:, star_glyph:, indexed: false)
+        tracks.each_with_index.map do |track, index|
+          row = ListRowRenderer.track(track, formatter: formatter, star_glyph: star_glyph)
+          indexed ? row.merge(queue_index: index) : row
         end
       end
 

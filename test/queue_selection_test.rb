@@ -110,6 +110,16 @@ class QueueSelectionTest < Minitest::Test
     assert_same copy, @selection.selected_tracks.last
   end
 
+  def test_selected_range_spans_anchor_to_cursor_or_is_nil
+    @selection.replace(@tracks)
+
+    assert_nil @selection.selected_range
+    @selection.handle_action(:nav_down)
+    @selection.handle_action(:extend_selection_up)
+
+    assert_equal 0..1, @selection.selected_range
+  end
+
   # A queue change keeps the range while its anchor is still queued.
   def test_replace_keeps_the_range_until_its_anchor_leaves
     @selection.replace(@tracks)
