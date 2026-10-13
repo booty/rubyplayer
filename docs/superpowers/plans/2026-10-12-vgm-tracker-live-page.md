@@ -81,16 +81,18 @@ The current two-state `:live`/`:info` toggle in `App#toggle_now_playing_page` an
 
 ### Task 3: Wire rendering and the shared telemetry lifecycle
 
+**Checkpoint:** Complete. Commits `7a362352a0970567dceca208e9ecc3e6d7d4b27e` and `5c0856cd8b5c59091605a8adf2d5c11ce7cc91df` pushed to `origin/main`. Verification: 909 tests, 0 failures/errors; RuboCop 190 files, 0 offenses.
+
 **Files:** Modify `lib/rubyplayer/ui/app.rb`, `lib/rubyplayer/ui/now_playing_modal.rb`; test `test/app_now_playing_test.rb`, `test/now_playing_modal_test.rb`.
 
 **Interfaces:** `NowPlayingModal` receives `tracker_view:` at construction and dispatches `:tracker` to it using the existing full-screen frame helper. `App` creates one `VgmTrackerView` and passes it to the modal. `App#vgm_live_page?` is true for `:vgm` with `page` in `live_pages`, and drives controller visibility. The same accepted snapshot updates both VGM views; each view gets `nil` when the controller session is cleared.
 
-- [ ] Write failing modal tests that `:tracker` renders through the full-screen frame, displays a tracker-specific hint, returns no artwork region, and keeps all content inside the frame on tiny terminals. Confirm `:live` and Info still render as before.
-- [ ] Write failing App tests that switching overview→tracker keeps controller identity/snapshot and visibility, `Tab` to Info suspends telemetry and clears stale rows in both views, `Tab` back restarts replay and returns to tracker, close suspends it, and a higher modal suspends it. Test seek and next-track changes while tracker is visible, including stale telemetry event rejection.
-- [ ] Run `test/now_playing_modal_test.rb` and `test/app_now_playing_test.rb`; confirm the new assertions fail.
-- [ ] Add tracker view construction/updates and modal renderer dispatch. Change `tick_vgm_telemetry` to use the shared live-page predicate, and update `handle_vgm_telemetry_event`/stale clearing for both views. Avoid calling `visible = false/true` when changing between two live pages; it clears the replay session. Keep GBS/NSF native snapshot consumption on their existing path.
-- [ ] Change artwork transitions only when crossing Info ↔ live or closing. `o` overview→tracker should not fetch art, clear telemetry, or reset VGM selection/history. Restrict `M`/`S` to `:live`; pass Left/Right to the tracker on `:tracker`.
-- [ ] Re-run the affected App and modal tests; expect PASS. Run `test/vgm_realtime_integration_test.rb` and `test/vgm_telemetry_controller_test.rb`; expect PASS.
+- [x] Write failing modal tests that `:tracker` renders through the full-screen frame, displays a tracker-specific hint, returns no artwork region, and keeps all content inside the frame on tiny terminals. Confirm `:live` and Info still render as before.
+- [x] Write failing App tests that switching overview→tracker keeps controller identity/snapshot and visibility, `Tab` to Info suspends telemetry and clears stale rows in both views, `Tab` back restarts replay and returns to tracker, close suspends it, and a higher modal suspends it. Test seek and next-track changes while tracker is visible, including stale telemetry event rejection.
+- [x] Run `test/now_playing_modal_test.rb` and `test/app_now_playing_test.rb`; confirm the new assertions fail.
+- [x] Add tracker view construction/updates and modal renderer dispatch. Change `tick_vgm_telemetry` to use the shared live-page predicate, and update `handle_vgm_telemetry_event`/stale clearing for both views. Avoid calling `visible = false/true` when changing between two live pages; it clears the replay session. Keep GBS/NSF native snapshot consumption on their existing path.
+- [x] Change artwork transitions only when crossing Info ↔ live or closing. `o` overview→tracker should not fetch art, clear telemetry, or reset VGM selection/history. Restrict `M`/`S` to `:live`; pass Left/Right to the tracker on `:tracker`.
+- [x] Re-run the affected App and modal tests; expect PASS. Run `test/vgm_realtime_integration_test.rb` and `test/vgm_telemetry_controller_test.rb`; expect PASS.
 
 ### Task 4: Document and verify the finished feature
 
