@@ -130,6 +130,8 @@ module RubyPlayer
         artist: meta[:artist], composer: meta[:composer],
         album_artist: meta[:album_artist], year: meta[:year],
         track_number: meta[:track_number], duration_ms: meta[:duration_ms],
+        play_length_ms: meta[:play_length_ms] || meta[:duration_ms],
+        duration_source: meta[:duration_source] || ('file' if meta[:duration_ms]),
         file_mtime: stat.mtime.to_f, file_size: stat.size
       )
       # nil means "this backend has no extras concept" (openmpt never

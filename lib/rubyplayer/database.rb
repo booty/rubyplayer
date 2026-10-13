@@ -7,7 +7,7 @@ require 'tempfile'
 
 module RubyPlayer
   class Database
-    SCHEMA_VERSION = 3
+    SCHEMA_VERSION = 4
     DEFAULT_BACKUP_RETENTION = 10
     private_constant :DEFAULT_BACKUP_RETENTION
 
@@ -38,6 +38,8 @@ module RubyPlayer
         year INTEGER,                             -- normalized 4-digit release year
         track_number INTEGER,
         duration_ms INTEGER,
+        play_length_ms INTEGER,                    -- playback cutoff when duration is unknown
+        duration_source TEXT,                     -- file | m3u | loop_policy | default
         file_mtime REAL,                          -- stat data for the Scanner's change diff
         file_size INTEGER,
         rating INTEGER CHECK (rating IS NULL OR rating BETWEEN 1 AND 6),

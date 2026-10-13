@@ -1649,15 +1649,19 @@ module RubyPlayer
       def render_info_modal
         t = @info_track
         stats = @library.play_stats(t.id)
+        length_label = t.planned_duration? ? 'Planned length' : 'Length'
+        length = fmt_length(t.display_duration_ms)
+        length = "~#{length}" if t.planned_duration?
         rows = [['Title', t.title], ['Album', t.album]]
         rows << ['Album artist', t.album_artist] unless t.album_artist.to_s.empty?
         rows += [
           ['Artist', t.artist],
           ['Composer', t.composer], ['Track #', t.track_number],
           ['Format', t.format], ['Backend', t.backend],
-          ['Length', fmt_length(t.duration_ms)],
+          [length_label, length],
           ['Rating', t.rating ? "#{@config['glyphs', 'star']} x#{t.rating}" : 'unrated']
         ]
+        rows << ['Length source', duration_source_label(t.duration_source)] if t.duration_source
         rows << ['Year', t.year] if t.year
         rows << ['Path', t.physical_path]
         rows << ['Archive entry', t.archive_entry] unless t.archive_entry.to_s.empty?
@@ -1682,6 +1686,15 @@ module RubyPlayer
         render_modal(title: 'Track Info', w: w, h: lines.size + 5, hint: hint) do |x, y|
           lines.each_with_index { |line, i| @screen.put(y + 2 + i, x + 2, line[0, w - 4], fg: @theme[:primary]) }
         end
+      end
+
+      def duration_source_label(source)
+        {
+          'file' => 'file metadata',
+          'm3u' => 'M3U playlist',
+          'loop_policy' => 'intro + 2 loops',
+          'default' => '2:30 default cutoff'
+        }.fetch(source, source.tr('_', ' '))
       end
 
       # Lists every hotkey reachable from the currently active pane (pane-local

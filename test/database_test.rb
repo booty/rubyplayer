@@ -17,6 +17,10 @@ class DatabaseTest < Minitest::Test
       assert_includes tables, 'tracks'
       assert_includes tables, 'track_metadata'
       assert_includes tables, 'playback_history'
+      track_columns = db.read { |s| s.execute('PRAGMA table_info(tracks)').map { |row| row['name'] } }
+
+      assert_includes track_columns, 'play_length_ms'
+      assert_includes track_columns, 'duration_source'
       version = db.read { |s| s.get_first_value('PRAGMA user_version') }
 
       assert_equal RubyPlayer::Database::SCHEMA_VERSION, version

@@ -35,10 +35,11 @@ module RubyPlayer
         text(format('%0*d', width, Integer(value)), **style)
       end
 
-      def duration(milliseconds, **style)
+      def duration(milliseconds, approximate: false, **style)
         return nil if milliseconds.nil?
 
-        text(DurationFormatter.format(Integer(milliseconds)), **style)
+        prefix = approximate ? '~' : ''
+        text("#{prefix}#{DurationFormatter.format(Integer(milliseconds))}", **style)
       end
 
       def stars(rating, **style)

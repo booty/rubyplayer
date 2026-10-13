@@ -86,6 +86,16 @@ class GmeBackendTest < Minitest::Test
     meta = @gme.metadata(File.join(FIXTURES, 'nsf', 'mega-man-2.nsf'), 0)
 
     assert_nil meta[:duration_ms]
+    assert_equal 150_000, meta[:play_length_ms]
+    assert_equal 'default', meta[:duration_source]
+  end
+
+  def test_metadata_exposes_loop_based_playback_length_without_claiming_a_duration
+    meta = @gme.metadata(File.join(FIXTURES, 'alisa-dragoon-introduction.vgm'), 0)
+
+    assert_nil meta[:duration_ms]
+    assert_equal 29_215, meta[:play_length_ms]
+    assert_equal 'loop_policy', meta[:duration_source]
   end
 
   # Every HES rip, and Lagrange Point, ships with a sibling .m3u (a genre
@@ -109,6 +119,8 @@ class GmeBackendTest < Minitest::Test
         meta = @gme.metadata(path, index)
 
         assert_equal [album, title, duration_ms], meta.values_at(:album, :title, :duration_ms), name
+        assert_equal duration_ms, meta[:play_length_ms], name
+        assert_equal 'm3u', meta[:duration_source], name
       end
     end
   end

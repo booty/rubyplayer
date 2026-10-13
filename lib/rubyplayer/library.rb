@@ -180,15 +180,17 @@ module RubyPlayer
         INSERT INTO tracks (folder_id, physical_path, archive_entry, subtune_index,
                             backend, format, title, album, artist, composer,
                             album_artist, year,
-                            track_number, duration_ms, file_mtime, file_size,
+                            track_number, duration_ms, play_length_ms, duration_source,
+                            file_mtime, file_size,
                             errored, added_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(physical_path, archive_entry, subtune_index) DO UPDATE SET
           folder_id=excluded.folder_id, backend=excluded.backend, format=excluded.format,
           title=excluded.title, album=excluded.album, artist=excluded.artist,
           composer=excluded.composer, album_artist=excluded.album_artist, year=excluded.year,
           track_number=excluded.track_number,
-          duration_ms=excluded.duration_ms, file_mtime=excluded.file_mtime,
+          duration_ms=excluded.duration_ms, play_length_ms=excluded.play_length_ms,
+          duration_source=excluded.duration_source, file_mtime=excluded.file_mtime,
           file_size=excluded.file_size, errored=excluded.errored,
           missing=0, updated_at=excluded.updated_at
       SQL
@@ -196,7 +198,8 @@ module RubyPlayer
         s.execute(sql, [a[:folder_id], a[:physical_path], a[:archive_entry], a[:subtune_index],
                         a[:backend], a[:format], a[:title], a[:album], a[:artist], a[:composer],
                         a[:album_artist], a[:year],
-                        a[:track_number], a[:duration_ms], a[:file_mtime], a[:file_size],
+                        a[:track_number], a[:duration_ms], a[:play_length_ms], a[:duration_source],
+                        a[:file_mtime], a[:file_size],
                         a[:errored], now, now])
         s.get_first_value(
           'SELECT id FROM tracks WHERE physical_path = ? AND archive_entry = ? AND subtune_index = ?',

@@ -62,6 +62,20 @@ class PlayerBarTest < Minitest::Test
     assert_includes lines.join, '∞'
   end
 
+  def test_planned_duration_drives_progress_and_is_marked_approximate
+    @track = RubyPlayer::Track.new(
+      id: 2, title: 'Looping', duration_ms: nil, play_length_ms: 150_000,
+      duration_source: 'default'
+    )
+
+    assert_includes render_inner(state: playing(75_000)).last, '1:15 / ~2:30'
+
+    screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 1, cols: 80)
+    @bar.render(screen, x: 0, y: 0, w: 80, h: 1, state: playing(75_000), levels: [], theme: THEME)
+
+    assert_includes text(screen).first, '1:15/~2:30'
+  end
+
   def test_compact_line_keeps_title_time_rating_and_a_spectrum
     screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 1, cols: 80)
     @bar.render(screen, x: 0, y: 0, w: 80, h: 1, state: playing(65_000), levels: [1.0], theme: THEME,

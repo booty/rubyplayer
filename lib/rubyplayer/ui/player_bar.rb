@@ -142,9 +142,11 @@ module RubyPlayer
         return screen.put(y, x, '∞'[0, w], fg: theme[:text_muted]) if state[:focus_sound]
         return unless state[:track]
 
-        duration = state[:track].duration_ms
+        track = state[:track]
+        duration = track.display_duration_ms
         position = state[:position_ms]
-        time = " #{fmt(position)} / #{fmt(duration)}"
+        duration_text = "#{'~' if track.planned_duration?}#{fmt(duration)}"
+        time = " #{fmt(position)} / #{duration_text}"
         bar_w = w - time.size
         return screen.put(y, x, time.strip[0, w], fg: theme[:text]) if bar_w < 4
 
@@ -201,7 +203,8 @@ module RubyPlayer
         icon = state[:paused] ? @glyphs['pause'] : @glyphs['play']
         artist = track.artist ? " — #{track.artist}" : ''
         rating = stars(details)
-        parts = ["#{icon} #{track.title}#{artist}", rating, "#{fmt(state[:position_ms])}/#{fmt(track.duration_ms)}"]
+        duration = "#{'~' if track.planned_duration?}#{fmt(track.display_duration_ms)}"
+        parts = ["#{icon} #{track.title}#{artist}", rating, "#{fmt(state[:position_ms])}/#{duration}"]
         parts.compact.join('  ')
       end
 

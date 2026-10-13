@@ -64,6 +64,19 @@ class TrackFormatterTest < Minitest::Test
     assert_equal '2:05', context.duration(125_000.9).text
   end
 
+  def test_duration_marks_planned_lengths_as_approximate
+    context = RubyPlayer::TrackFormatter::Context.new(album_artist: nil, star_glyph: '★')
+
+    assert_equal '~2:05', context.duration(125_000, approximate: true).text
+  end
+
+  def test_default_formatter_uses_planned_length_when_duration_is_unknown
+    planned = track(duration_ms: nil, play_length_ms: 150_000, duration_source: 'default')
+    segments = RubyPlayer::TrackFormatter.render(RubyPlayer::DEFAULT_FORMAT_GROUPED, planned)
+
+    assert_includes segments.map { |segment| segment[:text] }, '~2:30'
+  end
+
   def test_duration_rejects_false
     context = RubyPlayer::TrackFormatter::Context.new(album_artist: nil, star_glyph: '★')
 

@@ -9,7 +9,7 @@ module RubyPlayer
     fmt.line(
       fmt.number(track.track_number),
       fmt.text(track.title, bold: true),
-      fmt.duration(track.duration_ms, fg: :text_muted),
+      fmt.duration(track.display_duration_ms, approximate: track.planned_duration?, fg: :text_muted),
       (fmt.text(track.artist, italic: true) unless track.artist == fmt.album_artist),
       fmt.stars(track.rating)
     )
@@ -20,7 +20,7 @@ module RubyPlayer
       fmt.text(track.album),
       fmt.number(track.track_number),
       fmt.text(track.title, bold: true),
-      fmt.duration(track.duration_ms, fg: :text_muted),
+      fmt.duration(track.display_duration_ms, approximate: track.planned_duration?, fg: :text_muted),
       fmt.text(track.artist, italic: true),
       fmt.stars(track.rating)
     )
@@ -29,7 +29,7 @@ module RubyPlayer
   DEFAULT_FORMAT_QUEUED = lambda do |track, fmt|
     fmt.line(
       fmt.text(track.title, bold: true),
-      fmt.duration(track.duration_ms, fg: :text_muted),
+      fmt.duration(track.display_duration_ms, approximate: track.planned_duration?, fg: :text_muted),
       fmt.text(track.artist, italic: true)
     )
   end

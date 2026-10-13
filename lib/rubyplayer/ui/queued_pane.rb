@@ -151,9 +151,10 @@ module RubyPlayer
       end
 
       def total_duration
-        known_ms = @upcoming.filter_map(&:duration_ms).sum
+        known_ms = @upcoming.filter_map(&:display_duration_ms).sum
         text = DurationFormatter.format(known_ms)
-        @upcoming.any? { |track| track.duration_ms.nil? } ? "#{text} + ??" : text
+        text = "~#{text}" if @upcoming.any?(&:planned_duration?)
+        @upcoming.any? { |track| track.display_duration_ms.nil? } ? "#{text} + ??" : text
       end
     end
   end

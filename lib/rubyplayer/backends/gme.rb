@@ -54,6 +54,8 @@ module RubyPlayer
 
     class Gme
       class Error < StandardError; end
+      OpenEmu = Data.define(:pointer, :m3u_loaded)
+      private_constant :OpenEmu
 
       def name = 'gme'
 
@@ -62,8 +64,8 @@ module RubyPlayer
       end
 
       def metadata(path, subtune_index)
-        with_emu(path, GmeLib::GME_INFO_ONLY) do |emu|
-          metadata_for(emu, path, subtune_index, ChiptuneMetadata.read(path))
+        with_emu(path, GmeLib::GME_INFO_ONLY) do |emu, m3u_loaded|
+          metadata_for(emu, path, subtune_index, ChiptuneMetadata.read(path), m3u_loaded: m3u_loaded)
         end
       end
 
@@ -71,10 +73,12 @@ module RubyPlayer
       def each_metadata(path)
         return enum_for(__method__, path) unless block_given?
 
-        with_emu(path, GmeLib::GME_INFO_ONLY) do |emu|
+        with_emu(path, GmeLib::GME_INFO_ONLY) do |emu, m3u_loaded|
           count = GmeLib.gme_track_count(emu)
           hardware = ChiptuneMetadata.read(path)
-          count.times { |i| yield metadata_for(emu, path, i, hardware), i, count }
+          count.times do |i|
+            yield metadata_for(emu, path, i, hardware, m3u_loaded: m3u_loaded), i, count
+          end
         end
       end
 
@@ -89,7 +93,8 @@ module RubyPlayer
       end
 
       def open(path, subtune_index, sample_rate:)
-        emu = open_emu(path, sample_rate)
+        opened = open_emu(path, sample_rate)
+        emu = opened.pointer
         # VGM command time includes leading silence. Keeping it prevents the
         # decoder and register telemetry from developing different time bases.
         # The same libgme switch also disables silence-based end-of-track
@@ -176,7 +181,7 @@ module RubyPlayer
 
       private
 
-      def metadata_for(emu, path, subtune_index, hardware)
+      def metadata_for(emu, path, subtune_index, hardware, m3u_loaded:)
         with_info(emu, subtune_index) do |info|
           {
             title: MetadataHelper.presence(info[:song]) || format('Track %02d', subtune_index + 1),
@@ -184,7 +189,7 @@ module RubyPlayer
             artist: MetadataHelper.presence(info[:author]),
             composer: MetadataHelper.presence(info[:author]),
             track_number: subtune_index + 1,
-            duration_ms: real_length(info),
+            **duration_metadata(info, m3u_loaded: m3u_loaded),
             format: MetadataHelper.format_extension(path),
             extra: hardware.merge(info_extras(info))
           }
@@ -207,8 +212,7 @@ module RubyPlayer
         raise Error, err if err
 
         emu = out.read_pointer
-        load_sibling_m3u(emu, path)
-        emu
+        OpenEmu.new(emu, load_sibling_m3u(emu, path))
       end
 
       # NSF/HES-family rips rarely embed real per-track lengths themselves;
@@ -218,7 +222,25 @@ module RubyPlayer
       # than failing the whole open.
       def load_sibling_m3u(emu, path)
         m3u_path = "#{path.sub(/\.[^.]+\z/, '')}.m3u"
-        GmeLib.gme_load_m3u(emu, m3u_path) if File.exist?(m3u_path)
+        return false unless File.exist?(m3u_path)
+
+        GmeLib.gme_load_m3u(emu, m3u_path).nil?
+      end
+
+      def duration_metadata(info, m3u_loaded:)
+        duration_ms = real_length(info)
+        source = if duration_ms
+                   m3u_loaded ? 'm3u' : 'file'
+                 elsif info[:loop_length].positive?
+                   'loop_policy'
+                 else
+                   'default'
+                 end
+        {
+          duration_ms: duration_ms,
+          play_length_ms: (info[:play_length] if info[:play_length].positive?),
+          duration_source: source
+        }
       end
 
       # info[:length] is the file's (or a loaded m3u's) actual reported
@@ -229,10 +251,10 @@ module RubyPlayer
       end
 
       def with_emu(path, sample_rate)
-        emu = open_emu(path, sample_rate)
-        yield emu
+        opened = open_emu(path, sample_rate)
+        yield opened.pointer, opened.m3u_loaded
       ensure
-        GmeLib.gme_delete(emu) if emu
+        GmeLib.gme_delete(opened.pointer) if opened
       end
 
       def with_info(emu, subtune_index)

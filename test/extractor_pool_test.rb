@@ -260,6 +260,30 @@ class ExtractorPoolTest < Minitest::Test
     assert_equal 'Zelda Rips', track_row(path)['album']
   end
 
+  def test_persists_planned_length_and_its_source
+    path = File.join(@music, 'looping.vgm')
+    File.write(path, 'fake vgm data')
+    backend = FakeBackend.new(
+      'fake',
+      metadata: {
+        path => {
+          title: 'Looping', format: 'vgm', duration_ms: nil,
+          play_length_ms: 90_000, duration_source: 'loop_policy'
+        }
+      }
+    )
+    pool = RubyPlayer::ExtractorPool.new(
+      library: @lib, registry: FakeRegistry.new(backend: backend), thread_count: 1
+    )
+
+    pool.process([RubyPlayer::WorkItem.new(path: path, parent_folder_id: root_folder_id, status: :new)])
+    row = track_row(path)
+
+    assert_nil row['duration_ms']
+    assert_equal 90_000, row['play_length_ms']
+    assert_equal 'loop_policy', row['duration_source']
+  end
+
   def test_album_falls_back_to_container_name_for_multitrack
     path = File.join(@music, 'game.nsf')
     File.write(path, 'fake nsf data')

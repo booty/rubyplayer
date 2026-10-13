@@ -581,4 +581,18 @@ class AppTest < Minitest::Test
     assert_includes text, 'Year: 1998'
     assert_includes text, 'genre: Rock'
   end
+
+  def test_info_modal_labels_planned_length_and_provenance
+    lib = @app.instance_variable_get(:@library)
+    root = lib.upsert_folder(parent_id: nil, name: 'Loops', path: '/loops', kind: 'dir')
+    id = lib.upsert_track(
+      folder_id: root, physical_path: '/loops/a.vgm', backend: 'gme', format: 'vgm',
+      title: 'A', duration_ms: nil, play_length_ms: 90_000, duration_source: 'loop_policy'
+    )
+    @app.instance_variable_set(:@info_track, lib.find_track(id))
+    @app.send(:render)
+
+    assert_includes back_buffer_text, 'Planned length: ~1:30'
+    assert_includes back_buffer_text, 'Length source: intro + 2 loops'
+  end
 end

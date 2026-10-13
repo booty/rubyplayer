@@ -15,8 +15,10 @@ class QueuedPaneTest < Minitest::Test
     )
   end
 
-  def track(id, title:, duration_ms:, artist: 'Artist')
-    RubyPlayer::Track.new(id: id, title: title, artist: artist, duration_ms: duration_ms)
+  def track(id, title:, duration_ms:, artist: 'Artist', play_length_ms: nil,
+            duration_source: nil)
+    RubyPlayer::Track.new(id: id, title: title, artist: artist, duration_ms: duration_ms,
+                          play_length_ms: play_length_ms, duration_source: duration_source)
   end
 
   def texts(height = 12)
@@ -64,6 +66,17 @@ class QueuedPaneTest < Minitest::Test
     @pane.reload!
 
     assert_equal 'Upcoming (2/123:45 + ??)', texts.first
+  end
+
+  def test_planned_lengths_contribute_to_an_approximate_total
+    @upcoming = [
+      track(1, title: 'Known', duration_ms: 60_000),
+      track(2, title: 'Loop', duration_ms: nil, play_length_ms: 90_000,
+               duration_source: 'loop_policy')
+    ]
+    @pane.reload!
+
+    assert_equal 'Upcoming (2/~2:30)', texts.first
   end
 
   def test_all_unknown_duration_starts_with_zero_known_sum
