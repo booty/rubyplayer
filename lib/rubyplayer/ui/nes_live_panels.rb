@@ -27,9 +27,6 @@ module RubyPlayer
 
       private
 
-      def nes_kind?(channel) = NES_KINDS.include?(channel.kind)
-      def nes_chip?(chip) = %w[2a03 vrc6 n163 s5b fds mmc5].include?(chip.id.split(':').first)
-
       def nes_summary(chip)
         details = chip.details
         case chip.id.split(':').first

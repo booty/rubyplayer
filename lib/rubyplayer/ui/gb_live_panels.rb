@@ -16,8 +16,6 @@ module RubyPlayer
 
       private
 
-      def gb_kind?(channel) = GB_KINDS.include?(channel.kind)
-
       def gb_summary(chip)
         details = chip.details
         driver = details[:driver_hz] ? format('driver %.1f Hz', details[:driver_hz]) : 'driver --'
@@ -84,7 +82,9 @@ module RubyPlayer
 
       # Pulse and noise: the exact volume envelope from the last trigger, with
       # a marker at the time being heard. Wave: the wave RAM.
-      def gb_envelope_panel(row, width, rows)
+      def gb_detail?(_channel) = true
+
+      def gb_detail_panel(row, width, rows)
         details = row.channel.details
         return wave_panel(details, width, rows) if row.channel.kind == :gb_wave
 

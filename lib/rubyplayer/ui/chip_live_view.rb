@@ -30,6 +30,18 @@ module RubyPlayer
       include GbLivePanels
       include NesLivePanels
 
+      # Native chip families draw through their own panel module, which
+      # implements <prefix>_summary(chip), <prefix>_instrument_texts(channel),
+      # <prefix>_attenuation(channel), <prefix>_voice_lines(row, width),
+      # <prefix>_detail?(channel), and <prefix>_detail_panel(row, width, rows).
+      # A family is found by channel kind, or for the chip line by chip id.
+      # `exact_levels`: levels come from the emulator, not a register model.
+      NativePanelFamily = Data.define(:prefix, :kinds, :chip_ids, :exact_levels)
+      NATIVE_PANEL_FAMILIES = [
+        NativePanelFamily.new(prefix: :gb, kinds: GB_KINDS, chip_ids: %w[gb_dmg].freeze, exact_levels: true),
+        NativePanelFamily.new(prefix: :nes, kinds: NES_KINDS, chip_ids: %w[2a03 vrc6 n163 s5b fds mmc5].freeze,
+                              exact_levels: true)
+      ].freeze
       CHANNEL_KEYS = [*'1'..'9', *'a'..'z'].freeze
       # NSF chips follow libgme's voice order, 2A03 first.
       CHIP_ORDER = { 'ym2612' => 0, 'sn76489' => 1, 'ym2413' => 2, 'gb_dmg' => 3, '2a03' => 4, 'vrc6' => 5, 'n163' => 6,
@@ -296,13 +308,15 @@ module RubyPlayer
 
       def chip_lines
         lines = Array(@snapshot.chips).sort_by { |chip| CHIP_ORDER.fetch(chip.id.split(':').first, 99) }.map do |chip|
-          case chip.id.split(':').first
+          chip_type = chip.id.split(':').first
+          family = native_panel_families.find { |entry| entry.chip_ids.include?(chip_type) }
+          next line(native_panel(family, :summary, chip)) if family
+
+          case chip_type
           when 'ym2612' then line(ym2612_summary(chip))
           when 'sn76489' then line(sn76489_summary(chip))
           when 'ym2413' then line(ym2413_summary(chip))
-          when 'gb_dmg' then line(gb_summary(chip))
           when 'vrc7' then line(vrc7_summary(chip))
-          when '2a03', 'vrc6', 'n163', 's5b', 'fds', 'mmc5' then line(nes_summary(chip))
           else line("#{chip.name} · #{format_clock(chip.clock_hz)} · live detail unavailable", color: :text_muted)
           end
         end
@@ -380,10 +394,10 @@ module RubyPlayer
         end
       end
 
-      # Register replay estimates FM and PSG levels (and VRC7's); Game Boy and
-      # NES levels are read from the emulator.
+      # Register replay estimates FM and PSG levels (and VRC7's); families
+      # with exact levels read them from the emulator.
       def level_heading
-        @rows.all? { |row| gb_kind?(row.channel) || nes_kind?(row.channel) } ? 'Level' : 'Level (est.)'
+        @rows.all? { |row| native_family(row.channel)&.exact_levels } ? 'Level' : 'Level (est.)'
       end
 
       def render_channel_rows(first_row, rows)
@@ -452,8 +466,8 @@ module RubyPlayer
       def instrument_texts(row)
         channel = row.channel
         details = channel.details
-        return gb_instrument_texts(channel) if gb_kind?(channel)
-        return nes_instrument_texts(channel) if nes_kind?(channel)
+        family = native_family(channel)
+        return native_panel(family, :instrument_texts, channel) if family
 
         case channel.kind
         when :fm then fm_instrument_texts(channel.patch)
@@ -522,12 +536,13 @@ module RubyPlayer
 
       def attenuation(row)
         channel = row.channel
+        family = native_family(channel)
+        return native_panel(family, :attenuation, channel) if family
+
         case channel.kind
         when :fm then fm_attenuation(row)
         when :pcm then pcm_attenuation(channel)
         when :tone, :noise then tone_attenuation(row, *key_timing(channel))
-        when *GB_KINDS then gb_attenuation(channel)
-        when *NES_KINDS then nes_attenuation(channel)
         when :percussion
           held_seconds, release_elapsed_seconds = key_timing(channel)
           if held_seconds
@@ -688,18 +703,22 @@ module RubyPlayer
         row = @rows[@selected_index]
         return [] unless row
 
-        channel = row.channel
-        lines = case channel.kind
-                when *GB_KINDS then gb_voice_lines(row, width)
-                when *NES_KINDS then nes_voice_lines(row, width)
-                when :fm then fm_voice_lines(row, width)
-                when :pcm then pcm_voice_lines(row)
-                when :noise then noise_voice_lines(row, width)
-                when :percussion then percussion_voice_lines(row)
-                else channel.details.key?(:period) ? square_voice_lines(row, width) : opll_voice_lines(row, width)
-                end
+        family = native_family(row.channel)
+        lines = family ? native_panel(family, :voice_lines, row, width) : register_voice_lines(row, width)
         lines << line('Muted', color: :warning) if muted?(row)
         lines
+      end
+
+      # VGM chips, whose voices come from register replay.
+      def register_voice_lines(row, width)
+        channel = row.channel
+        case channel.kind
+        when :fm then fm_voice_lines(row, width)
+        when :pcm then pcm_voice_lines(row)
+        when :noise then noise_voice_lines(row, width)
+        when :percussion then percussion_voice_lines(row)
+        else channel.details.key?(:period) ? square_voice_lines(row, width) : opll_voice_lines(row, width)
+        end
       end
 
       def fm_voice_lines(row, width)
@@ -887,8 +906,8 @@ module RubyPlayer
       # envelope column to the history.
       def envelope?
         row = @rows[@selected_index]
-        return true if row && gb_kind?(row.channel)
-        return nes_detail?(row.channel) if row && nes_kind?(row.channel)
+        family = row && native_family(row.channel)
+        return native_panel(family, :detail?, row.channel) if family
 
         patch = row&.channel&.patch
         !!(patch && !patch.operators.empty? && %i[fm tone].include?(row.channel.kind))
@@ -897,8 +916,9 @@ module RubyPlayer
       def envelope_panel(width, rows)
         row = @rows[@selected_index]
         return [] unless row && rows >= 4
-        return gb_envelope_panel(row, width, rows) if gb_kind?(row.channel)
-        return nes_detail_panel(row, width, rows) if nes_kind?(row.channel)
+
+        family = native_family(row.channel)
+        return native_panel(family, :detail_panel, row, width, rows) if family
 
         patch = row.channel.patch
         heading = title('Envelopes (estimated)')
@@ -1084,6 +1104,17 @@ module RubyPlayer
           @dac_rates[chip.id] = smoothed ? (smoothed * 0.6) + (rate * 0.4) : rate
         end
       end
+
+      # -- native chip families ----------------------------------------------------
+
+      # A method, not the constant, so a view can add a family.
+      def native_panel_families = NATIVE_PANEL_FAMILIES
+
+      def native_family(channel) = native_panel_families.find { |family| family.kinds.include?(channel.kind) }
+
+      # Calls `family`'s implementation of `part`, e.g. gb_voice_lines for
+      # (:gb, :voice_lines); see NativePanelFamily.
+      def native_panel(family, part, *) = send(:"#{family.prefix}_#{part}", *)
 
       # -- muting ---------------------------------------------------------------------
 
