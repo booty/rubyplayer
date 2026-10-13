@@ -1003,8 +1003,7 @@ module RubyPlayer
         indexes = @tracks_pane.selected_track_indexes
         return if indexes.empty?
 
-        # Last first, so each removal leaves the earlier positions in place.
-        removed = indexes.reverse.count { |index| @library.remove_playlist_entry(id, index) }
+        removed = @library.remove_playlist_entries(id, indexes).size
         return if removed.zero?
 
         @tracks_pane.handle_action(:clear_selection)

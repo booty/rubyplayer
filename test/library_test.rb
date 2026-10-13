@@ -335,6 +335,31 @@ class LibraryTest < Minitest::Test
     assert_equal 0, @lib.playlists.first['track_count']
   end
 
+  # Counts Database#write calls (one per transaction) from now on.
+  def count_writes
+    count = 0
+    original = @db.method(:write)
+    @db.define_singleton_method(:write) do |&block|
+      count += 1
+      original.call(&block)
+    end
+    -> { count }
+  end
+
+  # The SQL statements run from now on, filled in as they run.
+  def trace_sql
+    statements = []
+    @db.read { |s| s.trace { |sql| statements << sql } }
+    statements
+  end
+
+  def playlist_positions(id)
+    @db.read do |s|
+      s.execute('SELECT position FROM playlist_tracks WHERE playlist_id = ? ORDER BY position',
+                [id]).map { |r| r['position'] }
+    end
+  end
+
   def playlist_with_tracks(names)
     id = @lib.create_playlist('P')
     ids = names.map { |n| add_track("/m/sega/#{n}.vgm", title: n) }
@@ -401,6 +426,26 @@ class LibraryTest < Minitest::Test
     end
 
     assert_equal [0, 1], positions
+  end
+
+  # A range removal: duplicates removed by position, hidden entries kept,
+  # in one transaction that renumbers each remaining entry at most once.
+  def test_remove_playlist_entries_in_one_pass
+    id, ids = playlist_with_tracks(%w[a b x c d])
+    @lib.add_to_playlist(id, ids[0]) # a b x c d a
+    @lib.mark_missing(track_ids: [ids[2]], folder_ids: []) # visible: a b c d a
+    writes = count_writes
+    statements = trace_sql
+
+    assert_equal [ids[0], ids[3], ids[0]], @lib.remove_playlist_entries(id, [4, 2, 0, 9, -1])
+    assert_equal 1, writes.call
+    assert_equal 1, statements.grep(/DELETE FROM playlist_tracks/).size
+    assert_operator statements.grep(/UPDATE playlist_tracks SET position/).size, :<=, 3
+    assert_equal %w[b d], @lib.playlist_tracks(id).map(&:title)
+    add_track('/m/sega/x.vgm', title: 'x')
+
+    assert_equal %w[b x d], @lib.playlist_tracks(id).map(&:title)
+    assert_equal [0, 1, 2], playlist_positions(id)
   end
 
   def test_duplicate_playlist_copies_all_entries_including_hidden

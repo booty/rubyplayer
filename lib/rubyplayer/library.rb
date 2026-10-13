@@ -116,30 +116,27 @@ module RubyPlayer
       end
     end
 
-    def remove_playlist_entry(id, visible_index)
+    def remove_playlist_entry(id, visible_index) = remove_playlist_entries(id, [visible_index]).first
+
+    # Removes several visible entries (a selected range) in one transaction
+    # and returns their track ids in playlist order. Entries are addressed by
+    # visible index, so duplicates are told apart by position; indexes past
+    # the visible list are ignored.
+    def remove_playlist_entries(id, visible_indexes)
       @db.write do |s|
         visible = visible_positions(s, id)
-        position = visible_index >= 0 ? visible[visible_index] : nil
-        next nil unless position
+        positions = visible_indexes.uniq.filter_map { |index| visible[index] unless index.negative? }.sort
+        next [] if positions.empty?
 
-        track_id = s.get_first_value(
-          'SELECT track_id FROM playlist_tracks WHERE playlist_id = ? AND position = ?',
-          [id, position]
-        )
-        s.execute('DELETE FROM playlist_tracks WHERE playlist_id = ? AND position = ?', [id, position])
-        # Renumber everything (hidden entries included) contiguously; ascending
-        # order only ever moves a row into a just-freed slot, so the PK holds.
-        remaining = s.execute(
-          'SELECT position FROM playlist_tracks WHERE playlist_id = ? ORDER BY position', [id]
-        ).map { |r| r['position'] }
-        remaining.each_with_index do |pos, i|
-          next if pos == i
-
-          s.execute('UPDATE playlist_tracks SET position = ? WHERE playlist_id = ? AND position = ?',
-                    [i, id, pos])
-        end
+        marks = (['?'] * positions.size).join(', ')
+        track_ids = s.execute(
+          "SELECT track_id FROM playlist_tracks WHERE playlist_id = ? AND position IN (#{marks}) ORDER BY position",
+          [id, *positions]
+        ).map { |r| r['track_id'] }
+        s.execute("DELETE FROM playlist_tracks WHERE playlist_id = ? AND position IN (#{marks})", [id, *positions])
+        compact_playlist_positions(s, id)
         s.execute('UPDATE playlists SET updated_at = ? WHERE id = ?', [playlist_timestamp, id])
-        track_id
+        track_ids
       end
     end
 
@@ -487,6 +484,21 @@ module RubyPlayer
     def query_tracks(where_and_order)
       rows = @db.read { |s| s.execute("SELECT * FROM tracks WHERE #{where_and_order}") }
       rows.map { |row| Track.from_row(row) }
+    end
+
+    # Renumbers every entry (hidden ones included) contiguously, once per
+    # removal; ascending order only ever moves a row into a freed slot, so
+    # the (playlist_id, position) key holds.
+    def compact_playlist_positions(s, playlist_id)
+      remaining = s.execute(
+        'SELECT position FROM playlist_tracks WHERE playlist_id = ? ORDER BY position', [playlist_id]
+      ).map { |r| r['position'] }
+      remaining.each_with_index do |position, index|
+        next if position == index
+
+        s.execute('UPDATE playlist_tracks SET position = ? WHERE playlist_id = ? AND position = ?',
+                  [index, playlist_id, position])
+      end
     end
 
     def visible_positions(s, playlist_id)
