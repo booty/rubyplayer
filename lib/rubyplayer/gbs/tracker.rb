@@ -1,21 +1,14 @@
 # frozen_string_literal: true
 
 require_relative 'snapshot'
-require_relative '../vgm/snapshot'
-require_relative '../vgm/note_log'
-require_relative '../vgm/pitch'
+require_relative '../chip_tracker'
 
 module RubyPlayer
   module Gbs
-    # Turns the stream of Game Boy APU snapshots into the channel model the
-    # VGM live page draws (Vgm::Snapshot), so GBS gets the same table,
-    # keyboard, and note history. It must see every snapshot in order: note
-    # starts and stops come from consecutive states, and a note shorter than
-    # a render would otherwise be lost.
-    #
-    # Times are converted from output frames to the 44.1 kHz samples the
-    # live page counts in.
-    class Tracker
+    # Turns Game Boy APU snapshots into the live page's view snapshot (see
+    # ChipTracker), so GBS gets the VGM page's table, keyboard, and note
+    # history.
+    class Tracker < ChipTracker
       CHIP_ID = 'gb_dmg:0'
       CHIP_NAME = 'Game Boy APU'
       # Square and wave frequencies: clock / (2048 - x), per the APU's timers.
@@ -37,67 +30,19 @@ module RubyPlayer
       private_constant :SQUARE_HZ, :WAVE_HZ, :NOISE_BASE_HZ, :KINDS, :VBLANK_PERIOD, :BASES, :NR50, :NR51,
                        :NR52, :WAVE_RAM
 
-      attr_reader :snapshot, :now_sample
-
-      def initialize
-        reset(nil)
-      end
-
-      # Feeds an engine Gbs::LiveState. Returns whether the channel model
-      # changed (a new snapshot or a new generation).
-      def update(live)
-        @sample_rate = live.sample_rate
-        changed = live.generation != @generation
-        reset(live.generation) if changed
-        @track_generation = live.track_generation
-        @now_sample = to_sample(live.frame)
-        live.snapshots.each { |state| ingest(state) }
-        return changed unless live.snapshots.any? || (changed && @latest)
-
-        @snapshot = build
-        true
-      end
-
       private
 
-      def reset(generation)
-        @generation = generation
+      def reset_format_state
         @notes = Vgm::NoteLog.new
-        @latest = nil
-        @playing = 0
-        @trigger_samples = Array.new(VOICES)
-        @release_samples = Array.new(VOICES)
-        @snapshot = nil
-        @now_sample = 0
       end
 
-      def to_sample(frame) = frame * Vgm::SAMPLE_RATE / @sample_rate
-
-      def ingest(state)
-        sample = to_sample(state.frame)
+      def ingest(native_snapshot, sample)
         VOICES.times do |voice|
-          was = @playing[voice] == 1
-          now = state.playing[voice] == 1
-          midi = midi_for(state, voice)
-          if now && (state.triggers[voice] == 1 || !was)
-            @trigger_samples[voice] = sample
-            @notes.on(voice, sample, midi)
-          elsif now
-            @notes.note(voice, sample, midi)
-          elsif was
-            @release_samples[voice] = sample
-            @notes.off(voice, sample)
-          end
+          record_note(@notes, voice, voice, native_snapshot, sample, midi_for(native_snapshot, voice))
         end
-        @playing = state.playing
-        @latest = state
       end
 
-      def build
-        state = @latest
-        Vgm::Snapshot.new(generation: @track_generation, revision: @generation, sample: to_sample(state.frame), status: :ready,
-                          message: nil, loop_count: 0, chips: [chip(state)], warnings: [])
-      end
+      def build_view_snapshot(native_snapshot) = view_snapshot(native_snapshot, [chip(native_snapshot)])
 
       def chip(state)
         Vgm::ChipSnapshot.new(id: CHIP_ID, name: CHIP_NAME, clock_hz: state.clock_rate,
