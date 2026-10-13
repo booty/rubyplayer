@@ -2,6 +2,7 @@
 
 require_relative 'chip_live_view'
 require_relative 'spc_live_view'
+require_relative 'vgm_tracker_view'
 
 module RubyPlayer
   module UI
@@ -17,11 +18,12 @@ module RubyPlayer
 
       SPC_LIVE_HINT = '[Tab] Info/Live [↑/↓] Voice [0-7] Mute [S] Solo [o/esc/enter] Close'
       CHIP_LIVE_HINT = '[Tab] Info/Live [↑/↓] Channel [M] Mute [S] Solo [o/esc/enter] Close'
-      private_constant :SPC_LIVE_HINT, :CHIP_LIVE_HINT
+      TRACKER_LIVE_HINT = '[o] Next/Close [Tab] Info [Left/Right] Channels [esc/enter] Close'
+      private_constant :SPC_LIVE_HINT, :CHIP_LIVE_HINT, :TRACKER_LIVE_HINT
 
       # live_kind is :vgm or :spc when a live page exists for this track.
       def initialize(track, extras:, page: :info, chip_view: nil, live_available: nil, live_kind: nil,
-                     spc_view: nil)
+                     spc_view: nil, tracker_view: nil)
         @track = track
         @metadata = {}
         @extras = extras
@@ -29,10 +31,12 @@ module RubyPlayer
         self.page = page
         @chip_view = chip_view || ChipLiveView.new
         @spc_view = spc_view || SpcLiveView.new
+        @tracker_view = tracker_view || VgmTrackerView.new
         @spc_state = nil
         @position_ms = nil
         @now_sample = nil
         @mute_mask = 0
+        @paused = false
         @live_available = if live_kind
                             true
                           elsif live_available.nil?
@@ -61,17 +65,22 @@ module RubyPlayer
       # The App hands over the sample being heard and the voice mute mask
       # before each render, so VGM levels move between telemetry snapshots.
       # GBS also passes the track position for the header clock.
-      def update_chip(now_sample:, mute_mask:, position_ms: nil)
+      def update_chip(now_sample:, mute_mask:, position_ms: nil, paused: false)
         @now_sample = now_sample
         @mute_mask = mute_mask
         @position_ms = position_ms
+        @paused = paused
       end
 
       def page=(page)
         @page = page == :info || live_pages.include?(page) ? page : :info
       end
 
-      def handle_live_key(key) = @live_kind == :spc ? @spc_view.handle_key(key) : @chip_view.handle_key(key)
+      def handle_live_key(key)
+        return @tracker_view.handle_key(key) if @page == :tracker
+
+        @live_kind == :spc ? @spc_view.handle_key(key) : @chip_view.handle_key(key)
+      end
 
       def matches?(track)
         track && [track.id, track.physical_path, track.archive_entry, track.subtune_index] ==
@@ -86,7 +95,8 @@ module RubyPlayer
       def render(screen, theme:, frame:, min_art_rows:)
         return if screen.rows < 5 || screen.cols < 8
         return render_spc_live(screen, theme: theme, frame: frame) if @page == :live && @live_kind == :spc
-        return render_live(screen, theme: theme, frame: frame) if live_page?
+        return render_tracker_live(screen, theme: theme, frame: frame) if @page == :tracker
+        return render_live(screen, theme: theme, frame: frame) if @page == :live
 
         width = (screen.cols - 2).clamp(4, MAX_WIDTH)
         max_height = screen.rows - 2
@@ -131,6 +141,13 @@ module RubyPlayer
         with_live_frame(screen, frame: frame, hint: SPC_LIVE_HINT) do |left, top, content_width, content_height|
           @spc_view.render(screen, x: left, y: top, width: content_width, height: content_height, theme: theme,
                                    state: @spc_state, track_title: live_title, position_ms: @position_ms)
+        end
+      end
+
+      def render_tracker_live(screen, theme:, frame:)
+        with_live_frame(screen, frame: frame, hint: TRACKER_LIVE_HINT) do |left, top, content_width, content_height|
+          @tracker_view.render(screen, x: left, y: top, width: content_width, height: content_height, theme: theme,
+                                       track_title: live_title, now_sample: @now_sample, paused: @paused)
         end
       end
 

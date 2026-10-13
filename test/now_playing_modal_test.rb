@@ -2,6 +2,7 @@ require 'test_helper'
 require 'stringio'
 require 'rubyplayer/vgm/snapshot'
 require 'rubyplayer/ui/chip_live_view'
+require 'rubyplayer/ui/vgm_tracker_view'
 
 class NowPlayingModalTest < Minitest::Test
   def track
@@ -136,12 +137,23 @@ class NowPlayingModalTest < Minitest::Test
     assert_equal :info, vgm.page
   end
 
-  def test_interim_tracker_page_keeps_the_vgm_live_frame
+  def test_tracker_page_uses_full_screen_frame_and_its_own_hint
     vgm = RubyPlayer::Track.new(id: 3, title: 'Chip song', format: 'vgm')
-    modal = RubyPlayer::UI::NowPlayingModal.new(vgm, extras: {}, live_kind: :vgm, page: :tracker)
-    text, art = render_modal(modal)
+    modal = RubyPlayer::UI::NowPlayingModal.new(vgm, extras: {}, live_kind: :vgm,
+                                                     tracker_view: RubyPlayer::UI::VgmTrackerView.new, page: :tracker)
+    screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 15, cols: 40)
+    captured_hint = nil
+    frame = lambda do |w:, h:, hint:, **_options, &draw|
+      assert_equal 38, w
+      assert_equal 13, h
+      draw.call(1, 1)
+      captured_hint = hint
+    end
+    art = modal.render(screen, theme: RubyPlayer::Theme::DEFAULT, frame: frame, min_art_rows: 3)
+    text = screen.instance_variable_get(:@back).map { |row| row.map(&:ch).join }.join("\n")
 
-    assert_includes text, 'VGM LIVE'
+    assert_includes text, 'VGM TRACKER'
+    assert_includes captured_hint, 'Left/Right'
     assert_nil art
   end
 

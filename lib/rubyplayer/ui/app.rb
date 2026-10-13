@@ -10,6 +10,7 @@ require_relative '../playback_engine'
 require_relative '../vgm/telemetry'
 require_relative 'chip_live_view'
 require_relative 'spc_live_view'
+require_relative 'vgm_tracker_view'
 require_relative '../gbs/tracker'
 require_relative '../nsf/tracker'
 require_relative 'vgm_telemetry_controller'
@@ -59,6 +60,7 @@ module RubyPlayer
           event_bus: @bus, max_bytes: @config['ui', 'vgm_telemetry_max_bytes']
         )
         @vgm_live_view = ChipLiveView.new
+        @vgm_tracker_view = VgmTrackerView.new
         @spc_live_view = SpcLiveView.new
         # GBS and NSF reuse the VGM page; their rows come from chip snapshots,
         # each kind through its own tracker.
@@ -278,8 +280,8 @@ module RubyPlayer
           close_now_playing
         elsif key == 'tab'
           toggle_now_playing_info if @now_playing_modal&.live_pages&.any?
-        elsif @now_playing_page == :live
-          return invalidate_screen! if handle_mute_key(key)
+        elsif @now_playing_modal&.live_page?
+          return invalidate_screen! if @now_playing_page == :live && handle_mute_key(key)
 
           mapped_key = { 'pgup' => 'pageup', 'pgdn' => 'pagedown' }.fetch(key, key)
           invalidate_screen! if @now_playing_modal&.handle_live_key(mapped_key)
@@ -645,10 +647,12 @@ module RubyPlayer
         @now_playing_page = live ? :live : :info
         @last_live_page = live ? :live : nil
         @vgm_live_view.update(nil)
+        @vgm_tracker_view.update(nil)
         modal = NowPlayingModal.new(track, extras: @library.track_metadata_for(track.id),
                                            page: @now_playing_page,
                                            chip_view: @chip_pages[kind]&.view || @vgm_live_view,
-                                           live_available: live, live_kind: kind, spc_view: @spc_live_view)
+                                           live_available: live, live_kind: kind, spc_view: @spc_live_view,
+                                           tracker_view: @vgm_tracker_view)
         @now_playing_modal = modal
         if @show_now_playing
           @vgm_telemetry_controller.visible = kind == :vgm
@@ -696,6 +700,7 @@ module RubyPlayer
         is_live = @now_playing_modal.live_page?
         if is_live && !was_live
           @vgm_live_view.update(nil)
+          @vgm_tracker_view.update(nil)
           @vgm_telemetry_controller.visible = @now_playing_modal.live_kind == :vgm
           set_art(nil)
         elsif !is_live
@@ -708,6 +713,8 @@ module RubyPlayer
       def close_now_playing
         @show_now_playing = false
         @vgm_telemetry_controller.visible = false
+        @vgm_live_view.update(nil)
+        @vgm_tracker_view.update(nil)
         @now_playing_page = :info
         @last_live_page = nil
         track = @engine.state[:track]
@@ -1120,29 +1127,32 @@ module RubyPlayer
         return unless @vgm_telemetry_controller.accept(snapshot)
 
         @vgm_live_view.update(@vgm_telemetry_controller.snapshot)
+        @vgm_tracker_view.update(@vgm_telemetry_controller.snapshot)
         invalidate_screen!
       end
 
       def tick_vgm_telemetry
-        visible = @show_now_playing && @now_playing_page == :live && !modal_active? &&
+        visible = @show_now_playing && @now_playing_modal&.live_page? && !modal_active? &&
                   @now_playing_modal&.live_kind == :vgm
         # Visibility handling suspends the worker and clears the controller,
         # so stale rows must be dropped even on the hidden early return.
         @vgm_telemetry_controller.visible = visible
         unless visible
-          clear_stale_vgm_view
+          clear_stale_vgm_views
           return
         end
 
         @vgm_live_view.paused = @engine.state[:paused]
         @vgm_telemetry_controller.tick
-        clear_stale_vgm_view
+        clear_stale_vgm_views
       end
 
-      def clear_stale_vgm_view
-        return unless @vgm_live_view.snapshot && @vgm_telemetry_controller.snapshot.nil?
+      def clear_stale_vgm_views
+        return unless @vgm_telemetry_controller.snapshot.nil?
+        return unless @vgm_live_view.snapshot || @vgm_tracker_view.snapshot
 
         @vgm_live_view.update(nil)
+        @vgm_tracker_view.update(nil)
         invalidate_screen!
       end
 
@@ -1443,7 +1453,7 @@ module RubyPlayer
           @now_playing_modal.update_spc(state: @engine.spc_live, position_ms: @engine.state[:position_ms])
         when :vgm
           @now_playing_modal.update_chip(now_sample: @engine.vgm_telemetry_request&.sample,
-                                         mute_mask: @engine.voice_mute_mask)
+                                         mute_mask: @engine.voice_mute_mask, paused: @engine.state[:paused])
         when :gbs, :nsf then update_chip_live(@now_playing_modal.live_kind)
         end
         @art_region = @now_playing_modal.render(@screen, theme: @theme, frame: method(:render_modal),

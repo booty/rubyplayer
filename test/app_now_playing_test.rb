@@ -234,6 +234,35 @@ class AppNowPlayingTest < Minitest::Test
     refute @app.show_now_playing
   end
 
+  def test_switching_vgm_live_pages_keeps_telemetry_and_info_suspends_it
+    start_live_vgm_track
+    use_screen(rows: 32, cols: 110)
+    @app.handle_key('o')
+    controller = @app.instance_variable_get(:@vgm_telemetry_controller)
+    wait_for_live_vgm_rows(controller)
+    snapshot = controller.snapshot
+    @app.handle_key('o')
+    @app.send(:tick_vgm_telemetry)
+    @app.render
+
+    assert controller.instance_variable_get(:@visible)
+    assert_same snapshot, controller.snapshot
+    assert_same snapshot, @app.instance_variable_get(:@vgm_tracker_view).snapshot
+    assert_includes back_buffer_text, 'VGM TRACKER'
+    @app.handle_key('m')
+
+    assert_equal 0, @app.engine.voice_mute_mask
+    @app.handle_key('tab')
+    @app.send(:tick_vgm_telemetry)
+
+    refute controller.instance_variable_get(:@visible)
+    assert_nil @app.instance_variable_get(:@vgm_tracker_view).snapshot
+    @app.handle_key('tab')
+
+    assert_equal :tracker, @app.instance_variable_get(:@now_playing_page)
+    assert controller.instance_variable_get(:@visible)
+  end
+
   def test_o_closes_info_for_a_track_without_live_pages
     library = @app.instance_variable_get(:@library)
     track = library.all_tracks.find { |entry| entry.format == 'mod' }
@@ -290,6 +319,38 @@ class AppNowPlayingTest < Minitest::Test
     @app.send(:tick_vgm_telemetry)
 
     assert_nil channels.snapshot
+  end
+
+  def test_vgm_tracker_seek_clears_both_views_before_replay_catches_up
+    start_live_vgm_track
+    use_screen(rows: 32, cols: 110)
+    @app.handle_key('o')
+    controller = @app.instance_variable_get(:@vgm_telemetry_controller)
+    wait_for_live_vgm_rows(controller)
+    @app.handle_key('o')
+    old_snapshot = @app.instance_variable_get(:@vgm_tracker_view).snapshot
+
+    refute_nil old_snapshot
+    @app.engine.seek(500)
+    wait_until { @app.engine.vgm_telemetry_request&.revision != old_snapshot.revision }
+    @app.send(:tick_vgm_telemetry)
+
+    assert_nil @app.instance_variable_get(:@vgm_tracker_view).snapshot
+    assert_nil @app.instance_variable_get(:@vgm_live_view).snapshot
+  end
+
+  def test_vgm_tracker_suspends_when_another_modal_covers_it
+    start_live_vgm_track
+    use_screen(rows: 32, cols: 110)
+    @app.handle_key('o')
+    controller = @app.instance_variable_get(:@vgm_telemetry_controller)
+    wait_for_live_vgm_rows(controller)
+    @app.handle_key('o')
+    @app.instance_variable_set(:@config_error, 'configuration error')
+    @app.send(:tick_vgm_telemetry)
+
+    refute controller.instance_variable_get(:@visible)
+    assert_nil @app.instance_variable_get(:@vgm_tracker_view).snapshot
   end
 
   def test_vgm_telemetry_suspends_when_a_higher_modal_covers_now_playing
