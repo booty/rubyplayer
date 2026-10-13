@@ -124,7 +124,8 @@ module RubyPlayer
         @theme_id_before_preview = nil
         set_theme!(@config['ui', 'theme'])
         @artwork = Artwork.new(names: @config['ui', 'art_filenames'], archive_cache: @archive_cache)
-        @art_supported = ItermImage.supported?(env)
+        @art_supported = KittyImage.supported?(env)
+        @kitty_image = KittyImage.new(output: -> { @io_out })
         @art_mode = normalize_art_mode(@config['ui', 'art_mode'])
         @art_bytes = nil
         @art_region = nil
@@ -180,7 +181,7 @@ module RubyPlayer
         # Shutdown is best-effort across independent resources. Focus process
         # failure must not leave decoder thread, native audio, or SQLite open;
         # preserve the first error so callers still learn cleanup was incomplete.
-        [-> { @vgm_telemetry_controller.shutdown }, -> { @engine.shutdown },
+        [-> { @kitty_image.clear }, -> { @vgm_telemetry_controller.shutdown }, -> { @engine.shutdown },
          -> { @audio.close }, -> { @db.close }].each do |cleanup|
           cleanup.call
         rescue StandardError => e
@@ -656,7 +657,7 @@ module RubyPlayer
         @now_playing_modal = modal
         if @show_now_playing
           @vgm_telemetry_controller.visible = kind == :vgm
-          live ? set_art(nil) : fetch_art(track)
+          fetch_art(track) if @art_bytes.nil?
         end
         return unless %w[ffmpeg gme snes_spc gbs_native nsf_native hes_native].include?(track.backend)
 
@@ -703,10 +704,9 @@ module RubyPlayer
           @vgm_live_view.update(nil)
           @vgm_tracker_view.update(nil)
           @vgm_telemetry_controller.visible = @now_playing_modal.live_kind == :vgm
-          set_art(nil)
         elsif !is_live
           @vgm_telemetry_controller.visible = false
-          fetch_art(@engine.state[:track])
+          fetch_art(@engine.state[:track]) if @art_bytes.nil?
         end
         invalidate_screen!
       end
@@ -731,7 +731,7 @@ module RubyPlayer
           @config_error = e
         end
         message = "Album art: #{@art_mode}"
-        message += ' (requires iTerm2)' if @art_mode != :off && !@art_supported
+        message += ' (requires Kitty or iTerm2 3.5.4)' if @art_mode != :off && !@art_supported
         @status_line.set_message(message)
         invalidate_screen!
       end
@@ -760,7 +760,7 @@ module RubyPlayer
           display = bytes && begin
             @artwork.display_bytes(bytes, max_px: @config['ui', 'art_display_max_px'])
           rescue StandardError
-            bytes
+            nil
           end
           @bus.publish(:art_ready, track_id: track.id, bytes: display, accent: accent)
         end
@@ -771,9 +771,8 @@ module RubyPlayer
         return if bytes == @art_bytes
 
         @art_bytes = bytes
-        # Full repaint rather than targeted damage: the previous image can
-        # only be erased by rewriting the cells beneath it, and art changes
-        # are rare (track boundaries), so the cost is irrelevant.
+        # A full repaint keeps text and terminal placements synchronized on
+        # rare track boundaries and art changes.
         invalidate_screen!
       end
 
@@ -792,31 +791,54 @@ module RubyPlayer
            @name_prompt || @pending_playlist_delete)
       end
 
-      # Called after Screen#flush: the image must be re-emitted when its
-      # backing cells were repainted (that repaint erased part of it), and
-      # only then — every-frame re-emits flicker visibly in iTerm2. Skipped
-      # while a modal is up, since the image would paint on top of it; the
-      # modal's closing repaint re-triggers emission naturally.
+      # Called after Screen#flush: placements live outside Screen's buffer,
+      # so damaged art must be placed again. Modals hide the placement while
+      # keeping pixels resident for the closing repaint.
       def emit_art
         region = @art_region
-        return unless region && @art_bytes && @art_supported && !modal_active?
+        unless @art_supported && @art_bytes
+          @kitty_image.clear
+          return
+        end
+        unless region && art_should_show? && valid_art_region?(region)
+          @kitty_image.hide
+          return
+        end
 
         rows = region[:y]..(region[:y] + region[:h] - 1)
         cols = region[:x]..(region[:x] + region[:w] - 1)
         return unless @art_dirty || @screen.region_damaged?(rows: rows, cols: cols)
 
-        # A window drag is a SIGWINCH storm: every full repaint would
-        # re-send the whole image, flooding the terminal's input pipeline
-        # (the "UI lags by seconds while audio keeps playing" failure).
-        # Remember the debt and pay it once after the storm settles.
+        # A window drag is a SIGWINCH storm. Remember placement damage and
+        # repair it once after the existing resize debounce settles.
         if resize_settling?
           @art_dirty = true
           return
         end
 
         @art_dirty = false
-        @io_out.write(ItermImage.place(@art_bytes, row: region[:y], col: region[:x],
-                                                   width: region[:w], height: region[:h]))
+        @kitty_image.render(@art_bytes, row: region[:y], col: region[:x],
+                                        width: region[:w], height: region[:h], force: true)
+      end
+
+      def art_should_show?
+        return false unless @art_supported && @art_bytes
+        return false if modal_active?
+        return false if @show_now_playing && @now_playing_modal&.live_page?
+        return true if @show_now_playing
+
+        @art_mode != :off
+      end
+
+      def valid_art_region?(region)
+        return false unless region.is_a?(Hash)
+
+        x = region[:x]
+        y = region[:y]
+        w = region[:w]
+        h = region[:h]
+        [x, y, w, h].all?(Integer) && x >= 0 && y >= 0 &&
+          w.positive? && h.positive? && x + w <= @screen.cols && y + h <= @screen.rows
       end
 
       def route_to_pane(action)
@@ -1112,11 +1134,8 @@ module RubyPlayer
         events.each do |type, payload|
           case type
           when :track_started
+            handle_track_started(payload)
             refresh = true
-            fetch_art(payload[:track])
-            if @show_now_playing && @engine.state[:track]&.id == payload[:track].id
-              prepare_now_playing(payload[:track], preferred_page: @now_playing_page)
-            end
           when :now_playing_metadata_ready
             if @show_now_playing && payload[:modal].equal?(@now_playing_modal) &&
                @now_playing_modal.matches?(@engine.state[:track])
@@ -1132,7 +1151,7 @@ module RubyPlayer
             # dropped and the newer track's own fetch will land later.
             set_art(payload[:bytes], accent: payload[:accent]) if payload[:track_id] == @engine.state[:track]&.id
           when :playback_state
-            set_art(nil) unless payload[:playing]
+            set_art(nil) unless payload[:playing] || payload[:paused]
             refresh_queued = true
           when :scan_progress
             handle_scan_progress(payload)
@@ -1157,6 +1176,16 @@ module RubyPlayer
         @scan_refresh_pending = true
         @library_pane.scanning = true
         @status_line.set_message("Scanning: #{payload[:processed]}/#{payload[:total]} files")
+      end
+
+      def handle_track_started(payload)
+        track = payload[:track]
+        set_art(nil) if @engine.state[:track]&.id == track.id
+        if @show_now_playing && @engine.state[:track]&.id == track.id
+          prepare_now_playing(track, preferred_page: @now_playing_page)
+        else
+          fetch_art(track)
+        end
       end
 
       def handle_scan_complete(payload)
@@ -1322,8 +1351,11 @@ module RubyPlayer
       end
 
       def render
-        # Bit of a blunt kludge
-        return if resize_settling?
+        if resize_settling?
+          @kitty_image.clear unless @art_supported && @art_bytes
+          @kitty_image.hide unless art_should_show? && valid_art_region?(@art_region)
+          return
+        end
 
         @theme = tinted_base_theme
         @screen.clear_back
@@ -1528,7 +1560,8 @@ module RubyPlayer
       # modal can still cover it. While open it owns @art_region — the image
       # belongs inside the modal, not wherever the persistent mode had it —
       # which is also why modal_active? (the emit gate) deliberately
-      # excludes @show_now_playing.
+      # excludes @show_now_playing. Live pages leave @art_region nil, hiding
+      # the placement while keeping the same track's upload available.
       def render_now_playing_modal
         track = @engine.state[:track]
         # Track ended while the modal was open: nothing to show anymore.
@@ -1579,7 +1612,7 @@ module RubyPlayer
           BrailleMeter.render(@screen, @engine.levels, x: region[:x], y: region[:y],
                                                        w: region[:w], h: region[:h], fg: @theme[:success])
         else
-          text = @art_supported ? 'no artwork' : 'art requires iTerm2'
+          text = @art_supported ? 'no artwork' : 'art requires Kitty or iTerm2 3.5.4'
           row = region[:y] + (region[:h] / 2)
           col = region[:x] + [(region[:w] - text.size) / 2, 0].max
           @screen.put(row, col, text[0, region[:w]], fg: @theme[:text_muted])
@@ -1836,6 +1869,7 @@ module RubyPlayer
       end
 
       def restore_terminal
+        @kitty_image.clear
         @io_out.write("\e[?2004l\e[?25h\e[?1049l")
         $stdin.cooked! if $stdin.tty?
       end

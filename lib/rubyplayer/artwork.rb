@@ -52,41 +52,28 @@ module RubyPlayer
       nil
     end
 
-    # Downscaled copy for terminal display. The emitted escape carries the
-    # whole image as base64, and re-emits happen on repaints — an original
-    # megabyte album scan would flood the terminal's input pipeline, while
-    # a capped copy costs a few tens of KB. Returns the input unchanged when
-    # it's already small enough or isn't decodable (the display path will
-    # fail visibly on garbage either way).
+    # Bounded PNG copy for terminal display. A normalized format means the
+    # terminal renderer never needs format-specific handling, and limiting
+    # dimensions keeps the one upload small enough for terminal protocols.
     def display_bytes(bytes, max_px:)
       @display_cache ||= {}
       key = [bytes.hash, max_px]
-      @display_cache.fetch(key) { @display_cache[key] = scale_down(bytes, max_px) || bytes }
+      @display_cache.fetch(key) { @display_cache[key] = display_png(bytes, max_px) }
     end
 
     private
 
-    def scale_down(bytes, max_px)
-      dims, status = Open3.capture2(
-        'ffprobe', '-v', 'error', '-select_streams', 'v:0',
-        '-show_entries', 'stream=width,height', '-of', 'csv=p=0', 'pipe:0',
-        stdin_data: bytes, binmode: true
-      )
-      return nil unless status.success?
+    def display_png(bytes, max_px)
+      return nil unless max_px.to_i.positive?
 
-      width, height = dims.strip.split(',').map(&:to_i)
-      return nil if width <= max_px && height <= max_px
-
-      # JPEG output: photographic covers compress far smaller than PNG, and
-      # iTerm2 decodes it natively. Alpha loss is irrelevant for cover art.
-      scaled, _stderr, scale_status = Open3.capture3(
+      bounded = "scale=w='min(#{max_px},iw)':h='min(#{max_px},ih)':force_original_aspect_ratio=decrease"
+      png, _stderr, status = Open3.capture3(
         'ffmpeg', '-hide_banner', '-loglevel', 'error',
-        '-i', 'pipe:0',
-        '-vf', "scale=#{max_px}:#{max_px}:force_original_aspect_ratio=decrease",
-        '-frames:v', '1', '-f', 'image2', '-c:v', 'mjpeg', '-q:v', '4', 'pipe:1',
+        '-i', 'pipe:0', '-vf', bounded, '-frames:v', '1',
+        '-f', 'image2pipe', '-c:v', 'png', 'pipe:1',
         stdin_data: bytes, binmode: true
       )
-      scale_status.success? && !scaled.empty? ? scaled : nil
+      status.success? && png.start_with?("\x89PNG\r\n\x1a\n".b) ? png : nil
     rescue Errno::ENOENT
       nil
     end

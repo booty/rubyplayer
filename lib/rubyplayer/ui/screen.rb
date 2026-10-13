@@ -123,7 +123,7 @@ module RubyPlayer
 
       # Whether the most recent flush repainted any cell inside the given
       # rectangle. Exists for overlays that live outside the cell model
-      # (iTerm2 inline images): repainting cells under an image erases that
+      # (terminal graphics): repainting cells under an image erases that
       # part of it, so its owner must re-emit — but only then, since
       # re-emitting every frame would make the image flicker. Damage is
       # per-row col ranges rather than one bounding box: two distant small

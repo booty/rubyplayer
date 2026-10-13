@@ -52,7 +52,8 @@ module TestSupport
       @app.scan_paths([@music], wait: true)
     end
 
-    def make_app(env: { 'TERM_PROGRAM' => 'iTerm.app' }, config_path: File.join(@tmp, 'config.rb'))
+    def make_app(env: { 'TERM_PROGRAM' => 'iTerm.app', 'TERM_PROGRAM_VERSION' => '3.5.4' },
+                 config_path: File.join(@tmp, 'config.rb'))
       RubyPlayer::UI::App.new(
         config_path: config_path,
         data_path: File.join(@tmp, 'library.sqlite3'),

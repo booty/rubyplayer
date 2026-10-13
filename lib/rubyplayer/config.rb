@@ -45,9 +45,8 @@ module RubyPlayer
       # the loop polls, so this is the worst-case resize latency.
       'idle_poll_seconds' => 0.25,
       'status_message_seconds' => 5,
-      # Album-art re-emission waits this long after the last SIGWINCH: a
-      # window drag is a continuous resize storm, and re-sending the image
-      # per repaint floods the terminal's input pipeline.
+      # Album-art placement waits this long after the last SIGWINCH: a window
+      # drag is a continuous resize storm, and repeated placements add noise.
       'resize_settle_seconds' => 0.5,
       'seek_seconds' => 10,
       'format_track_grouped' => DEFAULT_FORMAT_GROUPED,
@@ -57,7 +56,7 @@ module RubyPlayer
       'theme' => 'default',
       # Album art placement: off | inset (bottom of library pane) |
       # pane (dedicated right-hand column) | corner (overlay). "off" is the
-      # shipped default because rendering requires iTerm2; the V hotkey
+      # shipped default because rendering requires Kitty graphics support; the V hotkey
       # cycles modes and persists the choice here.
       'art_mode' => 'off',
       # Retired with the Now Playing pane (the bar holds the art now); still
@@ -65,8 +64,8 @@ module RubyPlayer
       'art_pane_width' => 30,
       # Inner rows of the Now Playing bar on terminals 30+ rows tall.
       'player_bar_rows' => 4,
-      # Longest side of the emitted image copy, in pixels. Caps the escape
-      # payload so re-emission is always cheap regardless of source size.
+      # Longest side of the emitted image copy, in pixels. Caps upload size
+      # regardless of the source image dimensions.
       'art_display_max_px' => 480,
       'art_corner_rows' => 8,
       # Below this height the image is an unreadable smear; the region is

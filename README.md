@@ -78,11 +78,12 @@ Select **Focus** in the Library pane, then choose a noise recipe in Tracks and p
 
 ### Album artwork
 
-Inline artwork requires iTerm2. Press `V` to cycle placement through off, inset
-(bottom of the Library pane), pane (left of the Now Playing bar), and corner; the
-choice persists in configuration. Press `O` to open the
-now-playing view. Other terminals show an artwork placeholder while track
-information remains available.
+Inline artwork uses the Kitty graphics protocol in Kitty and iTerm2 3.5.4 or
+newer. Detection is automatic; older iTerm2 releases, multiplexers, and other
+terminals show an artwork placeholder while track information remains
+available. Press `V` to cycle placement through off, inset (bottom of the
+Library pane), pane (left of the Now Playing bar), and corner; the choice
+persists in configuration. Press `O` to open the now-playing view.
 
 Now Playing separates artist and album information from technical file details.
 Playback keys keep working while it is open, on any page: Space plays or
@@ -289,7 +290,7 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | `audio_format.rb` | `AudioFormat`: canonical little-endian float32 interleaved-stereo constants and frame sizes shared by audio producers and consumers. |
 | `focus_sounds.rb` | `FocusSound` and `FocusSounds`: immutable catalog of infinite SoX noise recipes, separate from finite library tracks. |
 | `focus_player.rb` | `FocusPlayer`: manages the SoX subprocess and reads complete PCM frames from its output pipe for PlaybackEngine. |
-| `artwork.rb` | `Artwork`: resolves embedded and folder cover art, caches results, and uses FFmpeg to downscale display images and derive accent colors. |
+| `artwork.rb` | `Artwork`: resolves embedded and folder cover art, caches results, uses FFmpeg to produce bounded PNG display images, and derives accent colors. |
 | `runtime_dependencies.rb` | `RuntimeDependencies`: checks external tools and libraries plus all four bundled native libraries before App loads; rebuilds missing or unloadable bundled libraries once and reports startup failures. |
 | `event_bus.rb` | `EventBus`: thread-safe event queue with a self-pipe wakeup, so the main loop's `IO.select` can block on stdin *and* background events simultaneously instead of polling. |
 | `level_tap.rb` | `LevelTap`: feeds the bottom-line EQ animation. Runs a Goertzel-algorithm frequency analysis at log-spaced band frequencies over the window of audio the device is playing: `push` (decoder thread) tags audio with its output-timeline frame as it enters the ring; `levels` (UI thread) reads the window ending at `frames_played`. |
@@ -339,7 +340,7 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | `tracks_pane.rb` | `TracksPane`: interactive item list for every source. Owns filtering, cursor/scroll memory, grouping/sorting, and queue identity while delegating individual track-row drawing. Queue remains flat and ordered. |
 | `queued_pane.rb` | `QueuedPane`: snapshot-backed upcoming/history overview with selectable upcoming tracks, queue actions routed through App, cumulative duration, and overflow allocation. History rows are informational. |
 | `queue_selection.rb` | `QueueSelection`: shared identity-preserving selection and scrolling for the Playback Queue view and Queued pane. |
-| `iterm_image.rb` | `ItermImage`: detects iTerm2 and emits inline-image escape sequences at terminal cell coordinates. |
+| `kitty_image.rb` | `KittyImage`: detects Kitty/current iTerm2 support and owns one uploaded Kitty-protocol image and placement. |
 | `player_bar.rb` | `PlayerBar`: the Now Playing bar (title, rating, state, credits, file facts, and progress beside a full-height spectrum, or one line on short terminals) and `PlayerBar::Details`, its per-track facts built from stored metadata. |
 | `bottom_lines.rb` | Two bottom renderers: `StatusLine` (transient feedback) and `HotkeyLine` (context-sensitive bindings). |
 | `key_decoder.rb` | `KeyDecoder`: turns raw bytes read from a raw-mode terminal into the normalized key-name strings `Keymap` understands (arrow-key escape sequences, Enter, Tab, Ctrl-combinations, etc). |

@@ -6,7 +6,7 @@ module RubyPlayer
     # grid, so a w x h cell region resolves 2w columns by 4h rows — four
     # times the vertical resolution of block glyphs, which is what makes a
     # small art region readable as a spectrum. Pure cell output: works in
-    # any terminal, no iTerm2 requirement.
+    # any terminal, with no graphics-protocol requirement.
     module BrailleMeter
       # Unicode braille dot numbering is column-major with dots 7/8 appended
       # below (historical 6-dot legacy), hence the non-contiguous bit values

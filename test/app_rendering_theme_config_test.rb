@@ -547,18 +547,22 @@ class AppRenderingThemeConfigTest < Minitest::Test
     assert_equal 8, region[:h] # ui.art_corner_rows default
   end
 
-  def test_art_escape_is_emitted_after_flush_and_not_repeated_when_idle
+  def test_art_upload_and_placement_are_emitted_after_flush_and_not_repeated_when_idle
     play_with_cover_art
     @app.handle_key('v') # -> inset
     out = use_screen
 
     @app.render_if_needed
 
-    assert_equal 1, out.string.scan('1337;File=inline=1').size
+    uploads = out.string.scan("\e_Ga=t,").size
+
+    assert_equal 1, uploads
+    assert_equal 1, out.string.scan("\e_Ga=p,").size
 
     @app.render_if_needed # idle frame: no repaint, no re-emit
 
-    assert_equal 1, out.string.scan('1337;File=inline=1').size
+    assert_equal uploads, out.string.scan("\e_Ga=t,").size
+    assert_equal 1, out.string.scan("\e_Ga=p,").size
   end
 
   def test_no_reemit_while_modal_covers_art_then_reemit_on_close
@@ -569,20 +573,26 @@ class AppRenderingThemeConfigTest < Minitest::Test
     out = use_screen(cols: 100)
     @app.render_if_needed
 
-    assert_equal 1, out.string.scan('1337;File=inline=1').size
+    uploads = out.string.scan("\e_Ga=t,").size
+
+    assert_equal 1, uploads
+    assert_equal 1, out.string.scan("\e_Ga=p,").size
 
     @app.handle_key('?') # help modal paints over the panes
     @app.render_if_needed
-    # While the modal is up the image must not be re-drawn on top of it.
-    assert_equal 1, out.string.scan('1337;File=inline=1').size
+    # The placement hides, while the uploaded data stays available.
+    assert_equal uploads, out.string.scan("\e_Ga=t,").size
+    assert_equal 1, out.string.scan("\e_Ga=p,").size
+    assert_equal 1, out.string.scan("\e_Ga=d,d=i,").size
 
     @app.handle_key('escape') # closing repaints cells under the art
     @app.render_if_needed
 
-    assert_equal 2, out.string.scan('1337;File=inline=1').size
+    assert_equal uploads, out.string.scan("\e_Ga=t,").size
+    assert_equal 2, out.string.scan("\e_Ga=p,").size
   end
 
-  def test_no_escape_without_iterm
+  def test_no_graphics_commands_for_unsupported_terminal
     @app.shutdown # native audio shim allows one instance per process
     @app = make_app(env: {}, config_path: File.join(@tmp, 'plain-config.rb'))
     @app.scan_paths([@music], wait: true)
@@ -622,7 +632,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
     assert_includes back_buffer_text, 'Now Playing'
     assert_includes back_buffer_text, @app.engine.state[:track].title[0, 20]
     refute_nil art_region
-    assert_equal 1, out.string.scan('1337;File=inline=1').size
+    assert_equal 1, out.string.scan("\e_Ga=p,").size
 
     @app.handle_key('escape')
 
@@ -680,7 +690,9 @@ class AppRenderingThemeConfigTest < Minitest::Test
     out = use_screen
     @app.render_if_needed
 
-    assert_equal 1, out.string.scan('1337;File=inline=1').size
+    uploads = out.string.scan("\e_Ga=t,").size
+
+    assert_equal 1, uploads
 
     5.times do
       @app.instance_variable_set(:@resized, true)
@@ -688,13 +700,14 @@ class AppRenderingThemeConfigTest < Minitest::Test
       @app.render_if_needed
     end
 
-    assert_equal 1, out.string.scan('1337;File=inline=1').size, 'no emits mid-storm'
+    assert_equal uploads, out.string.scan("\e_Ga=t,").size, 'no uploads mid-storm'
 
     # Storm over: pretend the settle window has elapsed.
     @app.instance_variable_set(:@last_resize_at, 0.0)
     @app.render_if_needed
 
-    assert_equal 2, out.string.scan('1337;File=inline=1').size, 'one emit after settle'
+    assert_equal uploads, out.string.scan("\e_Ga=t,").size, 'pixels retained across resize'
+    assert_equal 2, out.string.scan("\e_Ga=p,").size, 'one placement after settle'
   end
 
   def test_off_mode_reserves_nothing

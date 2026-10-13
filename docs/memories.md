@@ -1,6 +1,6 @@
 # Implementation lessons
 
-Current as of 2026-10-12. Supplementary implementation notes; AGENTS.md remains
+Current as of 2026-10-13. Supplementary implementation notes; AGENTS.md remains
 the authority for workflow and invariants.
 
 - Installed launchers select the checkout's explicit mise Ruby version, then
@@ -49,6 +49,12 @@ the authority for workflow and invariants.
   both the modal instance and current track to reject stale results. Reserve
   artwork space independently of tag count, and test short layouts against
   the real modal frame so metadata cannot overwrite its hint or border.
+- Terminal artwork is normalized to cached, bounded PNG bytes off the UI
+  thread. Keep one Kitty image upload through same-track Info/Live transitions;
+  hide only its placement for overlays or missing regions, and free it on art
+  replacement, no-art results, and terminal teardown. Detect Kitty directly
+  and require a numeric iTerm2 version of at least 3.5.4; do not send graphics
+  commands through multiplexers.
 - Chiptune hardware extras describe static capabilities, not active voices.
   Read variable hardware from headers (including NSF/NSFE expansion flags),
   reuse one hardware snapshot across subtunes, and decompress only a bounded

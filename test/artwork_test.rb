@@ -176,7 +176,7 @@ class ArtworkTest < Minitest::Test
     assert_nil @artwork.average_color('not an image'.b)
   end
 
-  def test_display_bytes_downscales_large_images
+  def test_display_bytes_converts_large_images_to_bounded_png
     big_png = File.join(Dir.tmpdir, 'rubyplayer-test-big.png')
     unless File.file?(big_png)
       _, stderr, status = Open3.capture3(
@@ -191,6 +191,7 @@ class ArtworkTest < Minitest::Test
 
     refute_equal original, scaled
 
+    assert_equal "\x89PNG\r\n\x1a\n".b, scaled.byteslice(0, 8)
     probe = File.join(@tmp, 'scaled.png')
     File.binwrite(probe, scaled)
     dims, = Open3.capture2(
@@ -203,16 +204,65 @@ class ArtworkTest < Minitest::Test
     assert_operator height, :<=, 480
   end
 
-  def test_display_bytes_returns_small_images_unchanged
+  def test_display_bytes_converts_small_jpeg_to_png_without_upscaling
     small = File.binread(File.join(FIXTURES, 'warrior.jpg')) # 300px-ish
 
-    assert_equal small, @artwork.display_bytes(small, max_px: 480)
+    scaled = @artwork.display_bytes(small, max_px: 480)
+
+    refute_equal small, scaled
+    assert_equal "\x89PNG\r\n\x1a\n".b, scaled.byteslice(0, 8)
+    dims = probe_dimensions(scaled)
+
+    assert_equal probe_dimensions(small), dims
+    assert_operator dims.max, :<=, 480
   end
 
-  def test_display_bytes_passes_garbage_through
+  def test_display_bytes_converts_small_gif_to_png
+    gif = File.join(@tmp, 'small.gif')
+    _, stderr, status = Open3.capture3(
+      'ffmpeg', '-y', '-hide_banner', '-loglevel', 'error',
+      '-f', 'lavfi', '-i', 'color=c=green:s=32x24:d=0.1', '-frames:v', '1', gif
+    )
+    flunk "could not build GIF fixture: #{stderr}" unless status.success?
+
+    png = @artwork.display_bytes(File.binread(gif), max_px: 480)
+
+    assert_equal "\x89PNG\r\n\x1a\n".b, png.byteslice(0, 8)
+    assert_equal [32, 24], probe_dimensions(png)
+  end
+
+  def test_display_bytes_caches_successes_and_failures
+    bytes = File.binread(File.join(FIXTURES, 'warrior.jpg'))
+    displayed = @artwork.display_bytes(bytes, max_px: 480)
+
+    assert_same displayed, @artwork.display_bytes(bytes, max_px: 480)
+
+    calls = 0
+    @artwork.define_singleton_method(:display_png) do |_bytes, _max_px|
+      calls += 1
+      nil
+    end
+
+    assert_nil @artwork.display_bytes('not an image'.b, max_px: 480)
+    assert_nil @artwork.display_bytes('not an image'.b, max_px: 480)
+    assert_nil @artwork.display_bytes('not an image'.b, max_px: 240)
+    assert_equal 2, calls # failures are cached by content and pixel limit
+  end
+
+  def test_display_bytes_returns_nil_when_ffmpeg_is_missing
+    bytes = File.binread(File.join(FIXTURES, 'warrior.jpg'))
+    original_path = ENV.fetch('PATH')
+    ENV['PATH'] = File.join(@tmp, 'empty-path')
+
+    assert_nil @artwork.display_bytes(bytes, max_px: 480)
+  ensure
+    ENV['PATH'] = original_path
+  end
+
+  def test_display_bytes_returns_nil_for_garbage
     junk = 'not an image'.b
 
-    assert_equal junk, @artwork.display_bytes(junk, max_px: 480)
+    assert_nil @artwork.display_bytes(junk, max_px: 480)
   end
 
   def test_folder_lookup_is_cached_per_directory
@@ -228,5 +278,17 @@ class ArtworkTest < Minitest::Test
     File.delete(File.join(dir, 'cover.jpg'))
     # Same directory: served from cache, no re-glob.
     assert_equal 'ART', @artwork.for_track(track_for(b))
+  end
+
+  private
+
+  def probe_dimensions(bytes)
+    path = File.join(@tmp, 'probe.png')
+    File.binwrite(path, bytes)
+    dims, = Open3.capture2(
+      'ffprobe', '-v', 'error', '-select_streams', 'v:0',
+      '-show_entries', 'stream=width,height', '-of', 'csv=p=0', path
+    )
+    dims.strip.split(',').map(&:to_i)
   end
 end
