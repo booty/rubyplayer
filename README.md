@@ -42,7 +42,7 @@ you move the checkout; remove both installed commands to uninstall.
 
 Both commands use the checkout's mise Ruby version and Gemfile, preserve your
 current directory for relative music paths, and forward all arguments. Install
-dependencies and compile the audio shim as described above/below first.
+the dependencies above before launching.
 
 To run directly from the checkout:
 
@@ -50,9 +50,9 @@ To run directly from the checkout:
 mise exec -- bundle exec ruby --yjit bin/rubyplayer [path ...]
 ```
 
-`mise exec -- bundle exec rake compile` builds the native audio shim (`lib/rubyplayer/native/librp_audio.dylib`), the SPC player (`lib/rubyplayer/native/librp_spc.dylib`), and the GBS and NSF players (`lib/rubyplayer/native/librp_gbs.dylib`, `librp_nsf.dylib`; all C++, needing `clang++`) automatically as a prerequisite of `mise exec -- bundle exec rake test`; `bin/rubyplayer` expects it to already exist, so run `mise exec -- bundle exec rake compile` (or `mise exec -- bundle exec rake test`) at least once after a fresh checkout.
+`mise exec -- bundle exec rake compile` builds the native audio shim (`lib/rubyplayer/native/librp_audio.dylib`), the SPC player (`lib/rubyplayer/native/librp_spc.dylib`), and the GBS and NSF players (`lib/rubyplayer/native/librp_gbs.dylib`, `librp_nsf.dylib`; all C++, needing `clang++`). `mise exec -- bundle exec rake test` also builds them as a prerequisite. You can build them manually, but a fresh checkout will build them on first launch.
 
-Startup checks every supported runtime dependency before taking over the terminal. Missing Homebrew packages are reported together with one `brew install ...` command. If only the bundled audio shim is missing, run `mise exec -- bundle exec rake compile`.
+Startup checks every supported runtime dependency before taking over the terminal. Missing Homebrew packages are reported together with one `brew install ...` command. If a bundled library is missing or cannot be loaded, RubyPlayer builds the affected library once and checks it again. This may delay that launch; normal launches do not run Rake or a compiler. If the build fails, its output and a manual retry command are shown. After changing native C/C++ sources, run `mise exec -- bundle exec rake compile` yourself; startup checks whether binaries load, not whether sources are newer.
 
 Any paths given on the command line are scanned into the library on startup, in addition to any roots already remembered from a previous run.
 
@@ -251,7 +251,7 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | `focus_sounds.rb` | `FocusSound` and `FocusSounds`: immutable catalog of infinite SoX noise recipes, separate from finite library tracks. |
 | `focus_player.rb` | `FocusPlayer`: manages the SoX subprocess and reads complete PCM frames from its output pipe for PlaybackEngine. |
 | `artwork.rb` | `Artwork`: resolves embedded and folder cover art, caches results, and uses FFmpeg to downscale display images and derive accent colors. |
-| `runtime_dependencies.rb` | `RuntimeDependencies`: checks native libraries, command-line tools, and the audio shim before App loads, with actionable startup diagnostics. |
+| `runtime_dependencies.rb` | `RuntimeDependencies`: checks external tools and libraries plus all four bundled native libraries before App loads; rebuilds missing or unloadable bundled libraries once and reports startup failures. |
 | `event_bus.rb` | `EventBus`: thread-safe event queue with a self-pipe wakeup, so the main loop's `IO.select` can block on stdin *and* background events simultaneously instead of polling. |
 | `level_tap.rb` | `LevelTap`: feeds the bottom-line EQ animation. Runs a Goertzel-algorithm frequency analysis at log-spaced band frequencies over the window of audio the device is playing: `push` (decoder thread) tags audio with its output-timeline frame as it enters the ring; `levels` (UI thread) reads the window ending at `frames_played`. |
 | `playback_engine/chip_state.rb` | `PlaybackEngine::ChipState`: live chip state for handles that record native snapshots — pushes each chunk's snapshots into a `ChipTimeline` at the chunk's output frame; returns the SPC snapshot being heard (`spc_live`) or every GBS or NSF snapshot heard since the last call (`chip_live`), and which kind the track has (`chip_live_kind`). |

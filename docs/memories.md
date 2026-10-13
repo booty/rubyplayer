@@ -1,12 +1,16 @@
 # Implementation lessons
 
-Current as of 2026-10-11. Supplementary implementation notes; AGENTS.md remains
+Current as of 2026-10-12. Supplementary implementation notes; AGENTS.md remains
 the authority for workflow and invariants.
 
 - Installed launchers select the checkout's explicit mise Ruby version, then
   restore the caller's directory so relative music paths retain their meaning.
   Pin both `BUNDLE_GEMFILE` and `BUNDLE_LOCKFILE`: Bundler 4 exports the latter
   independently, so inheriting another bundle can otherwise modify its lockfile.
+- Startup probes all bundled dylibs before loading the UI. Rebuild only missing
+  or unloadable targets with `rake -B` (timestamps cannot repair a bad binary),
+  under a cross-process lock; probe again after taking the lock because another
+  launch may already have built them. Healthy launches never invoke Rake.
 - Scan paths need literal, case-sensitive matching. Binary directory-prefix
   ranges avoid SQL wildcard interpretation while allowing indexed comparisons.
 - SQLite backups must include committed WAL pages. Use the backup API and
