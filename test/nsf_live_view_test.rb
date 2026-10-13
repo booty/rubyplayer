@@ -40,7 +40,7 @@ class NsfLiveViewTest < Minitest::Test
       tracker = RubyPlayer::Nsf::Tracker.new
       30.times do |chunk|
         handle.read(CHUNK)
-        timeline.push(*handle.take_snapshots, origin_frame: chunk * CHUNK, record: RubyPlayer::Nsf::Snapshot)
+        timeline.push(*handle.take_snapshots, origin_frame: chunk * CHUNK, snapshot_type: RubyPlayer::Nsf::Snapshot)
         frame = chunk * CHUNK
         tracker.update(RubyPlayer::ChipLiveState.new(snapshots: timeline.take_through(frame, limit: 4_096),
                                                      latest: nil, generation: 1, track_generation: 1, frame: frame,

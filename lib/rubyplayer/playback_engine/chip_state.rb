@@ -32,10 +32,10 @@ module RubyPlayer
       # record them; nil otherwise. Consumes them: one caller (the live page)
       # only.
       def chip_live
-        record = @chip_record
-        return if record.nil? || record == Spc::Snapshot
+        snapshot_type = @chip_snapshot_type
+        return if snapshot_type.nil? || snapshot_type == Spc::Snapshot
 
-        live, paused, mute_mask, generation, track_generation = live_flags(record)
+        live, paused, mute_mask, generation, track_generation = live_flags(snapshot_type)
         return unless live
 
         frame = @audio.frames_played
@@ -48,17 +48,17 @@ module RubyPlayer
       # Which native live state the current track records (:spc, :gbs, :nsf),
       # or nil. Unlike chip_live it consumes nothing.
       def chip_live_kind
-        kind = CHIP_LIVE_KINDS.fetch(@chip_record, nil)
-        live, = live_flags(@chip_record)
+        kind = CHIP_LIVE_KINDS.fetch(@chip_snapshot_type, nil)
+        live, = live_flags(@chip_snapshot_type)
         kind if live
       end
 
       private
 
-      def live_flags(record)
+      def live_flags(snapshot_type)
         @mutex.synchronize do
-          live = @playing && @chip_record == record && !@focus_sound
-          [live, @paused, @voice_mute_mask, @chip_generation, @vgm_generation]
+          live = @playing && @chip_snapshot_type == snapshot_type && !@focus_sound
+          [live, @paused, @voice_mute_mask, @chip_timeline_generation, @track_generation]
         end
       end
 
@@ -68,7 +68,7 @@ module RubyPlayer
       def capture_chip_state
         return unless @handle.respond_to?(:take_snapshots)
 
-        @pending_snapshots = [*@handle.take_snapshots, @handle.snapshot_record]
+        @pending_snapshots = [*@handle.take_snapshots, @handle.snapshot_type]
         @spc_ram = @handle.copy_ram if @handle.respond_to?(:copy_ram)
       end
 
@@ -79,7 +79,7 @@ module RubyPlayer
 
         packed, count = @handle.capture_now
         @chip_timeline.push(packed, count, origin_frame: @audio.frames_played + @audio.buffered_frames,
-                                           record: @handle.snapshot_record)
+                                           snapshot_type: @handle.snapshot_type)
         @spc_ram = @handle.copy_ram if @handle.respond_to?(:copy_ram)
       end
 
@@ -87,14 +87,14 @@ module RubyPlayer
       def push_pending_snapshots(start_frame)
         return unless @pending_snapshots
 
-        packed, count, record = @pending_snapshots
-        @chip_timeline.push(packed, count, origin_frame: start_frame, record: record)
+        packed, count, snapshot_type = @pending_snapshots
+        @chip_timeline.push(packed, count, origin_frame: start_frame, snapshot_type: snapshot_type)
         @pending_snapshots = nil
       end
 
       # Caller holds @mutex: live only if the handle records snapshots.
       def start_chip_tracking
-        @chip_record = (@handle.snapshot_record if @handle.respond_to?(:take_snapshots))
+        @chip_snapshot_type = (@handle.snapshot_type if @handle.respond_to?(:take_snapshots))
       end
 
       # Discontinuities (seek, track change, stop) drop everything: the
@@ -104,7 +104,7 @@ module RubyPlayer
         @pending_snapshots = nil
         @chip_timeline.reset
         @spc_ram = nil
-        @mutex.synchronize { @chip_generation += 1 }
+        @mutex.synchronize { @chip_timeline_generation += 1 }
       end
     end
   end

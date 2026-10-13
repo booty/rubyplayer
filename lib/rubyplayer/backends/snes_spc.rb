@@ -112,7 +112,7 @@ module RubyPlayer
         end
 
         # Decodes take_snapshots records.
-        def snapshot_record = Spc::Snapshot
+        def snapshot_type = Spc::Snapshot
 
         # DSP snapshots from the latest read as [packed records, count]; decode
         # with Spc::Snapshot.unpack. Packed so only displayed records pay for

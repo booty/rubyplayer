@@ -71,11 +71,11 @@ module RubyPlayer
       @frames_base = 0
       @seek_offset_ms = 0
       @started_at = nil
-      @vgm_generation = 0
+      @track_generation = 0
       @vgm_revision = 0
       @vgm_source = nil
-      @chip_record = nil
-      @chip_generation = 0
+      @chip_snapshot_type = nil
+      @chip_timeline_generation = 0
       initialize_voice_muting
       @published_second = nil
       # Decoder-owned navigation history includes short plays that do not
@@ -479,7 +479,7 @@ module RubyPlayer
         @paused = false
         @frames_base = @audio.frames_played
         @seek_offset_ms = 0
-        @vgm_generation += 1
+        @track_generation += 1
         @vgm_revision = 0
         @vgm_source = vgm ? build_vgm_source(track, path) : nil
         start_chip_tracking
@@ -504,7 +504,7 @@ module RubyPlayer
 
     def build_vgm_source(track, path)
       Vgm::Source.new(
-        generation: @vgm_generation,
+        generation: @track_generation,
         track_identity: [track.id, track.physical_path, track.archive_entry.to_s,
                          track.subtune_index],
         path: path, format: File.extname(path).delete_prefix('.').downcase.to_sym,
@@ -650,7 +650,7 @@ module RubyPlayer
       @mutex.synchronize do
         @vgm_source = nil
         @vgm_revision = 0
-        @chip_record = nil
+        @chip_snapshot_type = nil
         stop_voice_muting
       end
       reset_chip_state

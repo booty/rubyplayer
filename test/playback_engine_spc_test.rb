@@ -66,7 +66,7 @@ class PlaybackEngineSpcTest < Minitest::Test
       [[0, *regs, *Array.new(24, 0), 0].pack(RubyPlayer::Spc::Snapshot::FORMAT), 1]
     end
 
-    def snapshot_record = RubyPlayer::Spc::Snapshot
+    def snapshot_type = RubyPlayer::Spc::Snapshot
     def copy_ram = "ram #{@reads}".freeze
     # Fake of the backend seek contract, which reports success.
     def seek(_milliseconds) = true # rubocop:disable Naming/PredicateMethod
@@ -95,7 +95,7 @@ class PlaybackEngineSpcTest < Minitest::Test
       ([0.0] * frames * 2).pack('e*')
     end
 
-    def snapshot_record = RubyPlayer::Gbs::Snapshot
+    def snapshot_type = RubyPlayer::Gbs::Snapshot
     def take_snapshots = [record(0, @reads, 0) + record(1_000, @reads, 1), 2]
     def capture_now = [record(0, 99, 0), 1]
     # Fake of the backend seek contract, which reports success.

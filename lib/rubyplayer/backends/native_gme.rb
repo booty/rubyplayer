@@ -10,9 +10,9 @@ module RubyPlayer
     # record chip state for a live page (ext/rp_gme): librp_gbs, librp_nsf.
     # Scanning stays on libgme, so tags, lengths, and hardware extras are
     # unchanged; only decoding moves. Subclasses name their library through
-    # `native`: its binding file, C prefix, snapshot record, and size limit.
+    # `native`: its binding file, C prefix, snapshot type, and size limit.
     class NativeGme
-      Native = Data.define(:lib_file, :lib, :prefix, :record, :label, :max_bytes) do
+      Native = Data.define(:lib_file, :lib, :prefix, :snapshot_type, :label, :max_bytes) do
         # The binding module, once its file has loaded.
         def binding = Backends.const_get(lib)
 
@@ -118,17 +118,17 @@ module RubyPlayer
         end
 
         # Decodes take_snapshots records.
-        def snapshot_record = @native.record
+        def snapshot_type = @native.snapshot_type
 
         # Chip snapshots from the latest read as [packed records, count];
-        # decode with snapshot_record.unpack.
+        # decode with snapshot_type.unpack.
         def take_snapshots
           return ['', 0] if @emu.nil?
 
           count = @native.call(:snapshot_count, @emu)
           return ['', 0] if count.zero?
 
-          [@native.call(:snapshots, @emu).read_bytes(count * @native.record::SIZE), count]
+          [@native.call(:snapshots, @emu).read_bytes(count * @native.snapshot_type::SIZE), count]
         end
 
         # The state heard at the current position (frame 0), then any already

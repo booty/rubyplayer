@@ -10,7 +10,7 @@ class ChipTimelineTest < Minitest::Test
   Snapshot = RubyPlayer::Spc::Snapshot
 
   def setup
-    @timeline = RubyPlayer::ChipTimeline.new(record: Snapshot)
+    @timeline = RubyPlayer::ChipTimeline.new(snapshot_type: Snapshot)
   end
 
   def test_at_returns_the_latest_snapshot_heard_by_a_frame
@@ -92,7 +92,7 @@ class ChipTimelineTest < Minitest::Test
 
   # Without lookups (live page closed), the segment cap bounds memory.
   def test_segment_count_is_capped_without_lookups
-    timeline = RubyPlayer::ChipTimeline.new(max_segments: 4, record: Snapshot)
+    timeline = RubyPlayer::ChipTimeline.new(max_segments: 4, snapshot_type: Snapshot)
     10.times { |index| timeline.push(*records([0, "s#{index}"]), origin_frame: index * 1_000) }
 
     assert_nil timeline.at(5_999)
@@ -120,7 +120,7 @@ class ChipTimelineTest < Minitest::Test
   def test_records_unpack_with_the_class_they_were_pushed_with
     gbs = RubyPlayer::Gbs::Snapshot
     packed = [120, *Array.new(48, 7), 15, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 70_224, 4_194_304].pack(gbs::FORMAT)
-    @timeline.push(packed, 1, origin_frame: 1_000, record: gbs)
+    @timeline.push(packed, 1, origin_frame: 1_000, snapshot_type: gbs)
 
     snapshot = @timeline.at(2_000)
 

@@ -18,8 +18,8 @@ module RubyPlayer
   # Like LevelTap: the decoder thread pushes each chunk's packed records at
   # the output frame where the chunk starts playing; the UI asks for the
   # frame the device has played. Records stay packed until displayed. A
-  # record class (Spc::Snapshot, Gbs::Snapshot) unpacks them; each starts
-  # with its uint32 frame offset.
+  # snapshot type (Spc::Snapshot, Gbs::Snapshot, Nsf::Snapshot) unpacks
+  # them; each starts with its uint32 frame offset.
   #
   # Pushes only append. Records may be tagged beyond their own chunk
   # (libgme emulates ahead), and that state stays valid while playback is
@@ -27,30 +27,30 @@ module RubyPlayer
   # Emulation is monotonic, so record frames never decrease across pushes.
   class ChipTimeline
     # One pushed chunk. Record frames are offsets from origin_frame.
-    Segment = Struct.new(:origin_frame, :packed_records, :record_count, :record)
+    Segment = Struct.new(:origin_frame, :packed_records, :record_count, :snapshot_type)
     # Each chunk is ~340 ms at default settings, so this keeps ~85 s of
     # snapshots when nobody reads (live page closed).
     DEFAULT_MAX_SEGMENTS = 256
     FRAME_OFFSET_FORMAT = 'L<'
     private_constant :DEFAULT_MAX_SEGMENTS, :FRAME_OFFSET_FORMAT
 
-    def initialize(max_segments: DEFAULT_MAX_SEGMENTS, record: nil)
+    def initialize(max_segments: DEFAULT_MAX_SEGMENTS, snapshot_type: nil)
       @max_segments = max_segments
-      @record = record
+      @snapshot_type = snapshot_type
       @segments = []
       # Records of the first segment already returned by #take_through.
-      @taken = 0
+      @first_segment_returned_count = 0
       @mutex = Mutex.new
     end
 
-    def push(packed_records, record_count, origin_frame:, record: @record)
+    def push(packed_records, record_count, origin_frame:, snapshot_type: @snapshot_type)
       return if record_count.zero?
 
       @mutex.synchronize do
-        @segments << Segment.new(origin_frame, packed_records, record_count, record)
+        @segments << Segment.new(origin_frame, packed_records, record_count, snapshot_type)
         while @segments.size > @max_segments
           @segments.shift
-          @taken = 0
+          @first_segment_returned_count = 0
         end
       end
     end
@@ -81,31 +81,31 @@ module RubyPlayer
     # must see each state change, not just the latest.
     def take_through(output_frame, limit:)
       @mutex.synchronize do
-        taken = []
+        record_locations = []
         while (segment = @segments.first)
           count = records_through(segment, output_frame)
-          (@taken...count).each { |index| taken << [segment, index] }
-          @taken = [count, @taken].max
+          (@first_segment_returned_count...count).each { |index| record_locations << [segment, index] }
+          @first_segment_returned_count = [count, @first_segment_returned_count].max
           break if count < segment.record_count
 
           @segments.shift
-          @taken = 0
+          @first_segment_returned_count = 0
         end
-        taken.last(limit).map { |taken_segment, index| unpack(taken_segment, index) }
+        record_locations.last(limit).map { |located_segment, index| unpack(located_segment, index) }
       end
     end
 
     def reset
       @mutex.synchronize do
         @segments.clear
-        @taken = 0
+        @first_segment_returned_count = 0
       end
     end
 
     private
 
     def unpack(segment, record_index)
-      snapshot = segment.record.unpack(segment.packed_records, record_index)
+      snapshot = segment.snapshot_type.unpack(segment.packed_records, record_index)
       snapshot.with(frame: segment.origin_frame + snapshot.frame)
     end
 
@@ -113,12 +113,12 @@ module RubyPlayer
       return if count.zero?
 
       @segments.shift(count)
-      @taken = 0
+      @first_segment_returned_count = 0
     end
 
     def output_frame_of(segment, record_index)
       segment.origin_frame +
-        segment.packed_records.unpack1(FRAME_OFFSET_FORMAT, offset: record_index * segment.record::SIZE)
+        segment.packed_records.unpack1(FRAME_OFFSET_FORMAT, offset: record_index * segment.snapshot_type::SIZE)
     end
 
     # Records of `segment` heard at or before output_frame.

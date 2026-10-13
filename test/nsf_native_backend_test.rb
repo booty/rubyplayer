@@ -77,7 +77,7 @@ class NsfNativeBackendTest < Minitest::Test
     snapshots = Array.new(count) { |index| RubyPlayer::Nsf::Snapshot.unpack(packed, index) }
 
     assert_operator count, :>, 5
-    assert_equal RubyPlayer::Nsf::Snapshot, @handle.snapshot_record
+    assert_equal RubyPlayer::Nsf::Snapshot, @handle.snapshot_type
     assert(snapshots.any? { |snapshot| snapshot.playing.positive? })
     assert(snapshots.all? { |snapshot| snapshot.chip?(:vrc6) && snapshot.voice_count == 8 })
     assert_in_delta 60.1, snapshots.last.driver_hz, 0.01

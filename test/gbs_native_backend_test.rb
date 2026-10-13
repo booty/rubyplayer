@@ -69,7 +69,7 @@ class GbsNativeBackendTest < Minitest::Test
     snapshots = Array.new(count) { |index| RubyPlayer::Gbs::Snapshot.unpack(packed, index) }
 
     assert_operator count, :>, 5
-    assert_equal RubyPlayer::Gbs::Snapshot, @handle.snapshot_record
+    assert_equal RubyPlayer::Gbs::Snapshot, @handle.snapshot_type
     assert(snapshots.any? { |snapshot| snapshot.playing.positive? })
     assert_in_delta 59.73, snapshots.last.driver_hz, 0.01
   end

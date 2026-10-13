@@ -13,7 +13,7 @@ module RubyPlayer
       # A GBS is a header plus at most a few MB of ROM banks.
       def self.native
         @native ||= Native.new(lib_file: 'gbs_native_lib', lib: :GbsNativeLib, prefix: 'rp_gbs',
-                               record: Gbs::Snapshot, label: 'GBS', max_bytes: 16 * 1024 * 1024)
+                               snapshot_type: Gbs::Snapshot, label: 'GBS', max_bytes: 16 * 1024 * 1024)
       end
 
       def name = 'gbs_native'

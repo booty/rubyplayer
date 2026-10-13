@@ -25,7 +25,7 @@ class GbsLiveViewTest < Minitest::Test
       tracker = RubyPlayer::Gbs::Tracker.new
       36.times do |chunk|
         handle.read(CHUNK)
-        timeline.push(*handle.take_snapshots, origin_frame: chunk * CHUNK, record: RubyPlayer::Gbs::Snapshot)
+        timeline.push(*handle.take_snapshots, origin_frame: chunk * CHUNK, snapshot_type: RubyPlayer::Gbs::Snapshot)
         frame = chunk * CHUNK
         tracker.update(RubyPlayer::Gbs::LiveState.new(snapshots: timeline.take_through(frame, limit: 2_048),
                                                       latest: nil, generation: 1, track_generation: 1, frame: frame,
