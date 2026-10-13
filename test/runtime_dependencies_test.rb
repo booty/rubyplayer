@@ -139,6 +139,6 @@ class RuntimeDependenciesTest < Minitest::Test
 
     assert_equal ['libgme', 'libopenmpt', 'sox', 'ffmpeg', 'ffprobe', 'bsdtar',
                   'native audio shim', 'native SPC player', 'native GBS player',
-                  'native NSF player'], missing
+                  'native NSF player', 'native HES player'], missing
   end
 end

@@ -39,7 +39,8 @@ module RubyPlayer
       NativeLibrary.new('native audio shim', 'lib/rubyplayer/native/librp_audio.dylib'),
       NativeLibrary.new('native SPC player', 'lib/rubyplayer/native/librp_spc.dylib'),
       NativeLibrary.new('native GBS player', 'lib/rubyplayer/native/librp_gbs.dylib'),
-      NativeLibrary.new('native NSF player', 'lib/rubyplayer/native/librp_nsf.dylib')
+      NativeLibrary.new('native NSF player', 'lib/rubyplayer/native/librp_nsf.dylib'),
+      NativeLibrary.new('native HES player', 'lib/rubyplayer/native/librp_hes.dylib')
     ].freeze
 
     def self.verify!

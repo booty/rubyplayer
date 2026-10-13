@@ -65,8 +65,13 @@ gme_player NSF_DYLIB, hooks: 'ext/rp_nsf/rp_nsf_hooks.h', types: %w[NSF NSFE], o
                                 *%w[Nes_Apu Nes_Cpu Nes_Oscs Nes_Fme7_Apu Nes_Namco_Apu Nes_Vrc6_Apu Nes_Fds_Apu
                                     Nes_Vrc7_Apu Nsf_Emu Nsfe_Emu].map { |name| "ext/gme/#{name}.cpp" }]
 
-desc 'Build the native audio shim and the SPC, GBS, and NSF players'
-task compile: [NATIVE_DYLIB, SPC_DYLIB, GBS_DYLIB, NSF_DYLIB]
+HES_DYLIB = 'lib/rubyplayer/native/librp_hes.dylib'
+gme_player HES_DYLIB, hooks: 'ext/rp_hes/rp_hes_hooks.h', types: %w[HES],
+                      sources: ['ext/rp_hes/rp_hes.cpp', *GME_FRAMEWORK,
+                                *%w[Hes_Apu Hes_Apu_Adpcm Hes_Cpu Hes_Emu].map { |name| "ext/gme/#{name}.cpp" }]
+
+desc 'Build the native audio shim and the SPC, GBS, NSF, and HES players'
+task compile: [NATIVE_DYLIB, SPC_DYLIB, GBS_DYLIB, NSF_DYLIB, HES_DYLIB]
 
 task test: :compile
 

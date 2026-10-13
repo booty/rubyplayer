@@ -1,13 +1,14 @@
-# Vendored: libgme GBS and NSF cores (from libgme 0.6.5)
+# Vendored: libgme GBS, NSF, and HES cores (from libgme 0.6.5)
 
 Source: <https://github.com/libgme/game-music-emu>, tag `0.6.5`, directory `gme/`.
-These are the files libgme needs to play `.gbs`, `.nsf`, and `.nsfe` through its own C API: the
-Game Boy and NES CPUs and sound chips (the 2A03 and every NSF expansion chip libgme emulates),
+These are the files libgme needs to play `.gbs`, `.nsf`, `.nsfe`, and `.hes` through its own C API:
+the Game Boy, NES, and PC Engine CPUs and sound chips (the 2A03 and every NSF expansion chip
+libgme emulates; the HuC6280 PSG and the CD-ROM ADPCM unit),
 the `Music_Emu`/`Classic_Emu` playback framework (fades, silence handling), the
 `Effects_Buffer` libgme builds these emulators with, and `gme.cpp` itself. The version matches
-the Homebrew libgme rubyplayer links for every other format, so playback through `rp_gbs` and
-`rp_nsf` matches libgme sample for sample (`test/gbs_native_parity_test.rb`,
-`test/nsf_native_parity_test.rb`).
+the Homebrew libgme rubyplayer links for every other format, so playback through `rp_gbs`,
+`rp_nsf`, and `rp_hes` matches libgme sample for sample (`test/gbs_native_parity_test.rb`,
+`test/nsf_native_parity_test.rb`, `test/hes_native_parity_test.rb`).
 
 License: GNU LGPL 2.1 (`COPYING`, copied from libgme's `license.txt`); `ext/emu2413.{c,h}`
 (Mitsutaka Okazaki's YM2413 emulator, used for the VRC7) is MIT (`ext/LICENSE-emu2413`).
@@ -28,21 +29,24 @@ License: GNU LGPL 2.1 (`COPYING`, copied from libgme's `license.txt`); `ext/emu2
 | `Nes_Apu.{h,cpp}`, `Nes_Oscs.{h,cpp}` | 2A03 APU (2 pulses, triangle, noise, DMC); MMC5 reuses it |
 | `Nes_Vrc6_Apu`, `Nes_Vrc7_Apu`, `Nes_Fds_Apu`, `Nes_Mmc5_Apu.h`, `Nes_Namco_Apu`, `Nes_Fme7_Apu` | Expansion chips: VRC6, VRC7, FDS, MMC5, Namco 163, Sunsoft 5B |
 | `ext/emu2413.{c,h}` | YM2413 core behind the VRC7 |
+| `Hes_Emu.{h,cpp}`, `Hes_Cpu.{h,cpp}`, `hes_cpu_io.h` | HES loading, HuC6280 CPU, timer and VDP interrupts (driver timing) |
+| `Hes_Apu.{h,cpp}`, `Hes_Apu_Adpcm.{h,cpp}` | HuC6280 PSG (six wave voices, noise on 5-6) and the ADPCM unit |
 
 ## Build flags (required)
 
-Each player (`ext/rp_gbs`, `ext/rp_nsf`) compiles the framework files plus only its format's
+Each player (`ext/rp_gbs`, `ext/rp_nsf`, `ext/rp_hes`) compiles the framework files plus only its format's
 emulator files into its own dylib (see the Rakefile's `gme_player`):
 
 - `-DBLARGG_LITTLE_ENDIAN=1`, `-DNDEBUG`, `-std=c++11`: as for `ext/snes_spc`.
-- `-DUSE_GME_GBS`, or `-DUSE_GME_NSF -DUSE_GME_NSFE`: which types `gme.cpp` registers.
-- `-include ext/rp_gbs/rp_gbs_hooks.h` (or `rp_nsf_hooks.h`): defines libgme's `GME_APU_HOOK`
+- `-DUSE_GME_GBS`, `-DUSE_GME_NSF -DUSE_GME_NSFE`, or `-DUSE_GME_HES`: which types `gme.cpp`
+  registers.
+- `-include ext/rp_gbs/rp_gbs_hooks.h` (or `rp_nsf_hooks.h`, `rp_hes_hooks.h`): defines libgme's `GME_APU_HOOK`
   and `GME_FRAME_HOOK` instrumentation macros (empty by default in `Classic_Emu.h`) so the
   player sees every sound-chip write and music-driver call, plus the `RP_*` hooks the patch
   below calls.
 - `-fvisibility=hidden -fvisibility-inlines-hidden`: these classes and `gme_*` functions also
-  exist in Homebrew libgme, loaded into the same process; only `rp_gbs_*` and `rp_nsf_*` are
-  exported.
+  exist in Homebrew libgme, loaded into the same process; only `rp_gbs_*`, `rp_nsf_*`, and `rp_hes_*`
+  are exported.
 - `ext/emu2413.c` is C: it is compiled on its own (same optimization and visibility flags) and
   linked into the NSF player.
 
@@ -167,4 +171,4 @@ in `Nsf_Emu::run_clocks` just before `apu.end_frame( duration );`:
 ```
 
 To update: re-download the files from the new tag, keep the empty `gme_types.h`, re-apply this
-patch, and rerun both parity tests.
+patch, and rerun every parity test.

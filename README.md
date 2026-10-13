@@ -50,7 +50,7 @@ To run directly from the checkout:
 mise exec -- bundle exec ruby --yjit bin/rubyplayer [path ...]
 ```
 
-`mise exec -- bundle exec rake compile` builds the native audio shim (`lib/rubyplayer/native/librp_audio.dylib`), the SPC player (`lib/rubyplayer/native/librp_spc.dylib`), and the GBS and NSF players (`lib/rubyplayer/native/librp_gbs.dylib`, `librp_nsf.dylib`; all C++, needing `clang++`). `mise exec -- bundle exec rake test` also builds them as a prerequisite. You can build them manually, but a fresh checkout will build them on first launch.
+`mise exec -- bundle exec rake compile` builds the native audio shim (`lib/rubyplayer/native/librp_audio.dylib`), the SPC player (`lib/rubyplayer/native/librp_spc.dylib`), and the GBS, NSF, and HES players (`lib/rubyplayer/native/librp_gbs.dylib`, `librp_nsf.dylib`, `librp_hes.dylib`; all C++, needing `clang++`). `mise exec -- bundle exec rake test` also builds them as a prerequisite. You can build them manually, but a fresh checkout will build them on first launch.
 
 Startup checks every supported runtime dependency before taking over the terminal. Missing Homebrew packages are reported together with one `brew install ...` command. If a bundled library is missing or cannot be loaded, RubyPlayer builds the affected library once and checks it again. This may delay that launch; normal launches do not run Rake or a compiler. If the build fails, its output and a manual retry command are shown. After changing native C/C++ sources, run `mise exec -- bundle exec rake compile` yourself; startup checks whether binaries load, not whether sources are newer.
 
@@ -331,14 +331,15 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | `ext/snes_spc/` | Vendored SPC700 + S-DSP core, output filter, and resampler from libgme 0.6.5 (LGPL 2.1; see `ext/snes_spc/VENDOR.md` for files, build flags, and the one read-only accessor patch). |
 | `ext/rp_spc/rp_spc.{h,cpp}` | C API over that core: a faithful port of libgme's SPC playback control (resampling, gain, fade, silence handling) so output matches libgme exactly, plus S-DSP snapshots recorded once per emulator call (~50 ms). Compiled to `lib/rubyplayer/native/librp_spc.dylib` by `mise exec -- bundle exec rake compile`. `test/snes_spc_parity_test.rb` requires bit-exact output against libgme on every SPC fixture. |
 
-### Native GBS and NSF players (`ext/gme/`, `ext/rp_gme/`, `ext/rp_gbs/`, `ext/rp_nsf/`)
+### Native GBS, NSF, and HES players (`ext/gme/`, `ext/rp_gme/`, `ext/rp_gbs/`, `ext/rp_nsf/`, `ext/rp_hes/`)
 
 | File | Purpose |
 |---|---|
-| `ext/gme/` | Vendored libgme 0.6.5 GBS and NSF emulators (with every NSF expansion chip and emu2413 for VRC7) and the playback framework, effects buffer, and C API they play through (LGPL 2.1, emu2413 MIT; see `ext/gme/VENDOR.md` for files, build flags, and the accessor and hook patch). Each player compiles the framework plus only its own format. |
-| `ext/rp_gme/rp_recorder.h` | What both players share: an emulator subclass that records snapshots from libgme's hooks and maps them from emulator clocks to output frames across leading-silence skipping, keeping those ahead of output so a seek shows the state heard at its target; and the C API plumbing built on it. |
+| `ext/gme/` | Vendored libgme 0.6.5 GBS, NSF, and HES emulators (with every NSF expansion chip and emu2413 for VRC7) and the playback framework, effects buffer, and C API they play through (LGPL 2.1, emu2413 MIT; see `ext/gme/VENDOR.md` for files, build flags, and the accessor and hook patch). Each player compiles the framework plus only its own format. |
+| `ext/rp_gme/rp_recorder.h` | What the players share: an emulator subclass that records snapshots from libgme's hooks and maps them from emulator clocks to output frames across leading-silence skipping, keeping those ahead of output so a seek shows the state heard at its target; and the C API plumbing built on it. |
 | `ext/rp_gbs/rp_gbs.{h,cpp}`, `rp_gbs_hooks.h` | C API that builds the GBS emulator through libgme's own `gme_new_emu` path (so output is libgme's), plus APU snapshots taken through libgme's `GME_APU_HOOK`/`GME_FRAME_HOOK` macros at each trigger, length or envelope change, and driver call. Compiled with hidden symbols to `lib/rubyplayer/native/librp_gbs.dylib`. `test/gbs_native_parity_test.rb` requires bit-exact output against libgme. |
 | `ext/rp_nsf/rp_nsf.{h,cpp}`, `rp_nsf_hooks.h` | The same for NSF and NSFe: 2A03 and expansion chip snapshots at each trigger, key on, length or envelope change, and driver call. The 2A03 and MMC5 frame counters are simulated on copies between hooks rather than advanced (libgme's triangle keeps phase differently across extra time splits while muted). Compiled to `lib/rubyplayer/native/librp_nsf.dylib`; `test/nsf_native_parity_test.rb` requires bit-exact output against libgme on every NSF fixture. |
+| `ext/rp_hes/rp_hes.{h,cpp}`, `rp_hes_hooks.h` | The same for HES, built through libgme's `gme_new_emu` path. Compiled to `lib/rubyplayer/native/librp_hes.dylib`; `test/hes_native_parity_test.rb` requires bit-exact output against libgme on every HES fixture, including playlists, seeks, fades, and muting. Playback is not routed here yet. |
 
 ### Other directories
 

@@ -19,7 +19,7 @@ Work on git branch `main`
 ```sh
 mise exec -- bundle exec rake test                    # full suite
 mise exec -- bundle exec ruby -Itest test/foo_test.rb # one test file
-mise exec -- bundle exec rake compile                 # native audio shim + SPC, GBS, and NSF players (C++)
+mise exec -- bundle exec rake compile                 # native audio shim + SPC, GBS, NSF, and HES players (C++)
 ```
 
 Ruby comes from mise. Plain `bundle exec` may select wrong Ruby.
