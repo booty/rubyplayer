@@ -50,8 +50,8 @@ class LevelTapTest < Minitest::Test
   end
 
   def test_window_spanning_several_pushes_matches_one_large_push
-    whole = RubyPlayer::LevelTap.new(window: 512)
-    split = RubyPlayer::LevelTap.new(window: 512)
+    whole = RubyPlayer::LevelTap.new(window_frames: 512)
+    split = RubyPlayer::LevelTap.new(window_frames: 512)
     data = sine(440, 48_000, 900)
     whole.push(data, start_frame: 0)
     [0, 300, 600].each do |offset|
@@ -67,7 +67,7 @@ class LevelTapTest < Minitest::Test
 
   # Decode bursts can be large; only the analysed window is ever unpacked.
   def test_push_never_unpacks_and_levels_unpack_only_the_window
-    tap = RubyPlayer::LevelTap.new(window: 512)
+    tap = RubyPlayer::LevelTap.new(window_frames: 512)
     data = sine(440, 48_000, 16_384)
     unpacked_bytes = 0
     # String#unpack is Ruby-defined in Ruby 4, so trace both call kinds.

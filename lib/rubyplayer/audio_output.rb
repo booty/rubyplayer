@@ -54,22 +54,22 @@ module RubyPlayer
 
     # Returns frames accepted, which may be fewer than supplied when the ring is
     # full. A frame is one simultaneous stereo sample: two 4-byte floats.
-    def write(frames_string)
+    def write(pcm_bytes)
       # Dividing a partial frame would round down the allocation while
       # put_bytes still copied every byte, allowing an out-of-bounds native
       # write. Reject malformed input before crossing the FFI boundary.
-      raise ArgumentError, 'PCM data must contain complete stereo float32 frames' unless (frames_string.bytesize % AudioFormat::BYTES_PER_FRAME).zero?
+      raise ArgumentError, 'PCM data must contain complete stereo float32 frames' unless (pcm_bytes.bytesize % AudioFormat::BYTES_PER_FRAME).zero?
 
       @write_mutex.synchronize do
         # Ruby owns lifecycle knowledge, so reject stale producer threads here
         # instead of letting them cross FFI into storage already freed by C.
         raise IOError, 'audio output is closed' if @closed
 
-        frame_count = frames_string.bytesize / AudioFormat::BYTES_PER_FRAME
+        frame_count = pcm_bytes.bytesize / AudioFormat::BYTES_PER_FRAME
         # FFI::MemoryPointer owns C-addressable memory. Reuse the largest one
         # allocated so the hot audio loop does not malloc on every chunk.
-        @ptr = FFI::MemoryPointer.new(:float, frame_count * 2) if @ptr.nil? || @ptr.size < frames_string.bytesize
-        @ptr.put_bytes(0, frames_string)
+        @ptr = FFI::MemoryPointer.new(:float, frame_count * 2) if @ptr.nil? || @ptr.size < pcm_bytes.bytesize
+        @ptr.put_bytes(0, pcm_bytes)
         @native.rp_write(@ptr, frame_count)
       end
     end
