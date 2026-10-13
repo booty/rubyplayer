@@ -353,6 +353,27 @@ class AppNowPlayingTest < Minitest::Test
     assert_nil @app.instance_variable_get(:@vgm_tracker_view).snapshot
   end
 
+  def test_track_change_from_vgm_tracker_rebuilds_the_first_live_page
+    start_live_vgm_track
+    use_screen(rows: 32, cols: 110)
+    @app.handle_key('o')
+    controller = @app.instance_variable_get(:@vgm_telemetry_controller)
+    wait_for_live_vgm_rows(controller)
+    @app.handle_key('o')
+    old_snapshot = controller.snapshot
+    library = @app.instance_variable_get(:@library)
+    gbs = library.all_tracks.find { |track| track.format == 'gbs' }
+    @app.engine.enqueue_end([gbs])
+    @app.engine.skip
+    wait_until { @app.engine.state[:track]&.id == gbs.id }
+    @app.handle_events
+
+    assert_equal :live, @app.instance_variable_get(:@now_playing_page)
+    assert_equal :gbs, @app.instance_variable_get(:@now_playing_modal).live_kind
+    refute controller.accept(old_snapshot)
+    assert_nil @app.instance_variable_get(:@vgm_tracker_view).snapshot
+  end
+
   def test_vgm_telemetry_suspends_when_a_higher_modal_covers_now_playing
     start_live_vgm_track
     use_screen(rows: 32, cols: 110)
