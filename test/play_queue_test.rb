@@ -130,6 +130,19 @@ class PlayQueueTest < Minitest::Test
     assert_equal [a, b], @q.items
   end
 
+  # Each entry is its own object, even when one Track object is enqueued
+  # twice, so UI selections can tell the copies apart.
+  def test_enqueued_entries_are_distinct_objects
+    item = Item.new(1)
+    @q.enqueue_end([item, item])
+    @q.enqueue_front([item])
+    @q.enqueue_now([item])
+    items = @q.items
+
+    assert_equal [item] * 4, items
+    assert_equal 4, items.map(&:object_id).uniq.size
+  end
+
   # A multi-track removal is one undo step.
   def test_remove_indexes_removes_several_as_one_undo_step
     @q.enqueue_end(%w[a b c d])

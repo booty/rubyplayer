@@ -495,18 +495,12 @@ module RubyPlayer
       # panes resolve the selected Track by identity so filtering or snapshot
       # refreshes cannot make the action target a different row.
       def remove_from_queue
-        # Filtering changes display positions. Resolve selected objects against
-        # live queue identity so removing visible rows cannot delete hidden rows.
-        items = @engine.queue_items
-        indexes = active_queue_tracks.filter_map do |selected|
-          items.index { |track| track.equal?(selected) }
-        end
-        if indexes.empty?
-          @status_line.set_message('Select a track in the Playback Queue to remove')
-          return
-        end
-        @engine.remove_indexes(indexes)
-        @status_line.set_message("Removed #{track_count_text(indexes)} from queue (u:undo)")
+        # Filtering changes display positions, so the engine removes the
+        # selected entries by identity, never by display index.
+        removed = @engine.remove_items(active_queue_tracks)
+        return @status_line.set_message('Select a track in the Playback Queue to remove') if removed.zero?
+
+        @status_line.set_message("Removed #{track_count_text(removed)} from queue (u:undo)")
       end
 
       # Only :folder rows are removable -- fixed smart/source rows are computed views, not library
@@ -894,7 +888,7 @@ module RubyPlayer
         tracks.each { |track| @library.add_to_playlist(playlist['id'], track.id) }
         @library_pane.rebuild!
         @tracks_pane.reload!
-        @status_line.set_message("Added #{track_count_text(tracks)} to \"#{playlist['name']}\"")
+        @status_line.set_message("Added #{track_count_text(tracks.size)} to \"#{playlist['name']}\"")
       rescue Library::PlaylistError => e
         @status_line.set_message(e.message)
       end
@@ -904,7 +898,7 @@ module RubyPlayer
         @playlist_modal = nil
         tracks.each { |track| @library.add_to_playlist(id, track.id) }
         @library_pane.rebuild!
-        @status_line.set_message("Created \"#{name}\" and added #{track_count_text(tracks)}")
+        @status_line.set_message("Created \"#{name}\" and added #{track_count_text(tracks.size)}")
       rescue Library::PlaylistNameTaken => e
         # Keep the modal open so the user can adjust the name in place.
         @playlist_modal.error = e.message if @playlist_modal
@@ -1014,10 +1008,10 @@ module RubyPlayer
         @tracks_pane.handle_action(:clear_selection)
         @tracks_pane.reload!
         @library_pane.rebuild!
-        @status_line.set_message("Removed #{removed == 1 ? 'track' : "#{removed} tracks"} from playlist")
+        @status_line.set_message("Removed #{track_count_text(removed)} from playlist")
       end
 
-      def track_count_text(tracks) = tracks.size == 1 ? 'track' : "#{tracks.size} tracks"
+      def track_count_text(count) = count == 1 ? 'track' : "#{count} tracks"
 
       def play_focus(sound)
         # Decoder thread owns both normal-track and Focus writes. This command

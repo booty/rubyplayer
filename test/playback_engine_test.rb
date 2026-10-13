@@ -510,19 +510,30 @@ class PlaybackEngineTest < Minitest::Test
 
   # A range removal that includes the playing head skips it; the rest go in
   # one undoable edit.
-  def test_remove_indexes_skips_the_playing_head_and_removes_the_rest
+  def test_remove_items_skips_the_playing_head_and_removes_the_rest
     t1 = make_track('shantae.gbs', subtune: 9, duration_ms: 60_000)
     t2 = make_track('shantae.gbs', subtune: 10)
     t3 = make_track('shantae.gbs', subtune: 11)
     @engine.enqueue_now([t1, t2, t3])
     wait_for_event(:track_started)
 
-    @engine.remove_indexes([0, 1])
+    assert_equal 2, @engine.remove_items(@engine.queue_items.first(2))
 
     ev = wait_for_event(:track_started)
 
     assert_equal t3.id, ev[1][:track].id
     assert_equal [t3.id], @engine.queue_items.map(&:id)
+  end
+
+  # Entries are matched by identity, so removing both copies of a track
+  # enqueued twice removes both, and stale objects match nothing.
+  def test_remove_items_matches_each_queue_entry_by_identity
+    track = make_track('shantae.gbs', subtune: 9)
+    @engine.enqueue_end([track, track])
+
+    assert_equal 0, @engine.remove_items([track])
+    assert_equal 2, @engine.remove_items(@engine.queue_items)
+    assert_empty @engine.queue_items
   end
 
   def test_decoder_survives_mid_decode_read_failure

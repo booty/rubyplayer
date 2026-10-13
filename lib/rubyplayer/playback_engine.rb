@@ -134,14 +134,21 @@ module RubyPlayer
       end
     end
 
-    # Removes queue items by index in one undoable edit. The playing head
-    # cannot be pulled from under its open handle, so, as in #remove_at, it
-    # leaves through :skip.
-    def remove_indexes(indexes)
+    # Removes the given queue entries (from #queue_items) in one undoable
+    # edit and returns how many matched. Entries are matched by identity
+    # under the lock, so a head advance after the UI read the queue cannot
+    # shift the removal onto other entries. The playing head cannot be
+    # pulled from under its open handle, so, as in #remove_at, it leaves
+    # through :skip.
+    def remove_items(items)
       @mutex.synchronize do
+        positions = {}.compare_by_identity
+        @queue.items.each_with_index { |entry, index| positions[entry] = index }
+        indexes = items.filter_map { |item| positions[item] }.uniq
         skip_head = @playing && indexes.include?(0)
         @queue.remove_indexes(skip_head ? indexes - [0] : indexes)
         @commands << :skip if skip_head
+        indexes.size
       end
     end
 

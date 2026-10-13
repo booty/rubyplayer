@@ -3,6 +3,10 @@
 module RubyPlayer
   # The playback queue. Head of the list = currently playing track (when the
   # engine is playing). Named PlayQueue because ::Queue is Thread::Queue.
+  #
+  # Every entry is its own object, even when one Track is enqueued twice:
+  # UI selections and removals match entries by identity, which could not
+  # tell two copies of the same object apart.
   class PlayQueue
     DEFAULT_UNDO_DEPTH = 10
     private_constant :DEFAULT_UNDO_DEPTH
@@ -25,19 +29,19 @@ module RubyPlayer
     def enqueue_now(tracks, playing: false)
       snapshot!
       @items.shift if playing # the interrupted track does not come back
-      @items = tracks + @items
+      @items = entries(tracks) + @items
       changed!
     end
 
     def enqueue_front(tracks, playing: false)
       snapshot!
-      @items.insert(playing ? 1 : 0, *tracks)
+      @items.insert(playing ? 1 : 0, *entries(tracks))
       changed!
     end
 
     def enqueue_end(tracks)
       snapshot!
-      @items.concat(tracks)
+      @items.concat(entries(tracks))
       changed!
     end
 
@@ -121,5 +125,7 @@ module RubyPlayer
     end
 
     def changed! = @on_change&.call
+
+    def entries(tracks) = tracks.map(&:dup)
   end
 end

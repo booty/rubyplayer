@@ -55,6 +55,34 @@ class AppQueueMultiSelectTest < Minitest::Test
     assert_equal @queued.drop(2).map(&:id), queue_ids
   end
 
+  # Enqueueing the same track twice makes two entries: a range over both
+  # removes both, and one undo brings both back.
+  def test_queue_view_removes_both_copies_of_a_twice_enqueued_track
+    @app.engine.remove_items(@app.engine.queue_items)
+    track = @queued.first
+    2.times { @app.engine.enqueue_end([track]) }
+    @app.refresh_panes
+    select_tracks_for(:queue)
+    @app.handle_key('shift_down')
+    @app.handle_key('x')
+
+    assert_empty queue_ids
+    @app.handle_key('u')
+
+    assert_equal [track.id] * 2, queue_ids
+  end
+
+  # A range begun on the second copy covers only the rows from there.
+  def test_queue_range_from_a_later_copy_starts_there
+    @app.engine.enqueue_end([@queued.first])
+    @app.refresh_panes
+    select_tracks_for(:queue)
+    4.times { @app.handle_key('down') }
+    @app.handle_key('shift_up')
+
+    assert_equal [3, 4], @app.tracks_pane.selected_track_indexes
+  end
+
   private
 
   def library = @app.instance_variable_get(:@library)
