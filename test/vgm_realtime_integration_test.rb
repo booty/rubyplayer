@@ -10,7 +10,7 @@ require 'rubyplayer/playback_engine'
 require 'rubyplayer/vgm/reader'
 require 'rubyplayer/vgm/cursor'
 require 'rubyplayer/vgm/telemetry'
-require 'rubyplayer/ui/vgm_live_view'
+require 'rubyplayer/ui/chip_live_view'
 require 'rubyplayer/ui/vgm_telemetry_controller'
 require_relative 'support/vgm_builder'
 
@@ -166,7 +166,7 @@ class VgmRealtimeIntegrationTest < Minitest::Test
     @controller = RubyPlayer::UI::VgmTelemetryController.new(
       engine: @engine, telemetry: @telemetry, refresh_hz: 15, clock: -> { @now }
     )
-    @widget = RubyPlayer::UI::VgmLiveView.new
+    @widget = RubyPlayer::UI::ChipLiveView.new
     @engine.start
     track = RubyPlayer::Track.new(id: 1, folder_id: 1, physical_path: path,
                                   archive_entry: '', subtune_index: 0, backend: 'gme',

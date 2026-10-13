@@ -8,7 +8,7 @@ require_relative '../duration_formatter'
 require_relative '../audio_output'
 require_relative '../playback_engine'
 require_relative '../vgm/telemetry'
-require_relative 'vgm_live_view'
+require_relative 'chip_live_view'
 require_relative 'spc_live_view'
 require_relative '../gbs/tracker'
 require_relative '../nsf/tracker'
@@ -58,12 +58,12 @@ module RubyPlayer
         @vgm_telemetry = Vgm::Telemetry.new(
           event_bus: @bus, max_bytes: @config['ui', 'vgm_telemetry_max_bytes']
         )
-        @vgm_live_view = VgmLiveView.new
+        @vgm_live_view = ChipLiveView.new
         @spc_live_view = SpcLiveView.new
         # GBS and NSF reuse the VGM page; their rows come from chip snapshots,
         # each kind through its own tracker.
-        @chip_pages = { gbs: ChipPage.new(view: VgmLiveView.new(source: 'GBS'), tracker: Gbs::Tracker.new),
-                        nsf: ChipPage.new(view: VgmLiveView.new(source: 'NSF'), tracker: Nsf::Tracker.new) }
+        @chip_pages = { gbs: ChipPage.new(view: ChipLiveView.new(source: 'GBS'), tracker: Gbs::Tracker.new),
+                        nsf: ChipPage.new(view: ChipLiveView.new(source: 'NSF'), tracker: Nsf::Tracker.new) }
         @vgm_telemetry_controller = VgmTelemetryController.new(
           engine: @engine, telemetry: @vgm_telemetry,
           refresh_hz: [@config['ui', 'vgm_telemetry_fps'], @config['ui', 'frame_fps']].min,
@@ -644,7 +644,7 @@ module RubyPlayer
         @vgm_live_view.update(nil)
         modal = NowPlayingModal.new(track, extras: @library.track_metadata_for(track.id),
                                            page: @now_playing_page,
-                                           vgm_view: @chip_pages[kind]&.view || @vgm_live_view,
+                                           chip_view: @chip_pages[kind]&.view || @vgm_live_view,
                                            live_available: live, live_kind: kind, spc_view: @spc_live_view)
         @now_playing_modal = modal
         if @show_now_playing
@@ -1420,8 +1420,8 @@ module RubyPlayer
         when :spc
           @now_playing_modal.update_spc(state: @engine.spc_live, position_ms: @engine.state[:position_ms])
         when :vgm
-          @now_playing_modal.update_vgm(now_sample: @engine.vgm_telemetry_request&.sample,
-                                        mute_mask: @engine.voice_mute_mask)
+          @now_playing_modal.update_chip(now_sample: @engine.vgm_telemetry_request&.sample,
+                                         mute_mask: @engine.voice_mute_mask)
         when :gbs, :nsf then update_chip_live(@now_playing_modal.live_kind)
         end
         @art_region = @now_playing_modal.render(@screen, theme: @theme, frame: method(:render_modal),
@@ -1440,8 +1440,8 @@ module RubyPlayer
         tracker = page.tracker
         view.update(tracker.snapshot) if tracker.update(live) || view.snapshot.nil?
         view.paused = live.paused
-        @now_playing_modal.update_vgm(now_sample: tracker.now_sample, mute_mask: live.mute_mask,
-                                      position_ms: @engine.state[:position_ms])
+        @now_playing_modal.update_chip(now_sample: tracker.now_sample, mute_mask: live.mute_mask,
+                                       position_ms: @engine.state[:position_ms])
       end
 
       # Fills the art region when there's no image to show. While audio is

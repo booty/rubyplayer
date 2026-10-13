@@ -2,10 +2,10 @@
 
 module RubyPlayer
   module UI
-    # Game Boy APU parts of VgmLiveView (GBS tracks): the chip line,
+    # Game Boy APU parts of ChipLiveView (GBS tracks): the chip line,
     # instrument text, levels, and voice and envelope panels. Unlike FM, the
     # APU's state is read from the emulator, so levels and envelopes are
-    # exact. Relies on VgmLiveView's line/title/fit/format helpers.
+    # exact. Relies on ChipLiveView's line/title/fit/format helpers.
     module GbLivePanels
       GB_KINDS = %i[gb_pulse gb_wave gb_noise].freeze
       # Duty cycles as one 8-step period of the square wave.

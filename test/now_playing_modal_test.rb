@@ -1,7 +1,7 @@
 require 'test_helper'
 require 'stringio'
 require 'rubyplayer/vgm/snapshot'
-require 'rubyplayer/ui/vgm_live_view'
+require 'rubyplayer/ui/chip_live_view'
 
 class NowPlayingModalTest < Minitest::Test
   def track
@@ -91,16 +91,16 @@ class NowPlayingModalTest < Minitest::Test
   end
 
   def test_live_page_fills_the_screen_without_art_and_keeps_track_context
-    view = RubyPlayer::UI::VgmLiveView.new
+    view = RubyPlayer::UI::ChipLiveView.new
     modal = RubyPlayer::UI::NowPlayingModal.new(track, extras: {
                                                   'sound_chips' => 'YM2612 + SN76489',
                                                   'system' => 'Sega Mega Drive'
-                                                }, page: :live, vgm_view: view)
+                                                }, page: :live, chip_view: view)
     view.update(RubyPlayer::Vgm::Snapshot.new(
                   generation: 1, revision: 0, sample: 44_100, status: :ready,
                   message: nil, loop_count: 2, chips: [], warnings: []
                 ))
-    modal.update_vgm(now_sample: 88_200, mute_mask: 0)
+    modal.update_chip(now_sample: 88_200, mute_mask: 0)
 
     text, art = render_modal(modal, rows: 28, cols: 160)
 

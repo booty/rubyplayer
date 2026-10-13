@@ -3,7 +3,7 @@
 module RubyPlayer
   module UI
     # Drawing shared by the full-screen live pages (SpcLiveView,
-    # VgmLiveView): equal-width columns of panels, each a list of lines
+    # ChipLiveView): equal-width columns of panels, each a list of lines
     # clipped to the page's rectangle, and a one-entry cache per panel.
     # Each page keeps its own layout (which panels fit where).
     #

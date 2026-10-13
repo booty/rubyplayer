@@ -6,7 +6,7 @@ module RubyPlayer
     # curve from the last trigger over a fixed span, a marker at the time
     # being heard, and a time axis. The envelope rules themselves (pace,
     # looping, length cut-off) stay in each chip's panel module, which
-    # supplies the curve. Relies on VgmLiveView's line/title/graph helpers.
+    # supplies the curve. Relies on ChipLiveView's line/title/graph helpers.
     module EnvelopeChart
       # Chart spans, in seconds: the shortest that shows the whole envelope
       # (or its length cut-off) is used.

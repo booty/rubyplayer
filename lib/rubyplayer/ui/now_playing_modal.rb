@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative 'vgm_live_view'
+require_relative 'chip_live_view'
 require_relative 'spc_live_view'
 
 module RubyPlayer
@@ -14,17 +14,17 @@ module RubyPlayer
       private_constant :MAX_WIDTH, :ART_MIN_WIDTH, :FRAME_ROWS, :COMPACT_FRAME_ROWS
 
       SPC_LIVE_HINT = '[Tab] Info/Live [↑/↓] Voice [0-7] Mute [S] Solo [o/esc/enter] Close'
-      VGM_LIVE_HINT = '[Tab] Info/Live [↑/↓] Channel [M] Mute [S] Solo [o/esc/enter] Close'
-      private_constant :SPC_LIVE_HINT, :VGM_LIVE_HINT
+      CHIP_LIVE_HINT = '[Tab] Info/Live [↑/↓] Channel [M] Mute [S] Solo [o/esc/enter] Close'
+      private_constant :SPC_LIVE_HINT, :CHIP_LIVE_HINT
 
       # live_kind is :vgm or :spc when a live page exists for this track.
-      def initialize(track, extras:, page: :info, vgm_view: nil, live_available: nil, live_kind: nil,
+      def initialize(track, extras:, page: :info, chip_view: nil, live_available: nil, live_kind: nil,
                      spc_view: nil)
         @track = track
         @metadata = {}
         @extras = extras
         @page = %i[info live].include?(page) ? page : :info
-        @vgm_view = vgm_view || VgmLiveView.new
+        @chip_view = chip_view || ChipLiveView.new
         @spc_view = spc_view || SpcLiveView.new
         @live_kind = live_kind
         @spc_state = nil
@@ -51,7 +51,7 @@ module RubyPlayer
       # The App hands over the sample being heard and the voice mute mask
       # before each render, so VGM levels move between telemetry snapshots.
       # GBS also passes the track position for the header clock.
-      def update_vgm(now_sample:, mute_mask:, position_ms: nil)
+      def update_chip(now_sample:, mute_mask:, position_ms: nil)
         @now_sample = now_sample
         @mute_mask = mute_mask
         @position_ms = position_ms
@@ -61,7 +61,7 @@ module RubyPlayer
         @page = %i[info live].include?(page) ? page : :info
       end
 
-      def handle_live_key(key) = @live_kind == :spc ? @spc_view.handle_key(key) : @vgm_view.handle_key(key)
+      def handle_live_key(key) = @live_kind == :spc ? @spc_view.handle_key(key) : @chip_view.handle_key(key)
 
       def matches?(track)
         track && [track.id, track.physical_path, track.archive_entry, track.subtune_index] ==
@@ -110,10 +110,10 @@ module RubyPlayer
 
       # Every channel and panel at once.
       def render_live(screen, theme:, frame:)
-        with_live_frame(screen, frame: frame, hint: VGM_LIVE_HINT) do |left, top, content_width, content_height|
-          @vgm_view.render(screen, x: left, y: top, width: content_width, height: content_height, theme: theme,
-                                   track_title: live_title, now_sample: @now_sample, mute_mask: @mute_mask,
-                                   position_ms: @position_ms)
+        with_live_frame(screen, frame: frame, hint: CHIP_LIVE_HINT) do |left, top, content_width, content_height|
+          @chip_view.render(screen, x: left, y: top, width: content_width, height: content_height, theme: theme,
+                                    track_title: live_title, now_sample: @now_sample, mute_mask: @mute_mask,
+                                    position_ms: @position_ms)
         end
       end
 

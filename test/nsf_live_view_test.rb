@@ -7,7 +7,7 @@ require 'rubyplayer/backends/nsf_native'
 require 'rubyplayer/chip_timeline'
 require 'rubyplayer/nsf/tracker'
 require 'rubyplayer/ui/screen'
-require 'rubyplayer/ui/vgm_live_view'
+require 'rubyplayer/ui/chip_live_view'
 require_relative 'support/rip_fixtures'
 require_relative 'support/nsf_builder'
 
@@ -139,7 +139,7 @@ class NsfLiveViewTest < Minitest::Test
       nsf.setbyte(0x7b, 0xff)
       path = File.join(dir, 'every-chip.nsf')
       File.binwrite(path, nsf)
-      view = RubyPlayer::UI::VgmLiveView.new(source: 'NSF')
+      view = RubyPlayer::UI::ChipLiveView.new(source: 'NSF')
       view.update(self.class.tracker(path).snapshot)
       chips = view.snapshot.chips.map { |chip| chip.id.split(':').first }
 
@@ -157,7 +157,7 @@ class NsfLiveViewTest < Minitest::Test
   private
 
   def view_for(name)
-    view = RubyPlayer::UI::VgmLiveView.new(source: 'NSF')
+    view = RubyPlayer::UI::ChipLiveView.new(source: 'NSF')
     view.update(self.class.tracker(name).snapshot)
     view
   end

@@ -6,7 +6,7 @@ require 'rubyplayer/backends/gbs_native'
 require 'rubyplayer/chip_timeline'
 require 'rubyplayer/gbs/tracker'
 require 'rubyplayer/ui/screen'
-require 'rubyplayer/ui/vgm_live_view'
+require 'rubyplayer/ui/chip_live_view'
 
 # The VGM live page drawing Game Boy APU state from a real GBS track.
 class GbsLiveViewTest < Minitest::Test
@@ -37,7 +37,7 @@ class GbsLiveViewTest < Minitest::Test
   end
 
   def setup
-    @view = RubyPlayer::UI::VgmLiveView.new(source: 'GBS')
+    @view = RubyPlayer::UI::ChipLiveView.new(source: 'GBS')
     @view.update(self.class.tracker.snapshot)
   end
 
@@ -118,7 +118,7 @@ class GbsLiveViewTest < Minitest::Test
   end
 
   def test_waiting_message_names_the_source
-    view = RubyPlayer::UI::VgmLiveView.new(source: 'GBS')
+    view = RubyPlayer::UI::ChipLiveView.new(source: 'GBS')
     screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 10, cols: 80)
     view.render(screen, x: 0, y: 0, width: 80, height: 10, theme: THEME)
 

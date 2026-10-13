@@ -2,11 +2,11 @@
 
 module RubyPlayer
   module UI
-    # NES and Famicom parts of VgmLiveView (NSF tracks): chip lines,
+    # NES and Famicom parts of ChipLiveView (NSF tracks): chip lines,
     # instrument text, levels, and voice and detail panels for the 2A03 and
     # the VRC6, Namco 163, Sunsoft 5B, FDS, and MMC5 expansion chips. Their
     # state is read from the emulator, so levels are exact. (VRC7 channels
-    # are OPLL channels and use the FM panels.) Relies on VgmLiveView's
+    # are OPLL channels and use the FM panels.) Relies on ChipLiveView's
     # line/title/fit/format helpers.
     module NesLivePanels
       NES_KINDS = %i[nes_pulse nes_triangle nes_noise nes_dmc nes_pcm vrc6_pulse vrc6_saw n163_wave s5b_square

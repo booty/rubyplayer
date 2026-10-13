@@ -3,7 +3,7 @@
 require 'test_helper'
 require 'stringio'
 require 'rubyplayer/ui/screen'
-require 'rubyplayer/ui/vgm_live_view'
+require 'rubyplayer/ui/chip_live_view'
 require 'rubyplayer/vgm/reader'
 require 'rubyplayer/vgm/cursor'
 require 'rubyplayer/vgm/chips/ym2612'
@@ -31,7 +31,7 @@ class VgmLiveViewTest < Minitest::Test
   end
 
   def setup
-    @view = RubyPlayer::UI::VgmLiveView.new
+    @view = RubyPlayer::UI::ChipLiveView.new
   end
 
   def test_every_size_shows_every_channel

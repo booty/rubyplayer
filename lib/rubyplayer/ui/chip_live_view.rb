@@ -23,7 +23,7 @@ module RubyPlayer
     # Gbs::Tracker and Nsf::Tracker. Levels
     # and history are drawn against `now_sample`, the sample being heard, so
     # they move smoothly between snapshots.
-    class VgmLiveView
+    class ChipLiveView
       include LiveGlyphs
       include LivePanelRenderer
       include EnvelopeChart
