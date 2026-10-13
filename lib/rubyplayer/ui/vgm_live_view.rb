@@ -192,8 +192,15 @@ module RubyPlayer
         @height = height
         @theme = theme
         @mute_mask = mute_mask || 0
-        @now = [now_sample || 0, @snapshot&.sample || 0].max
-        @clock = position_ms ? position_ms * Vgm::SAMPLE_RATE / 1000 : @now
+        # Two timelines: history and envelope markers follow the sample being
+        # heard (for GBS and NSF, output frames since launch); the header
+        # shows the track position.
+        @playback_sample = [now_sample || 0, @snapshot&.sample || 0].max
+        @display_position_sample = if position_ms
+                                     position_ms * Vgm::SAMPLE_RATE / 1000
+                                   else
+                                     @playback_sample
+                                   end
         put(0, header(sanitize(track_title)), fg: theme[:accent], bold: true)
         return put(1, status_message(:loading), fg: theme[:text_muted]) unless @snapshot
         return render_empty if @rows.empty?
@@ -306,7 +313,7 @@ module RubyPlayer
 
       def header(track_title)
         chips = Array(@snapshot&.chips).map(&:name).uniq.join(' + ')
-        parts = [track_title, "#{@source} LIVE", chips, format_sample_time(@clock)]
+        parts = [track_title, "#{@source} LIVE", chips, format_sample_time(@display_position_sample)]
         parts << "Loop #{@snapshot.loop_count}" if @snapshot&.loop_count.to_i.positive?
         parts << (@paused ? 'PAUSED' : 'PLAYING')
         parts << @snapshot.message if @snapshot&.message
@@ -528,7 +535,7 @@ module RubyPlayer
 
       def recent?(channel)
         trigger = channel.last_trigger_sample
-        trigger && @now >= trigger && @now - trigger <= RECENT_TRIGGER_SAMPLES
+        trigger && @playback_sample >= trigger && @playback_sample - trigger <= RECENT_TRIGGER_SAMPLES
       end
 
       # -- levels -----------------------------------------------------------------
@@ -569,11 +576,11 @@ module RubyPlayer
       end
 
       def timing(on, off, keyed)
-        return [nil, nil] unless on && @now >= on
+        return [nil, nil] unless on && @playback_sample >= on
 
-        return [(@now - on).fdiv(Vgm::SAMPLE_RATE), nil] if keyed || off.nil? || off < on
+        return [(@playback_sample - on).fdiv(Vgm::SAMPLE_RATE), nil] if keyed || off.nil? || off < on
 
-        [(off - on).fdiv(Vgm::SAMPLE_RATE), [@now - off, 0].max.fdiv(Vgm::SAMPLE_RATE)]
+        [(off - on).fdiv(Vgm::SAMPLE_RATE), [@playback_sample - off, 0].max.fdiv(Vgm::SAMPLE_RATE)]
       end
 
       def fm_attenuation(row)
@@ -1000,7 +1007,7 @@ module RubyPlayer
         seconds = (lane_width * HISTORY_COLUMN_SAMPLES).fdiv(Vgm::SAMPLE_RATE)
         lanes = [rows - 1, @rows.size].min
         first = (@selected_index - (lanes / 2)).clamp(0, [@rows.size - lanes, 0].max)
-        bucket = @now / HISTORY_COLUMN_SAMPLES
+        bucket = @playback_sample / HISTORY_COLUMN_SAMPLES
         # Channel states feed open DAC bursts, so they are part of the key.
         states = @rows[first, lanes].map { |row| row.channel.state }
         body = cached([:history, bucket, @history_version, states, lane_width, first, lanes, @mute_mask]) do

@@ -95,7 +95,7 @@ module RubyPlayer
         values = Array.new(columns) { |column| envelope_volume(details, span * column / columns) }
         lines = [title('Volume envelope'), line(envelope_summary(details), color: :text_muted),
                  *graph(values, 15, graph_rows)]
-        elapsed = row.channel.last_trigger_sample && (@now - row.channel.last_trigger_sample).fdiv(Vgm::SAMPLE_RATE)
+        elapsed = row.channel.last_trigger_sample && (@playback_sample - row.channel.last_trigger_sample).fdiv(Vgm::SAMPLE_RATE)
         marker = elapsed && elapsed < span ? "#{' ' * (elapsed / span * columns).floor}▲ now" : ''
         lines << line(marker[0, width], color: :accent)
         label = format_span(span)

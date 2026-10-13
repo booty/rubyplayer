@@ -237,7 +237,7 @@ module RubyPlayer
       def nes_envelope_panel(row, width, rows)
         details = row.channel.details
         rate = nes_quarter_frame_hz(row)
-        elapsed = row.channel.last_trigger_sample && (@now - row.channel.last_trigger_sample).fdiv(Vgm::SAMPLE_RATE)
+        elapsed = row.channel.last_trigger_sample && (@playback_sample - row.channel.last_trigger_sample).fdiv(Vgm::SAMPLE_RATE)
         cut = details[:loop] || details[:length].to_i.zero? ? nil : (elapsed || 0) + (details[:length] * 2 / rate)
         span = nes_envelope_span(details, rate, cut)
         columns = [width, 8].max
