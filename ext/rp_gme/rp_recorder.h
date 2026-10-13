@@ -196,15 +196,15 @@ struct Player {
 // emulator, so gme_new_emu builds it exactly as libgme builds the stock one
 // (Effects_Buffer, sample rate, and all).
 template <class Handle>
-Handle* open(gme_type_t type, const void* data, long size, int out_rate)
+Handle* open(gme_type_t type, const void* data, long data_size_bytes, int output_rate_hz)
 {
-	if (!data || size <= 0)
+	if (!data || data_size_bytes <= 0)
 		return NULL;
 
-	Music_Emu* music = gme_new_emu(type, out_rate);
+	Music_Emu* music = gme_new_emu(type, output_rate_hz);
 	if (!music)
 		return NULL;
-	if (gme_load_data(music, data, size)) {
+	if (gme_load_data(music, data, data_size_bytes)) {
 		gme_delete(music);
 		return NULL;
 	}
@@ -214,11 +214,11 @@ Handle* open(gme_type_t type, const void* data, long size, int out_rate)
 }
 
 template <class Emu>
-int load_m3u(Player<Emu>* player, const void* data, long size)
+int load_m3u(Player<Emu>* player, const void* data, long data_size_bytes)
 {
-	if (!player || !data || size <= 0)
+	if (!player || !data || data_size_bytes <= 0)
 		return 0;
-	return gme_load_m3u_data(player->emu, data, size) == NULL;
+	return gme_load_m3u_data(player->emu, data, data_size_bytes) == NULL;
 }
 
 template <class Handle>

@@ -388,9 +388,9 @@ void skip(rp_spc* s, long count)
 
 extern "C" {
 
-rp_spc* rp_spc_open(const void* data, long size, int out_rate)
+rp_spc* rp_spc_open(const void* data, long data_size_bytes, int output_rate_hz)
 {
-	if (!data || size < Snes_Spc::spc_min_file_size || out_rate <= 0)
+	if (!data || data_size_bytes < Snes_Spc::spc_min_file_size || output_rate_hz <= 0)
 		return NULL;
 	if (memcmp(data, "SNES-SPC700 Sound File Data", 27))
 		return NULL;
@@ -398,10 +398,10 @@ rp_spc* rp_spc_open(const void* data, long size, int out_rate)
 	rp_spc* s = new (std::nothrow) rp_spc;
 	if (!s)
 		return NULL;
-	s->file.assign((unsigned char const*) data, (unsigned char const*) data + size);
+	s->file.assign((unsigned char const*) data, (unsigned char const*) data + data_size_bytes);
 	s->buf.assign(buf_size, 0);
-	s->sample_rate = out_rate;
-	s->resample = out_rate != native_rate;
+	s->sample_rate = output_rate_hz;
+	s->resample = output_rate_hz != native_rate;
 	s->ignore_silence = false;
 	s->silence_detection_paused = false;
 	s->mute_mask = 0;
@@ -427,7 +427,7 @@ rp_spc* rp_spc_open(const void* data, long size, int out_rate)
 			delete s;
 			return NULL;
 		}
-		s->resampler.time_ratio((double) native_rate / out_rate, resampler_rolloff);
+		s->resampler.time_ratio((double) native_rate / output_rate_hz, resampler_rolloff);
 	}
 	if (start_track(s)) {
 		delete s;

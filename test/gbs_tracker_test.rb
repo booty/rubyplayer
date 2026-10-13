@@ -117,6 +117,6 @@ class GbsTrackerTest < Minitest::Test
       regs[4] = (regs[4] & ~7) | (square1 >> 8)
     end
     Snapshot.new(frame: frame, regs: regs, volume: volume, playing: playing, enabled: playing, triggers: triggers,
-                 length: [0, 0, 0, 0], sweep_freq: square1.to_i, play_period: 70_224, clock_rate: 4_194_304)
+                 length: [0, 0, 0, 0], sweep_freq: square1.to_i, driver_period_cycles: 70_224, cpu_clock_hz: 4_194_304)
   end
 end

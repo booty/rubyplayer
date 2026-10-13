@@ -57,7 +57,7 @@ module RubyPlayer
                           enabled: state.apu_status[1] == 1, sweep: true),
                     triangle(state, regs.byteslice(8, 4)), noise(state, regs.byteslice(12, 4)),
                     dmc(state, regs.byteslice(16, 4))]
-        Chip.new(key: '2a03', name: state.pal? ? 'Ricoh 2A07' : 'Ricoh 2A03', clock_hz: state.clock_rate,
+        Chip.new(key: '2a03', name: state.pal? ? 'Ricoh 2A07' : 'Ricoh 2A03', clock_hz: state.cpu_clock_hz,
                  channels: channels,
                  details: { pal: state.pal?, driver_hz: state.driver_hz,
                             five_step: state.apu_frame_mode.anybits?(0x80) })
@@ -71,25 +71,25 @@ module RubyPlayer
         end
         channels << Channel.new(label: 'MMC5 PCM', kind: :nes_pcm, voice: base + 2, pitch_hz: nil,
                                 details: { level: state.mmc5_pcm })
-        Chip.new(key: 'mmc5', name: 'Nintendo MMC5', clock_hz: state.clock_rate, channels: channels, details: {})
+        Chip.new(key: 'mmc5', name: 'Nintendo MMC5', clock_hz: state.cpu_clock_hz, channels: channels, details: {})
       end
 
       def vrc6(state, base)
         regs = state.vrc6_regs.bytes
-        clock = state.clock_rate
+        cpu_clock_hz = state.cpu_clock_hz
         pulses = Array.new(2) do |index|
           control, low, high = regs[index * 3, 3]
           period = ((high & 0x0f) << 8) | low
           Channel.new(label: "VRC6 Pulse #{index + 1}", kind: :vrc6_pulse, voice: base + 1 + index,
-                      pitch_hz: clock / (16.0 * (period + 1)),
+                      pitch_hz: cpu_clock_hz / (16.0 * (period + 1)),
                       details: { duty_sixteenths: ((control >> 4) & 7) + 1, volume: control & 0x0f,
                                  digitized: control.anybits?(0x80), enabled: high.anybits?(0x80), period: period })
         end
         rate, low, high = regs[6, 3]
         period = ((high & 0x0f) << 8) | low
-        saw = Channel.new(label: 'VRC6 Saw', kind: :vrc6_saw, voice: base, pitch_hz: clock / (14.0 * (period + 1)),
+        saw = Channel.new(label: 'VRC6 Saw', kind: :vrc6_saw, voice: base, pitch_hz: cpu_clock_hz / (14.0 * (period + 1)),
                           details: { rate: rate & 0x3f, enabled: high.anybits?(0x80), period: period })
-        Chip.new(key: 'vrc6', name: 'Konami VRC6', clock_hz: clock, channels: [*pulses, saw], details: {})
+        Chip.new(key: 'vrc6', name: 'Konami VRC6', clock_hz: cpu_clock_hz, channels: [*pulses, saw], details: {})
       end
 
       # Namco 163 sound RAM: waves (4-bit samples, two per byte) share it with
@@ -102,7 +102,7 @@ module RubyPlayer
           osc = N163_CHANNELS - 1 - number
           n163_channel(state, ram, osc, base + osc, number, active)
         end
-        Chip.new(key: 'n163', name: 'Namco 163', clock_hz: state.clock_rate, channels: channels,
+        Chip.new(key: 'n163', name: 'Namco 163', clock_hz: state.cpu_clock_hz, channels: channels,
                  details: { active: active })
       end
 
@@ -113,7 +113,7 @@ module RubyPlayer
         wave_length_samples = 32 - (((reg[4] >> 2) & 7) * 4)
         enabled = number < active_channel_count
         if enabled && wave_length_samples.positive? && phase_increment.positive?
-          hz = state.clock_rate * phase_increment /
+          hz = state.cpu_clock_hz * phase_increment /
                (N163_CLOCKS_PER_UPDATE * N163_PHASE_PER_SAMPLE * active_channel_count * wave_length_samples)
         end
         Channel.new(label: "N163 Wave #{number + 1}", kind: :n163_wave, voice: voice, pitch_hz: hz,
@@ -135,7 +135,7 @@ module RubyPlayer
       def s5b(state, base)
         regs = state.s5b_regs.bytes
         channels = Array.new(3) { |index| s5b_channel(state, regs, index, base + index) }
-        Chip.new(key: 's5b', name: 'Sunsoft 5B', clock_hz: state.clock_rate, channels: channels,
+        Chip.new(key: 's5b', name: 'Sunsoft 5B', clock_hz: state.cpu_clock_hz, channels: channels,
                  details: { noise_period: regs[6] & 0x1f, envelope_period: (regs[12] << 8) | regs[11],
                             envelope_shape: regs[13] & 0x0f })
       end
@@ -144,7 +144,7 @@ module RubyPlayer
         period = ((regs[(index * 2) + 1] & 0x0f) << 8) | regs[index * 2]
         volume = regs[8 + index]
         Channel.new(label: "5B Square #{'ABC'[index]}", kind: :s5b_square, voice: voice,
-                    pitch_hz: state.clock_rate / (32.0 * [period, 1].max),
+                    pitch_hz: state.cpu_clock_hz / (32.0 * [period, 1].max),
                     details: { period: period, volume: volume & 0x0f, envelope: volume.anybits?(0x10),
                                tone: regs[7][index].zero?, noise: regs[7][index + 3].zero? })
       end
@@ -154,12 +154,12 @@ module RubyPlayer
       def fds(state, base)
         regs = state.fds_regs.bytes
         wave_phase_increment = ((regs[3] & 0x0f) << 8) | regs[2]
-        pitch_hz = state.clock_rate * wave_phase_increment / FDS_PHASE_PER_CYCLE if wave_phase_increment.positive?
+        pitch_hz = state.cpu_clock_hz * wave_phase_increment / FDS_PHASE_PER_CYCLE if wave_phase_increment.positive?
         channel = Channel.new(label: 'FDS Wave', kind: :fds_wave, voice: base, pitch_hz: pitch_hz,
                               details: { freq: wave_phase_increment, gain: state.fds_env_gain, envelope: fds_envelope(regs[0]),
                                          master_volume: FDS_MASTER_VOLUME[regs[9] & 3], halted: regs[3].anybits?(0x80),
                                          samples: state.fds_wave.bytes, **fds_modulator(state, regs) })
-        Chip.new(key: 'fds', name: 'Famicom Disk System', clock_hz: state.clock_rate, channels: [channel],
+        Chip.new(key: 'fds', name: 'Famicom Disk System', clock_hz: state.cpu_clock_hz, channels: [channel],
                  details: {})
       end
 
@@ -169,7 +169,7 @@ module RubyPlayer
         modulation_phase_increment = ((regs[7] & 0x0f) << 8) | regs[6]
         { mod_table: state.fds_mod.bytes, mod_depth: state.fds_sweep_gain, mod_freq: modulation_phase_increment,
           mod_enabled: regs[7].nobits?(0x80) && modulation_phase_increment.positive?,
-          mod_hz: state.clock_rate * modulation_phase_increment / FDS_PHASE_PER_CYCLE }
+          mod_hz: state.cpu_clock_hz * modulation_phase_increment / FDS_PHASE_PER_CYCLE }
       end
 
       # $4080: an envelope ramping down or up (bit 6) at speed bits 0-5, or
@@ -191,7 +191,7 @@ module RubyPlayer
         end
         # Periods under 8 are silenced, not ultrasonic.
         Channel.new(label: label, kind: :nes_pulse, voice: voice,
-                    pitch_hz: period >= 8 ? state.clock_rate / (16.0 * (period + 1)) : nil, details: details)
+                    pitch_hz: period >= 8 ? state.cpu_clock_hz / (16.0 * (period + 1)) : nil, details: details)
       end
 
       def triangle(state, regs)
@@ -199,7 +199,7 @@ module RubyPlayer
         period = ((high & 7) << 8) | low
         # libgme stops the triangle below period 2 instead of playing it ultrasonic.
         Channel.new(label: 'Triangle', kind: :nes_triangle, voice: 2,
-                    pitch_hz: period >= 2 ? state.clock_rate / (32.0 * (period + 1)) : nil,
+                    pitch_hz: period >= 2 ? state.cpu_clock_hz / (32.0 * (period + 1)) : nil,
                     details: { period: period, linear: state.tri_linear, linear_load: control & 0x7f,
                                held: control.anybits?(0x80), length_counter_ticks: state.apu_length[2],
                                enabled: state.apu_status[2] == 1 })
@@ -210,8 +210,8 @@ module RubyPlayer
         steps = NOISE_PERIODS[mode & 0x0f]
         short = mode.anybits?(0x80)
         Channel.new(label: 'Noise', kind: :nes_noise, voice: 3,
-                    pitch_hz: short ? state.clock_rate / (steps * SHORT_NOISE_STEPS.to_f) : nil,
-                    details: { short: short, period_index: mode & 0x0f, lfsr_hz: state.clock_rate.fdiv(steps),
+                    pitch_hz: short ? state.cpu_clock_hz / (steps * SHORT_NOISE_STEPS.to_f) : nil,
+                    details: { short: short, period_index: mode & 0x0f, lfsr_hz: state.cpu_clock_hz.fdiv(steps),
                                volume: state.apu_volume[2], length_counter_ticks: state.apu_length[3],
                                enabled: state.apu_status[3] == 1, **envelope(control) })
       end
@@ -219,7 +219,7 @@ module RubyPlayer
       def dmc(state, regs)
         control, _load, address, length = regs.bytes
         period = DMC_PERIODS.fetch(state.pal? ? :pal : :ntsc)[control & 0x0f]
-        bit_rate = state.clock_rate.fdiv(period)
+        bit_rate = state.cpu_clock_hz.fdiv(period)
         bytes = (length * 16) + 1
         loop = control.anybits?(0x40)
         # A looping sample repeats every `bytes` × 8 bits: that is its pitch

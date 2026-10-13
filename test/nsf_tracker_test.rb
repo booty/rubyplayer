@@ -159,7 +159,7 @@ class NsfTrackerTest < Minitest::Test
   end
 
   def state(**fields)
-    @zero ||= Snapshot.unpack(("\0" * Snapshot::SIZE).b, 0).with(play_period: 29_830, clock_rate: 1_789_773,
+    @zero ||= Snapshot.unpack(("\0" * Snapshot::SIZE).b, 0).with(driver_period_cycles: 29_830, cpu_clock_hz: 1_789_773,
                                                                  voice_count: 5)
     @zero.with(**fields)
   end

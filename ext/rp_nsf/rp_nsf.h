@@ -40,8 +40,8 @@ typedef struct {
 	uint32_t playing;        /* bit v: voice v is producing sound */
 	uint32_t triggers;       /* bit v: voice v (re)started since the previous
 	                            snapshot (length reload, key on, DMC start) */
-	uint32_t play_period;    /* CPU clocks between music-driver calls */
-	uint32_t clock_rate;     /* CPU clocks per second (NTSC or PAL) */
+	uint32_t driver_period_cycles; /* CPU clocks between music-driver calls */
+	uint32_t cpu_clock_hz;         /* CPU clocks per second (NTSC or PAL) */
 	uint8_t  chips;          /* RP_NSF_* flags */
 	uint8_t  pal;            /* 1: PAL timing */
 	uint8_t  voice_count;
@@ -85,12 +85,12 @@ typedef struct {
 } rp_nsf_snapshot;
 
 /* NULL when the data is not a loadable NSF or NSFe file. */
-RP_NSF_API rp_nsf* rp_nsf_open(const void* data, long size, int out_rate);
+RP_NSF_API rp_nsf* rp_nsf_open(const void* data, long data_size_bytes, int output_rate_hz);
 RP_NSF_API void rp_nsf_close(rp_nsf*);
 
 /* Same as gme_load_m3u_data: a sibling playlist that remaps track numbers
  * (and names their lengths). Call before rp_nsf_start_track. 1 on success. */
-RP_NSF_API int  rp_nsf_load_m3u(rp_nsf*, const void* data, long size);
+RP_NSF_API int  rp_nsf_load_m3u(rp_nsf*, const void* data, long data_size_bytes);
 
 /* 1 on success. Discards recorded snapshots. */
 RP_NSF_API int  rp_nsf_start_track(rp_nsf*, int track);

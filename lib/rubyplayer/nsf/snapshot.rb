@@ -36,7 +36,7 @@ module RubyPlayer
     # timeline makes it absolute. Bit fields are by libgme voice (Voices).
     # Register blocks stay binary Strings (read with #getbyte): most of a
     # record is chips the NSF lacks, and the tracker reads few of them.
-    Snapshot = Data.define(:frame, :playing, :triggers, :play_period, :clock_rate, :chips, :pal, :voice_count,
+    Snapshot = Data.define(:frame, :playing, :triggers, :driver_period_cycles, :cpu_clock_hz, :chips, :pal, :voice_count,
                            :apu_regs, :apu_status, :apu_frame_mode, :apu_volume, :tri_linear, :dmc_dac,
                            :apu_length, :dmc_address, :mmc5_regs, :mmc5_status, :mmc5_volume, :mmc5_pcm,
                            :mmc5_length, :vrc6_regs, :s5b_regs, :vrc7_custom, :vrc7_regs, :fds_regs, :fds_env_gain,
@@ -55,7 +55,7 @@ module RubyPlayer
 
       # Music-driver calls per second (NTSC ~60.1 Hz, PAL 50 Hz; NSFs may
       # set their own rate).
-      def driver_hz = play_period.positive? ? clock_rate.fdiv(play_period) : nil
+      def driver_hz = driver_period_cycles.positive? ? cpu_clock_hz.fdiv(driver_period_cycles) : nil
 
       def chip?(chip) = chips.anybits?(CHIPS.fetch(chip))
       def pal? = pal == 1
@@ -63,13 +63,13 @@ module RubyPlayer
 
     class Snapshot
       SIZE = 380
-      # int32 frame; uint32 playing, triggers, play_period, clock_rate; uint8
-      # chips, pal, voice_count, pad; 2A03: regs[20], status, frame mode,
-      # volume[3], linear counter, DMC DAC, pad, uint16 length[5], DMC
-      # address; MMC5: regs[8], status, volume[2], PCM, uint16 length[2];
-      # VRC6 regs[9]; 5B regs[14]; VRC7 custom[8], regs[18]; FDS regs[19],
-      # envelope gain, sweep gain, pad, wave[64], mod[32]; N163 RAM[128],
-      # active channels, pad[3].
+      # int32 frame; uint32 playing, triggers, driver_period_cycles,
+      # cpu_clock_hz; uint8 chips, pal, voice_count, pad; 2A03: regs[20],
+      # status, frame mode, volume[3], linear counter, DMC DAC, pad, uint16
+      # length[5], DMC address; MMC5: regs[8], status, volume[2], PCM, uint16
+      # length[2]; VRC6 regs[9]; 5B regs[14]; VRC7 custom[8], regs[18]; FDS
+      # regs[19], envelope gain, sweep gain, pad, wave[64], mod[32]; N163
+      # RAM[128], active channels, pad[3].
       FORMAT = 'l<L<4CCCxa20CCC3CCxS<5S<a8CC2CS<2a9a14a8a18a19CCxa64a32a128Cx3'
       # How many unpacked values each field takes, in FORMAT order; arrays
       # where more than one.

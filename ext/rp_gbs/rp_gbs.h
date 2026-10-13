@@ -37,17 +37,17 @@ typedef struct {
 	uint16_t length[4];    /* length counter, in 1/256 s ticks */
 	uint16_t sweep_freq;   /* square 1 sweep shadow frequency */
 	uint16_t pad1;
-	uint32_t play_period;  /* CPU clocks between music-driver calls */
-	uint32_t clock_rate;   /* CPU clocks per second */
+	uint32_t driver_period_cycles; /* CPU clocks between music-driver calls */
+	uint32_t cpu_clock_hz;         /* CPU clocks per second */
 } rp_gbs_snapshot;
 
 /* Returns NULL when the data is not a loadable GBS file. */
-RP_GBS_API rp_gbs* rp_gbs_open(const void* data, long size, int out_rate);
+RP_GBS_API rp_gbs* rp_gbs_open(const void* data, long data_size_bytes, int output_rate_hz);
 RP_GBS_API void rp_gbs_close(rp_gbs*);
 
 /* Same as gme_load_m3u_data: a sibling playlist that remaps track numbers
  * (and names their lengths). Call before rp_gbs_start_track. 1 on success. */
-RP_GBS_API int  rp_gbs_load_m3u(rp_gbs*, const void* data, long size);
+RP_GBS_API int  rp_gbs_load_m3u(rp_gbs*, const void* data, long data_size_bytes);
 
 /* 1 on success. Discards recorded snapshots. */
 RP_GBS_API int  rp_gbs_start_track(rp_gbs*, int track);

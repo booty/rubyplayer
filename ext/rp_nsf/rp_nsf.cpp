@@ -345,8 +345,8 @@ public:
 		snap.chips = (uint8_t) chips();
 		snap.pal = this->rp_pal();
 		snap.voice_count = (uint8_t) voices.count;
-		snap.play_period = (uint32_t) (this->rp_play_period() / CLOCK_DIVISOR);
-		snap.clock_rate = (uint32_t) (this->rp_clock_rate() + 0.5);
+		snap.driver_period_cycles = (uint32_t) (this->rp_play_period() / CLOCK_DIVISOR);
+		snap.cpu_clock_hz = (uint32_t) (this->rp_clock_rate() + 0.5);
 		fill_apu(snap);
 		snap.playing = apu_playing(this->rp_apu()) | expansion_playing(voices);
 		if (Nes_Mmc5_Apu const* mmc5 = this->rp_mmc5()) {
@@ -753,12 +753,12 @@ struct Nsf_Handle : rp_nsf, rp::Player<Emu> {
 };
 
 template <class Emu>
-rp_nsf* open_as(gme_type_t type, const void* data, long size, int out_rate)
+rp_nsf* open_as(gme_type_t type, const void* data, long data_size_bytes, int output_rate_hz)
 {
-	Music_Emu* music = gme_new_emu(type, out_rate);
+	Music_Emu* music = gme_new_emu(type, output_rate_hz);
 	if (!music)
 		return NULL;
-	if (gme_load_data(music, data, size)) {
+	if (gme_load_data(music, data, data_size_bytes)) {
 		gme_delete(music);
 		return NULL;
 	}
@@ -771,22 +771,22 @@ rp_nsf* open_as(gme_type_t type, const void* data, long size, int out_rate)
 
 extern "C" {
 
-rp_nsf* rp_nsf_open(const void* data, long size, int out_rate)
+rp_nsf* rp_nsf_open(const void* data, long data_size_bytes, int output_rate_hz)
 {
-	if (!data || size < 4)
+	if (!data || data_size_bytes < 4)
 		return NULL;
 	if (!memcmp(data, "NSFE", 4))
-		return open_as<Rp_Nsfe_Emu>(&RP_NSFE_TYPE, data, size, out_rate);
-	return open_as<Rp_Nsf_Emu>(&RP_NSF_TYPE, data, size, out_rate);
+		return open_as<Rp_Nsfe_Emu>(&RP_NSFE_TYPE, data, data_size_bytes, output_rate_hz);
+	return open_as<Rp_Nsf_Emu>(&RP_NSF_TYPE, data, data_size_bytes, output_rate_hz);
 }
 
 void rp_nsf_close(rp_nsf* handle) { delete handle; }
 
-int rp_nsf_load_m3u(rp_nsf* handle, const void* data, long size)
+int rp_nsf_load_m3u(rp_nsf* handle, const void* data, long data_size_bytes)
 {
-	if (!handle || !data || size <= 0)
+	if (!handle || !data || data_size_bytes <= 0)
 		return 0;
-	return gme_load_m3u_data(handle->music(), data, size) == NULL;
+	return gme_load_m3u_data(handle->music(), data, data_size_bytes) == NULL;
 }
 
 int rp_nsf_start_track(rp_nsf* handle, int track) { return handle ? handle->start_track(track) : 0; }

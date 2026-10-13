@@ -20,14 +20,14 @@ module RubyPlayer
       DUTY_PERCENT = [12.5, 25, 50, 75].freeze
       # NR32 output level codes: mute, 100%, 50%, 25%.
       WAVE_LEVELS = [0, 100, 50, 25].freeze
-      VBLANK_PERIOD = 70_224
+      VBLANK_PERIOD_CYCLES = 70_224
       # The NR register offsets ($FF10 + n) each voice uses.
       BASES = [0, 5, 10, 15].freeze
       NR50 = 20
       NR51 = 21
       NR52 = 22
       WAVE_RAM = 32
-      private_constant :SQUARE_HZ, :WAVE_HZ, :NOISE_BASE_HZ, :KINDS, :VBLANK_PERIOD, :BASES, :NR50, :NR51,
+      private_constant :SQUARE_HZ, :WAVE_HZ, :NOISE_BASE_HZ, :KINDS, :VBLANK_PERIOD_CYCLES, :BASES, :NR50, :NR51,
                        :NR52, :WAVE_RAM
 
       private
@@ -45,7 +45,7 @@ module RubyPlayer
       def build_view_snapshot(native_snapshot) = view_snapshot(native_snapshot, [chip(native_snapshot)])
 
       def chip(state)
-        Vgm::ChipSnapshot.new(id: CHIP_ID, name: CHIP_NAME, clock_hz: state.clock_rate,
+        Vgm::ChipSnapshot.new(id: CHIP_ID, name: CHIP_NAME, clock_hz: state.cpu_clock_hz,
                               channels: Array.new(VOICES) { |voice| channel(state, voice) },
                               details: chip_details(state))
       end
@@ -53,7 +53,7 @@ module RubyPlayer
       def chip_details(state)
         regs = state.regs
         { power: regs[NR52][7] == 1, master_left: (regs[NR50] >> 4) & 7, master_right: regs[NR50] & 7,
-          driver_hz: state.driver_hz, vblank_driver: state.play_period == VBLANK_PERIOD, events: @notes.packed }
+          driver_hz: state.driver_hz, vblank_driver: state.driver_period_cycles == VBLANK_PERIOD_CYCLES, events: @notes.packed }
       end
 
       def channel(state, voice)

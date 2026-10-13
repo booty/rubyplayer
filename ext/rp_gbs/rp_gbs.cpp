@@ -87,8 +87,8 @@ void fill_snapshot(Rp_Gbs_Emu& emu, rp_gbs_snapshot& snap)
 	}
 	snap.playing = playing_bits(apu);
 	snap.sweep_freq = (uint16_t) apu.rp_sweep_freq();
-	snap.play_period = (uint32_t) emu.rp_play_period();
-	snap.clock_rate = 4194304;
+	snap.driver_period_cycles = (uint32_t) emu.rp_play_period();
+	snap.cpu_clock_hz = 4194304;
 }
 
 // Records the APU's current state as heard from absolute clock `label`.
@@ -184,14 +184,14 @@ struct rp_gbs : rp::Player<Rp_Gbs_Emu> {};
 
 extern "C" {
 
-rp_gbs* rp_gbs_open(const void* data, long size, int out_rate)
+rp_gbs* rp_gbs_open(const void* data, long data_size_bytes, int output_rate_hz)
 {
-	return rp::open<rp_gbs>(&RP_GBS_TYPE, data, size, out_rate);
+	return rp::open<rp_gbs>(&RP_GBS_TYPE, data, data_size_bytes, output_rate_hz);
 }
 
 void rp_gbs_close(rp_gbs* handle) { rp::close(handle); }
 
-int rp_gbs_load_m3u(rp_gbs* handle, const void* data, long size) { return rp::load_m3u(handle, data, size); }
+int rp_gbs_load_m3u(rp_gbs* handle, const void* data, long data_size_bytes) { return rp::load_m3u(handle, data, data_size_bytes); }
 
 int rp_gbs_start_track(rp_gbs* handle, int track) { return rp::start_track(handle, track); }
 

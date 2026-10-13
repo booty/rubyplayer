@@ -34,7 +34,7 @@ typedef struct {
 } rp_spc_snapshot;
 
 /* Returns NULL when the data is not a loadable SPC file. */
-rp_spc* rp_spc_open(const void* data, long size, int out_rate);
+rp_spc* rp_spc_open(const void* data, long data_size_bytes, int output_rate_hz);
 void rp_spc_close(rp_spc*);
 
 /* Fade starts at start_ms and lasts length_ms; start_ms < 0 disables fading. */
