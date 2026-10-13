@@ -32,48 +32,48 @@ public:
 	bool recording = false;
 	// Whether registers were written since the latest queued snapshot.
 	bool wrote = false;
-	int64_t last_write = NO_CLOCK;
-	int64_t last_push = NO_CLOCK;
+	int64_t last_write_clock = NO_CLOCK;
+	int64_t last_snapshot_clock = NO_CLOCK;
 	// Snapshots handed out by the latest play, seek capture, or start.
 	std::vector<Snapshot> snapshots;
 
 	// Emulated frames that libgme's leading-silence skip discarded. Only
 	// settled outside emulator calls.
-	int64_t lead() const { return frames_played_ - this->rp_emu_time() / 2; }
+	int64_t skipped_leading_frames() const { return frames_played_ - this->rp_emu_time() / 2; }
 
 	// Absolute CPU clock of `clock` within the frame being emulated.
-	int64_t absolute(long clock) const { return clock_base_ + clock; }
+	int64_t absolute_clock(long frame_clock) const { return clock_base_ + frame_clock; }
 
-	int64_t out_frame() const { return this->tell_samples() / 2; }
+	int64_t output_frame() const { return this->tell_samples() / 2; }
 
-	// Records `snapshot` as heard from absolute clock `label`.
-	void queue(Snapshot const& snapshot, int64_t label)
+	// Records `snapshot` as heard from `event_clock` (absolute CPU clocks).
+	void queue(Snapshot const& snapshot, int64_t event_clock)
 	{
-		pending_.push_back({ label * this->sample_rate() / this->clock_rate(), snapshot });
+		pending_.push_back({ event_clock * this->sample_rate() / this->clock_rate(), snapshot });
 		wrote = false;
-		last_push = label;
+		last_snapshot_clock = event_clock;
 	}
 
 	// Moves queued snapshots to the settled list, at the output frames they
 	// play at. Call after every libgme call that may emulate.
 	void settle()
 	{
-		int64_t skipped = lead();
+		int64_t skipped = skipped_leading_frames();
 		for (Pending const& item : pending_)
 			heard_.push_back({ item.emulated_frame - skipped, item.snapshot });
 		pending_.clear();
 	}
 
-	// Hands out the snapshots not yet returned, relative to out_start. The
+	// Hands out the snapshots not yet returned, relative to out_start_frame. The
 	// leading-silence search emulates before output begins; the newest
 	// snapshot from then is the state the first heard note starts from, so it
 	// becomes frame 0 (carrying older ones' triggers) and older ones go.
-	void publish(int64_t out_start)
+	void publish(int64_t out_start_frame)
 	{
 		snapshots.clear();
 		bool clamped = false;
-		for (size_t i = returned_; i < heard_.size(); i++) {
-			int64_t frame = heard_[i].frame - out_start;
+		for (size_t i = published_count_; i < heard_.size(); i++) {
+			int64_t frame = heard_[i].frame - out_start_frame;
 			decltype(Snapshot().triggers) carried = 0;
 			if (frame < 0 && clamped) {
 				carried = snapshots.back().triggers;
@@ -84,26 +84,26 @@ public:
 			snapshots.back().frame = clamped ? 0 : (int32_t) frame;
 			snapshots.back().triggers |= carried;
 		}
-		returned_ = heard_.size();
-		prune(out_frame());
+		published_count_ = heard_.size();
+		prune(output_frame());
 	}
 
 	// Hands out what is heard from the output position on: the state heard
 	// there at frame 0, then every later snapshot. False when none is known.
 	bool publish_from_position()
 	{
-		int64_t position = out_frame();
-		size_t at = newest_at_or_before(position);
-		if (at == heard_.size())
+		int64_t position_frame = output_frame();
+		size_t baseline_index = newest_at_or_before(position_frame);
+		if (baseline_index == heard_.size())
 			return false;
 
 		snapshots.clear();
-		for (size_t i = at; i < heard_.size(); i++) {
+		for (size_t i = baseline_index; i < heard_.size(); i++) {
 			snapshots.push_back(heard_[i].snapshot);
-			snapshots.back().frame = i == at ? 0 : (int32_t) (heard_[i].frame - position);
+			snapshots.back().frame = i == baseline_index ? 0 : (int32_t) (heard_[i].frame - position_frame);
 		}
-		returned_ = heard_.size();
-		prune(position);
+		published_count_ = heard_.size();
+		prune(position_frame);
 		return true;
 	}
 
@@ -116,11 +116,11 @@ protected:
 		clock_base_ = 0;
 		frames_played_ = 0;
 		wrote = false;
-		last_write = NO_CLOCK;
-		last_push = NO_CLOCK;
+		last_write_clock = NO_CLOCK;
+		last_snapshot_clock = NO_CLOCK;
 		pending_.clear();
 		heard_.clear();
-		returned_ = 0;
+		published_count_ = 0;
 		reset_recording();
 		return Base::start_track_(track);
 	}
@@ -158,8 +158,8 @@ private:
 	// position onwards: libgme emulates ahead of output (silence lookahead),
 	// and a seek within that buffered audio emulates nothing.
 	std::vector<Heard> heard_;
-	// heard_[0, returned_) were already handed out.
-	size_t returned_ = 0;
+	// heard_[0, published_count_) were already handed out.
+	size_t published_count_ = 0;
 
 	// Index of the newest snapshot heard at or before `frame`, or
 	// heard_.size() when there is none.
@@ -173,13 +173,13 @@ private:
 
 	// Drops snapshots superseded before `position`: output never goes back
 	// without start_track, which clears them all.
-	void prune(int64_t position)
+	void prune(int64_t position_frame)
 	{
-		size_t keep = newest_at_or_before(position);
+		size_t keep = newest_at_or_before(position_frame);
 		if (keep == heard_.size() || keep == 0)
 			return;
 		heard_.erase(heard_.begin(), heard_.begin() + (long) keep);
-		returned_ = returned_ > keep ? returned_ - keep : 0;
+		published_count_ = published_count_ > keep ? published_count_ - keep : 0;
 	}
 };
 
@@ -254,7 +254,7 @@ int play(Player<Emu>* player, float* out, long frames)
 		return 0;
 
 	Emu& emu = *player->emu;
-	int64_t out_start = emu.out_frame();
+	int64_t out_start_frame = emu.output_frame();
 	long count = frames * 2;
 	if ((long) player->samples.size() < count)
 		player->samples.resize(count);
@@ -262,7 +262,7 @@ int play(Player<Emu>* player, float* out, long frames)
 	gme_err_t err = gme_play(&emu, (int) count, player->samples.data());
 	emu.recording = false;
 	emu.settle();
-	emu.publish(out_start);
+	emu.publish(out_start_frame);
 
 	// Same scale as Backends::Gme::Handle#read (AudioFormat::GME_INT16_SCALE).
 	for (long i = 0; i < count; i++)

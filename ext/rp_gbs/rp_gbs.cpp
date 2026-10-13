@@ -24,14 +24,14 @@ const uint64_t UNKNOWN = ~(uint64_t) 0;
 class Rp_Gbs_Emu : public rp::Recorder<Gbs_Emu, rp_gbs_snapshot> {
 public:
 	uint8_t triggers = 0;
-	// audible() of the latest queued snapshot.
-	uint64_t last_audible = UNKNOWN;
+	// audible_state_key() of the latest queued snapshot.
+	uint64_t last_audible_key = UNKNOWN;
 
 protected:
 	void reset_recording() override
 	{
 		triggers = 0;
-		last_audible = UNKNOWN;
+		last_audible_key = UNKNOWN;
 	}
 };
 
@@ -62,8 +62,9 @@ uint8_t playing_bits(Gb_Apu const& apu)
 	return bits;
 }
 
-// What is heard: which voices sound, and how loud.
-uint64_t audible(Gb_Apu const& apu)
+// What is heard, packed into one comparable key: a change means a snapshot
+// is due. Bits 0-3: voices sounding; then one byte of volume per voice.
+uint64_t audible_state_key(Gb_Apu const& apu)
 {
 	uint64_t state = playing_bits(apu);
 	for (int i = 0; i < Gb_Apu::osc_count; i++)
@@ -98,7 +99,7 @@ void push(Rp_Gbs_Emu& emu, int64_t label)
 	snap.triggers = emu.triggers;
 	emu.queue(snap, label);
 	emu.triggers = 0;
-	emu.last_audible = audible(emu.rp_apu());
+	emu.last_audible_key = audible_state_key(emu.rp_apu());
 }
 
 // The APU runs lazily: until something advances it, its state is the one
@@ -107,8 +108,8 @@ void push(Rp_Gbs_Emu& emu, int64_t label)
 // its time, even when the note it started has already ended by now.
 void observe_writes(Rp_Gbs_Emu& emu, long clock)
 {
-	if (audible(emu.rp_apu()) != emu.last_audible)
-		push(emu, emu.wrote ? emu.last_write : emu.absolute(clock));
+	if (audible_state_key(emu.rp_apu()) != emu.last_audible_key)
+		push(emu, emu.wrote ? emu.last_write_clock : emu.absolute_clock(clock));
 }
 
 // Advances the APU to `clock` one frame-sequencer step at a time, the only
@@ -121,8 +122,8 @@ void step_to(Rp_Gbs_Emu& emu, long clock)
 	while (apu.rp_next_frame_time() < clock) {
 		long step = apu.rp_next_frame_time();
 		emu.rp_catch_up(step + 1);
-		if (audible(apu) != emu.last_audible)
-			push(emu, emu.absolute(step));
+		if (audible_state_key(apu) != emu.last_audible_key)
+			push(emu, emu.absolute_clock(step));
 	}
 }
 
@@ -150,7 +151,7 @@ void rp_gbs_apu_write(Gbs_Emu* base, int reg, int data, long clock)
 		if (reg == TRIGGER_REGS[i] && (data & 0x80) && (i != 2 || (emu.rp_apu().rp_regs()[NR30] & 0x80)))
 			emu.triggers |= 1 << i;
 	}
-	emu.last_write = emu.absolute(clock);
+	emu.last_write_clock = emu.absolute_clock(clock);
 	emu.wrote = true;
 }
 
@@ -163,9 +164,9 @@ void rp_gbs_driver_call(Gbs_Emu* base, long clock)
 	observe_writes(emu, clock);
 	// The registers the previous driver call left, at its last write (when
 	// they were heard) rather than this call's start, a driver period later.
-	if (emu.wrote && (emu.last_push == rp::NO_CLOCK ||
-			emu.last_write - emu.last_push >= 4194304 / MIN_SNAPSHOTS_PER_SECOND_DIVISOR))
-		push(emu, emu.last_write);
+	if (emu.wrote && (emu.last_snapshot_clock == rp::NO_CLOCK ||
+			emu.last_write_clock - emu.last_snapshot_clock >= 4194304 / MIN_SNAPSHOTS_PER_SECOND_DIVISOR))
+		push(emu, emu.last_write_clock);
 	step_to(emu, clock);
 }
 
