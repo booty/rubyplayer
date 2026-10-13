@@ -57,7 +57,7 @@ module RubyPlayer
       end
 
       def nes_triangle_texts(details)
-        ["triangle · linear #{details[:linear]}/#{details[:linear_load]} · length #{details[:length]}",
+        ["triangle · linear #{details[:linear]}/#{details[:linear_load]} · length #{details[:length_counter_ticks]}",
          "triangle · linear #{details[:linear]}", 'triangle']
       end
 
@@ -239,20 +239,24 @@ module RubyPlayer
         elapsed_seconds = seconds_since_trigger(row.channel)
         cutoff_seconds = nes_cutoff_seconds(details, quarter_frame_hz, elapsed_seconds)
         summary = "#{nes_envelope_text(details)}#{format(' · cut at %d ms', cutoff_seconds * 1000) if cutoff_seconds}"
-        envelope_chart(summary: summary, span_seconds: nes_envelope_span(details, quarter_frame_hz, cutoff_seconds),
+        envelope_chart(summary: summary, span_seconds: nes_envelope_span_seconds(details, quarter_frame_hz, cutoff_seconds),
                        elapsed_seconds: elapsed_seconds, width: width, rows: rows) do |seconds|
           nes_envelope_volume(details, seconds, quarter_frame_hz, cutoff_seconds)
         end
       end
 
       # When the length counter silences the note, in seconds after the
-      # trigger; nil while it is halted. It counts down at half the
-      # quarter-frame rate, hence the factor of 2.
+      # trigger; nil while it is halted.
       def nes_cutoff_seconds(details, quarter_frame_hz, elapsed_seconds)
-        return if details[:loop] || details[:length].to_i.zero?
+        return if details[:loop] || details[:length_counter_ticks].to_i.zero?
 
-        remaining_length_seconds = details[:length] * 2 / quarter_frame_hz
-        (elapsed_seconds || 0) + remaining_length_seconds
+        (elapsed_seconds || 0) + nes_length_remaining_seconds(details, quarter_frame_hz)
+      end
+
+      # Length counters count down once per half frame.
+      def nes_length_remaining_seconds(details, quarter_frame_hz)
+        half_frame_hz = quarter_frame_hz / 2.0
+        details[:length_counter_ticks] / half_frame_hz
       end
 
       def nes_envelope_volume(details, seconds, quarter_frame_hz, cutoff_seconds)
@@ -263,9 +267,9 @@ module RubyPlayer
         details[:loop] ? (15 - steps) % 16 : [15 - steps, 0].max
       end
 
-      def nes_envelope_span(details, quarter_frame_hz, cutoff_seconds)
-        decay = details[:constant] || details[:loop] ? nil : 16 * (details[:envelope_period] + 1) / quarter_frame_hz
-        envelope_span_seconds([decay, cutoff_seconds].compact.min || 0)
+      def nes_envelope_span_seconds(details, quarter_frame_hz, cutoff_seconds)
+        decay_seconds = details[:constant] || details[:loop] ? nil : 16 * (details[:envelope_period] + 1) / quarter_frame_hz
+        envelope_span_seconds([decay_seconds, cutoff_seconds].compact.min || 0)
       end
 
       def nes_quarter_frame_hz
@@ -312,7 +316,7 @@ module RubyPlayer
         details = row.channel.details
         return 'Length counter halted (sounds until stopped)' if details[:loop] || details[:held]
 
-        format('Length %d ms left', details[:length] * 2000 / nes_quarter_frame_hz)
+        format('Length %d ms left', nes_length_remaining_seconds(details, nes_quarter_frame_hz) * 1000)
       end
 
       # The squares' pitch sweep, or nil when off.

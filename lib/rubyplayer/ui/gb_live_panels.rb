@@ -11,6 +11,8 @@ module RubyPlayer
       # Duty cycles as one 8-step period of the square wave.
       DUTY_WAVES = { 12.5 => '▔▁▁▁▁▁▁▁', 25 => '▔▔▁▁▁▁▁▁', 50 => '▔▔▔▔▁▁▁▁', 75 => '▔▔▔▔▔▔▁▁' }.freeze
       MAX_GRAPH_ROWS = 8
+      # Length counters tick at 256 Hz.
+      LENGTH_TICK_HZ = 256.0
 
       private
 
@@ -86,7 +88,7 @@ module RubyPlayer
         details = row.channel.details
         return wave_panel(details, width, rows) if row.channel.kind == :gb_wave
 
-        envelope_chart(summary: envelope_summary(details), span_seconds: envelope_span(details),
+        envelope_chart(summary: envelope_summary(details), span_seconds: gb_envelope_span_seconds(details),
                        elapsed_seconds: seconds_since_trigger(row.channel), width: width, rows: rows) do |seconds|
           envelope_volume(details, seconds)
         end
@@ -102,8 +104,8 @@ module RubyPlayer
       end
 
       def envelope_volume(details, seconds)
-        cut = length_seconds(details)
-        return 0 if cut && seconds >= cut
+        length_cutoff_seconds = length_seconds(details)
+        return 0 if length_cutoff_seconds && seconds >= length_cutoff_seconds
 
         pace = details[:envelope_pace]
         return details[:initial_volume] if pace.zero?
@@ -112,19 +114,19 @@ module RubyPlayer
         (details[:initial_volume] + (details[:envelope_up] ? steps : -steps)).clamp(0, 15)
       end
 
-      def envelope_span(details)
+      def gb_envelope_span_seconds(details)
         pace = details[:envelope_pace]
         steps = details[:envelope_up] ? 15 - details[:initial_volume] : details[:initial_volume]
-        ends = [pace.zero? ? nil : steps * pace / 64.0, length_seconds(details)].compact
-        envelope_span_seconds(ends.min || 0)
+        end_seconds = [pace.zero? ? nil : steps * pace / 64.0, length_seconds(details)].compact
+        envelope_span_seconds(end_seconds.min || 0)
       end
 
       # Length counter load, in seconds, when the length counter is on.
-      def length_seconds(details) = details[:length_enabled] ? details[:length_load] / 256.0 : nil
+      def length_seconds(details) = details[:length_enabled] ? details[:length_load_ticks] / LENGTH_TICK_HZ : nil
 
       def envelope_summary(details)
-        cut = length_seconds(details)
-        "#{envelope_text(details)}#{format(' · cut at %d ms', cut * 1000) if cut}"
+        length_cutoff_seconds = length_seconds(details)
+        "#{envelope_text(details)}#{format(' · cut at %d ms', length_cutoff_seconds * 1000) if length_cutoff_seconds}"
       end
 
       # NRx2 as read: starting volume, then one step up or down every pace/64 s.
@@ -150,7 +152,8 @@ module RubyPlayer
       def length_text(details)
         return 'Length counter off (sounds until stopped)' unless details[:length_enabled]
 
-        format('Length %d ms left of %d ms', details[:length] * 1000 / 256, details[:length_load] * 1000 / 256)
+        format('Length %d ms left of %d ms', details[:length_counter_ticks] * 1000 / LENGTH_TICK_HZ,
+               details[:length_load_ticks] * 1000 / LENGTH_TICK_HZ)
       end
 
       # Square 1's pitch sweep, or nil when off.

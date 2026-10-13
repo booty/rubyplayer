@@ -72,7 +72,7 @@ module RubyPlayer
         base = BASES[voice]
         # Length counters load 64 - NRx1 (wave: 256 - NR31) ticks of 1/256 s.
         load = KINDS[voice] == :gb_wave ? 256 - regs[base + 1] : 64 - (regs[base + 1] & 0x3f)
-        common = { volume: state.volume[voice], length: state.length[voice], length_load: load,
+        common = { volume: state.volume[voice], length_counter_ticks: state.length[voice], length_load_ticks: load,
                    length_enabled: regs[base + 4][6] == 1, enabled: state.enabled[voice] == 1,
                    frequency: frequency_register(regs, base) }
         case KINDS[voice]

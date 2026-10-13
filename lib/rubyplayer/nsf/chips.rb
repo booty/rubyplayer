@@ -180,10 +180,10 @@ module RubyPlayer
         { mode: register.anybits?(0x40) ? :up : :down, speed: register & 0x3f }
       end
 
-      def pulse(state, label, voice, regs, volume, length, enabled:, sweep: false)
+      def pulse(state, label, voice, regs, volume, length_counter_ticks, enabled:, sweep: false)
         control, sweep_reg, low, high = regs.bytes
         period = ((high & 7) << 8) | low
-        details = { duty: DUTY_PERCENT[control >> 6], volume: volume, length: length, enabled: enabled,
+        details = { duty: DUTY_PERCENT[control >> 6], volume: volume, length_counter_ticks: length_counter_ticks, enabled: enabled,
                     **envelope(control), period: period }
         if sweep
           details.merge!(sweep_enabled: sweep_reg.anybits?(0x80), sweep_period: (sweep_reg >> 4) & 7,
@@ -201,7 +201,7 @@ module RubyPlayer
         Channel.new(label: 'Triangle', kind: :nes_triangle, voice: 2,
                     pitch_hz: period >= 2 ? state.clock_rate / (32.0 * (period + 1)) : nil,
                     details: { period: period, linear: state.tri_linear, linear_load: control & 0x7f,
-                               held: control.anybits?(0x80), length: state.apu_length[2],
+                               held: control.anybits?(0x80), length_counter_ticks: state.apu_length[2],
                                enabled: state.apu_status[2] == 1 })
       end
 
@@ -212,7 +212,7 @@ module RubyPlayer
         Channel.new(label: 'Noise', kind: :nes_noise, voice: 3,
                     pitch_hz: short ? state.clock_rate / (steps * SHORT_NOISE_STEPS.to_f) : nil,
                     details: { short: short, period_index: mode & 0x0f, lfsr_hz: state.clock_rate.fdiv(steps),
-                               volume: state.apu_volume[2], length: state.apu_length[3],
+                               volume: state.apu_volume[2], length_counter_ticks: state.apu_length[3],
                                enabled: state.apu_status[3] == 1, **envelope(control) })
       end
 
