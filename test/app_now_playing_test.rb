@@ -220,6 +220,34 @@ class AppNowPlayingTest < Minitest::Test
     assert_equal :live, @app.instance_variable_get(:@now_playing_page)
   end
 
+  def test_tracker_keeps_playback_keys_and_escape_closes_it
+    start_live_vgm_track
+    @app.handle_key('o')
+    @app.handle_key('o')
+    @app.handle_key('space')
+    wait_until { @app.engine.state[:paused] }
+
+    assert_equal :tracker, @app.instance_variable_get(:@now_playing_page)
+    assert @app.show_now_playing
+    @app.handle_key('escape')
+
+    refute @app.show_now_playing
+  end
+
+  def test_o_closes_info_for_a_track_without_live_pages
+    library = @app.instance_variable_get(:@library)
+    track = library.all_tracks.find { |entry| entry.format == 'mod' }
+    @app.engine.enqueue_now([track])
+    wait_until { @app.engine.state[:track]&.id == track.id }
+    @app.handle_events
+    @app.handle_key('o')
+
+    assert_equal :info, @app.instance_variable_get(:@now_playing_page)
+    @app.handle_key('o')
+
+    refute @app.show_now_playing
+  end
+
   # The fixture declares a YM2612 and an SN76489: libgme voices FM 1-6,
   # PCM, and the PSG as one.
   def test_vgm_live_keys_mute_and_solo_the_selected_channel
