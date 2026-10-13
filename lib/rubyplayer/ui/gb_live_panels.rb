@@ -43,11 +43,11 @@ module RubyPlayer
 
       # The volume being output, as an attenuation like the other chips'.
       def gb_attenuation(channel)
-        return Vgm::Envelope::MAX_ATTENUATION unless channel.state == :enabled
+        return Vgm::Envelope::MAX_ATTENUATION_STEPS unless channel.state == :enabled
 
         details = channel.details
         amplitude = channel.kind == :gb_wave ? details[:level] / 100.0 : details[:volume] / 15.0
-        return Vgm::Envelope::MAX_ATTENUATION unless amplitude.positive?
+        return Vgm::Envelope::MAX_ATTENUATION_STEPS unless amplitude.positive?
 
         (-20 * Math.log10(amplitude) / Vgm::Envelope::DB_PER_STEP).round
       end

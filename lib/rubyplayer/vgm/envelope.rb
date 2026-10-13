@@ -14,150 +14,174 @@ module RubyPlayer
     # Levels are attenuations in 10-bit EG steps: 0 is full volume, 1023 is
     # silent, and each step is 96/1024 dB.
     module Envelope
-      MAX_ATTENUATION = 1023
+      MAX_ATTENUATION_STEPS = 1023
       DB_PER_STEP = 96.0 / 1024
       # OPN2 keycode from block and the top four F-number bits (MAME opn_fktable).
       OPN_FKTABLE = [0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 3, 3, 3, 3, 3, 3].freeze
       # Which operators reach the output, per YM2612 algorithm.
       CARRIERS = [[4], [4], [4], [4], [2, 4], [2, 3, 4], [2, 3, 4], [1, 2, 3, 4]].freeze
-      # Average per-update increments for rates below 48 (MAME eg_inc rows),
-      # indexed by rate % 4.
+      # Average per-tick increments for rate codes below 48 (MAME eg_inc
+      # rows), indexed by rate code % 4.
       LOW_RATE_INCREMENTS = [0.5, 0.625, 0.75, 0.875].freeze
       # The attack recurrence a -= (a + 1) * inc / 16 integrates to
       # a(t) + 1 = 1024 * exp(-inc_rate * t / 16).
       ATTACK_DIVISOR = 16.0
-      INSTANT_ATTACK_RATE = 62
+      INSTANT_ATTACK_RATE_CODE = 62
       # OPLL key-off with the sustain flag set releases at this fixed rate.
-      OPLL_SUSTAIN_RELEASE = 5
+      OPLL_SUSTAIN_RELEASE_RATE = 5
       # ROM instruments have no readable rates: assume a quick fade on key-off.
       OPLL_ROM_RELEASE_SECONDS = 0.3
 
       module_function
 
-      def to_db(attenuation) = -attenuation.clamp(0, MAX_ATTENUATION) * DB_PER_STEP
+      def to_db(attenuation_steps) = -attenuation_steps.clamp(0, MAX_ATTENUATION_STEPS) * DB_PER_STEP
 
       def opn_keycode(fnum:, block:) = (block << 2) | OPN_FKTABLE.fetch((fnum >> 7) & 0x0f)
 
-      # EG steps per second for an effective rate 0..63.
-      def steps_per_second(rate, eg_hz)
-        return 0.0 if rate < 2
+      # EG steps per second for an effective rate code 0..63. The code is
+      # an index into the chip's rate table, not itself a rate.
+      def steps_per_second(effective_rate_code, envelope_tick_hz)
+        return 0.0 if effective_rate_code < 2
 
-        rate = rate.clamp(0, 63)
-        per_update = if rate < 48
-                       LOW_RATE_INCREMENTS[rate % 4] / (2**(11 - (rate / 4)))
-                     elsif rate < 60
-                       (2**((rate - 48) / 4)) * (1 + ((rate % 4) * 0.25))
-                     else
-                       8.0
-                     end
-        per_update * eg_hz
+        effective_rate_code = effective_rate_code.clamp(0, 63)
+        steps_per_tick = if effective_rate_code < 48
+                           LOW_RATE_INCREMENTS[effective_rate_code % 4] / (2**(11 - (effective_rate_code / 4)))
+                         elsif effective_rate_code < 60
+                           (2**((effective_rate_code - 48) / 4)) * (1 + ((effective_rate_code % 4) * 0.25))
+                         else
+                           8.0
+                         end
+        steps_per_tick * envelope_tick_hz
       end
 
       # One YM2612 operator's attenuation including its total level, or
-      # MAX_ATTENUATION before any key-on. `held` and `released` are seconds
-      # since key-on and key-off (released nil while the key is held).
-      def opn_operator(parameters, keycode:, clock_hz:, held:, released: nil)
-        total(opn_curve(parameters, keycode, clock_hz).at(held, released), parameters[:tl].to_i * 8)
+      # MAX_ATTENUATION_STEPS before any key-on. release_elapsed_seconds is
+      # nil while the key is held.
+      def opn_operator(parameters, keycode:, clock_hz:, held_seconds:, release_elapsed_seconds: nil)
+        total(opn_curve(parameters, keycode, clock_hz).at(held_seconds, release_elapsed_seconds),
+              parameters[:tl].to_i * 8)
       end
 
       def opn_curve(parameters, keycode, clock_hz)
-        eg_hz = clock_hz / 144.0 / 3
+        envelope_tick_hz = clock_hz / 144.0 / 3
         scale = keycode >> (3 - parameters.fetch(:rs, 0).to_i)
-        rate = ->(value) { value.to_i.zero? ? 0 : ((2 * value.to_i) + scale).clamp(0, 63) }
-        speed = ->(value) { steps_per_second(rate.call(value), eg_hz) }
+        effective_rate_code = ->(rate) { rate.to_i.zero? ? 0 : ((2 * rate.to_i) + scale).clamp(0, 63) }
+        steps_per_second_for = ->(rate) { steps_per_second(effective_rate_code.call(rate), envelope_tick_hz) }
         # Release has no zero rate: RR 0 is rate 2 plus key scaling, a slow
         # but finite fade (MAME fm.cpp sets rr = 34 + (RR << 2)).
-        release_rate = ((4 * parameters[:rr].to_i) + 2 + scale).clamp(0, 63)
-        Curve.new(attack: speed.call(parameters[:ar]), instant: rate.call(parameters[:ar]) >= INSTANT_ATTACK_RATE,
-                  decay: speed.call(parameters[:d1r]), sustain_level: sustain_level(parameters[:d1l]),
-                  sustain: speed.call(parameters[:d2r]), release: steps_per_second(release_rate, eg_hz))
+        release_rate_code = ((4 * parameters[:rr].to_i) + 2 + scale).clamp(0, 63)
+        Curve.new(attack_steps_per_second: steps_per_second_for.call(parameters[:ar]),
+                  instant_attack: effective_rate_code.call(parameters[:ar]) >= INSTANT_ATTACK_RATE_CODE,
+                  decay_steps_per_second: steps_per_second_for.call(parameters[:d1r]),
+                  sustain_attenuation_steps: sustain_attenuation_steps(parameters[:d1l]),
+                  sustain_steps_per_second: steps_per_second_for.call(parameters[:d2r]),
+                  release_steps_per_second: steps_per_second(release_rate_code, envelope_tick_hz))
       end
 
       # Loudest carrier of a YM2612 channel, as an attenuation. Each
-      # operator has its own key, so `timings` holds [held, released] per
-      # operator (index 1..4 at 0..3); held is nil for one never keyed.
+      # operator has its own key, so `timings` holds [held_seconds,
+      # release_elapsed_seconds] per operator (index 1..4 at 0..3);
+      # held_seconds is nil for one never keyed.
       def opn_channel(patch, keycode:, clock_hz:, timings:)
-        return MAX_ATTENUATION unless patch&.algorithm
+        return MAX_ATTENUATION_STEPS unless patch&.algorithm
 
         CARRIERS.fetch(patch.algorithm).map do |index|
           operator = patch.operators.find { |item| item.index == index }
-          held, released = timings[index - 1]
-          next MAX_ATTENUATION unless operator && held
+          held_seconds, release_elapsed_seconds = timings[index - 1]
+          next MAX_ATTENUATION_STEPS unless operator && held_seconds
 
-          opn_operator(operator.parameters, keycode: keycode, clock_hz: clock_hz, held: held, released: released)
+          opn_operator(operator.parameters, keycode: keycode, clock_hz: clock_hz, held_seconds: held_seconds,
+                                            release_elapsed_seconds: release_elapsed_seconds)
         end.min
       end
 
       # YM2413 carrier with readable (custom) rates. Percussive patches
       # (EG type 0) keep decaying at the release rate while held.
-      def opll_custom(parameters, block:, clock_hz:, volume:, held:, released: nil, sustain_flag: false)
+      def opll_custom(parameters, block:, clock_hz:, volume:, held_seconds:, release_elapsed_seconds: nil,
+                      sustain_flag: false)
         curve = opll_curve(parameters, block, clock_hz, sustain_flag)
-        total(curve.at(held, released), volume.to_i * 32)
+        total(curve.at(held_seconds, release_elapsed_seconds), volume.to_i * 32)
       end
 
       def opll_curve(parameters, block, clock_hz, sustain_flag)
-        eg_hz = clock_hz / 72.0
+        envelope_tick_hz = clock_hz / 72.0
         scale = parameters[:ksr].to_i == 1 ? block * 2 : (block * 2) >> 2
-        speed = ->(value) { steps_per_second(value.to_i.zero? ? 0 : ((4 * value.to_i) + scale).clamp(0, 63), eg_hz) }
+        steps_per_second_for = lambda do |rate|
+          effective_rate_code = rate.to_i.zero? ? 0 : ((4 * rate.to_i) + scale).clamp(0, 63)
+          steps_per_second(effective_rate_code, envelope_tick_hz)
+        end
         percussive = parameters[:eg].to_i.zero?
-        Curve.new(attack: speed.call(parameters[:ar]), instant: parameters[:ar].to_i == 15,
-                  decay: speed.call(parameters[:dr]), sustain_level: sustain_level(parameters[:sl]),
-                  sustain: percussive ? speed.call(parameters[:rr]) : 0.0,
-                  release: speed.call(sustain_flag ? OPLL_SUSTAIN_RELEASE : parameters[:rr]))
+        Curve.new(attack_steps_per_second: steps_per_second_for.call(parameters[:ar]),
+                  instant_attack: parameters[:ar].to_i == 15,
+                  decay_steps_per_second: steps_per_second_for.call(parameters[:dr]),
+                  sustain_attenuation_steps: sustain_attenuation_steps(parameters[:sl]),
+                  sustain_steps_per_second: percussive ? steps_per_second_for.call(parameters[:rr]) : 0.0,
+                  release_steps_per_second:
+                    steps_per_second_for.call(sustain_flag ? OPLL_SUSTAIN_RELEASE_RATE : parameters[:rr]))
       end
 
       # ROM instruments: the volume register while held, then a short fade.
-      def opll_rom(volume:, released: nil)
-        base = volume.to_i * 32
-        return total(0, base) unless released
+      def opll_rom(volume:, release_elapsed_seconds: nil)
+        volume_attenuation_steps = volume.to_i * 32
+        return total(0, volume_attenuation_steps) unless release_elapsed_seconds
 
-        total((released / OPLL_ROM_RELEASE_SECONDS * MAX_ATTENUATION).round, base)
+        release_attenuation_steps = release_elapsed_seconds / OPLL_ROM_RELEASE_SECONDS * MAX_ATTENUATION_STEPS
+        total(release_attenuation_steps.round, volume_attenuation_steps)
       end
 
       # SN76489 attenuation is direct: 2 dB per step, 15 is off.
-      def psg(attenuation)
-        return MAX_ATTENUATION if attenuation.nil? || attenuation >= 15
+      def psg(attenuation_register)
+        return MAX_ATTENUATION_STEPS if attenuation_register.nil? || attenuation_register >= 15
 
-        (attenuation * 2 / DB_PER_STEP).round
+        (attenuation_register * 2 / DB_PER_STEP).round
       end
 
       # D1L/SL 15 means "all the way down" (-93 dB), not 15 * 3 dB.
-      def sustain_level(value)
-        value = value.to_i
-        value >= 15 ? MAX_ATTENUATION : value * 32
+      def sustain_attenuation_steps(sustain_level)
+        sustain_level = sustain_level.to_i
+        sustain_level >= 15 ? MAX_ATTENUATION_STEPS : sustain_level * 32
       end
 
-      def total(envelope, offset) = (envelope + offset).round.clamp(0, MAX_ATTENUATION)
+      def total(envelope_steps, offset_steps) = (envelope_steps + offset_steps).round.clamp(0, MAX_ATTENUATION_STEPS)
 
-      # Attack, decay to the sustain level, sustain slope, and release, each
-      # in EG steps per second.
-      Curve = Data.define(:attack, :instant, :decay, :sustain_level, :sustain, :release) do
-        def at(held, released)
-          return level_after_hold(held) unless released
+      # Attack, decay to the sustain level, sustain slope, and release
+      # speeds, plus the attenuation the decay stops at.
+      Curve = Data.define(:attack_steps_per_second, :instant_attack, :decay_steps_per_second,
+                          :sustain_attenuation_steps, :sustain_steps_per_second, :release_steps_per_second) do
+        def at(held_seconds, release_elapsed_seconds)
+          held_attenuation_steps = attenuation_after_hold(held_seconds)
+          return held_attenuation_steps unless release_elapsed_seconds
+          return MAX_ATTENUATION_STEPS if release_steps_per_second.zero? && held_attenuation_steps >= MAX_ATTENUATION_STEPS
 
-          start = level_after_hold(held)
-          return MAX_ATTENUATION if release.zero? && start >= MAX_ATTENUATION
-
-          (start + (release * released)).clamp(0, MAX_ATTENUATION)
+          release_attenuation_steps = release_steps_per_second * release_elapsed_seconds
+          (held_attenuation_steps + release_attenuation_steps).clamp(0, MAX_ATTENUATION_STEPS)
         end
 
         private
 
-        def level_after_hold(held)
-          attack_time = if instant
-                          0.0
-                        elsif attack.zero?
-                          return MAX_ATTENUATION
-                        else
-                          ATTACK_DIVISOR * Math.log(MAX_ATTENUATION + 1) / attack
-                        end
-          return (((MAX_ATTENUATION + 1) * Math.exp(-attack * held / ATTACK_DIVISOR)) - 1).clamp(0, MAX_ATTENUATION) if held < attack_time
+        def attenuation_after_hold(held_seconds)
+          return MAX_ATTENUATION_STEPS if !instant_attack && attack_steps_per_second.zero?
 
-          held -= attack_time
-          decay_time = decay.zero? ? Float::INFINITY : sustain_level / decay
-          return decay * held if held < decay_time
+          attack_seconds = instant_attack ? 0.0 : ATTACK_DIVISOR * Math.log(MAX_ATTENUATION_STEPS + 1) / attack_steps_per_second
+          return attack_attenuation_steps(held_seconds) if held_seconds < attack_seconds
 
-          (sustain_level + (sustain * (held - decay_time))).clamp(0, MAX_ATTENUATION)
+          decay_elapsed_seconds = held_seconds - attack_seconds
+          decay_seconds = if decay_steps_per_second.zero?
+                            Float::INFINITY
+                          else
+                            sustain_attenuation_steps / decay_steps_per_second
+                          end
+          return decay_steps_per_second * decay_elapsed_seconds if decay_elapsed_seconds < decay_seconds
+
+          sustain_elapsed_seconds = decay_elapsed_seconds - decay_seconds
+          (sustain_attenuation_steps + (sustain_steps_per_second * sustain_elapsed_seconds))
+            .clamp(0, MAX_ATTENUATION_STEPS)
+        end
+
+        def attack_attenuation_steps(held_seconds)
+          attenuation_plus_one = (MAX_ATTENUATION_STEPS + 1) *
+                                 Math.exp(-attack_steps_per_second * held_seconds / ATTACK_DIVISOR)
+          (attenuation_plus_one - 1).clamp(0, MAX_ATTENUATION_STEPS)
         end
       end
       private_constant :Curve

@@ -54,8 +54,8 @@ module RubyPlayer
       BLACK_KEYS = [1, 3, 6, 8, 10].freeze
       # Envelope sketches: a log time axis while held (1 ms - 2 s), then
       # after key-off (1 ms - 1 s), so fast attacks and slow decays both show.
-      HOLD_AXIS = [0.001, 2.0].freeze
-      RELEASE_AXIS = [0.001, 1.0].freeze
+      HOLD_AXIS_SECONDS = [0.001, 2.0].freeze
+      RELEASE_AXIS_SECONDS = [0.001, 1.0].freeze
       PAN_LABELS = { lr: 'L R', l: 'L  ', r: '  R', none: '---' }.freeze
       STATE_LABELS = { key_on: 'key on', key_off: 'key off', enabled: 'on', muted: 'off', off: 'off', data: 'data',
                        idle: 'idle' }.freeze
@@ -97,7 +97,7 @@ module RubyPlayer
       private_constant :CHANNEL_KEYS, :CHIP_ORDER, :THREE_COLUMN_WIDTH, :TWO_COLUMN_WIDTH, :WIDE_TABLE_WIDTH,
                        :MIN_PANEL_ROWS, :KEYBOARD_ROWS, :WIDE_FIXED_COLUMNS, :NARROW_FIXED_COLUMNS,
                        :LEVEL_FLOOR_DB, :RECENT_TRIGGER_SAMPLES, :HISTORY_COLUMN_SAMPLES, :KEYBOARD_LOW,
-                       :KEYBOARD_KEYS, :BLACK_KEYS, :HOLD_AXIS, :RELEASE_AXIS, :PAN_LABELS, :STATE_LABELS,
+                       :KEYBOARD_KEYS, :BLACK_KEYS, :HOLD_AXIS_SECONDS, :RELEASE_AXIS_SECONDS, :PAN_LABELS, :STATE_LABELS,
                        :ACTIVE_STATES, :ALGORITHMS, :ALGORITHM_NAMES, :FEEDBACK_NAMES, :AMS_NAMES, :FMS_NAMES,
                        :INSTRUMENT_WIDTH, :MAX_INSTRUMENT_WIDTH, :FM_OPERATOR_FIELDS, :OPLL_OPERATOR_FIELDS,
                        :DRUM_ABBREVIATIONS, :OPERATOR_LABEL_WIDTH, :MIN_OPERATOR_LEVEL
@@ -527,9 +527,13 @@ module RubyPlayer
         when *GB_KINDS then gb_attenuation(channel)
         when *NES_KINDS then nes_attenuation(channel)
         when :percussion
-          held, released = key_timing(channel)
-          held ? Vgm::Envelope.opll_rom(volume: 0, released: released) : Vgm::Envelope::MAX_ATTENUATION
-        else Vgm::Envelope::MAX_ATTENUATION
+          held_seconds, release_elapsed_seconds = key_timing(channel)
+          if held_seconds
+            Vgm::Envelope.opll_rom(volume: 0, release_elapsed_seconds: release_elapsed_seconds)
+          else
+            Vgm::Envelope::MAX_ATTENUATION_STEPS
+          end
+        else Vgm::Envelope::MAX_ATTENUATION_STEPS
         end
       end
 
@@ -547,12 +551,15 @@ module RubyPlayer
                details[:key_mask].to_i[index - 1] == 1)
       end
 
-      def timing(on, off, keyed)
-        return [nil, nil] unless on && @playback_sample >= on
+      def timing(trigger_sample, release_sample, keyed)
+        return [nil, nil] unless trigger_sample && @playback_sample >= trigger_sample
 
-        return [(@playback_sample - on).fdiv(Vgm::SAMPLE_RATE), nil] if keyed || off.nil? || off < on
+        if keyed || release_sample.nil? || release_sample < trigger_sample
+          return [(@playback_sample - trigger_sample).fdiv(Vgm::SAMPLE_RATE), nil]
+        end
 
-        [(off - on).fdiv(Vgm::SAMPLE_RATE), [@playback_sample - off, 0].max.fdiv(Vgm::SAMPLE_RATE)]
+        [(release_sample - trigger_sample).fdiv(Vgm::SAMPLE_RATE),
+         [@playback_sample - release_sample, 0].max.fdiv(Vgm::SAMPLE_RATE)]
       end
 
       def fm_attenuation(row)
@@ -568,27 +575,28 @@ module RubyPlayer
 
       def pcm_attenuation(channel)
         details = channel.details
-        return Vgm::Envelope::MAX_ATTENUATION unless channel.state == :data && details[:dac_value]
+        return Vgm::Envelope::MAX_ATTENUATION_STEPS unless channel.state == :data && details[:dac_value]
 
         amplitude = (details[:dac_value] - 0x80).abs / 128.0
-        return Vgm::Envelope::MAX_ATTENUATION if amplitude.zero?
+        return Vgm::Envelope::MAX_ATTENUATION_STEPS if amplitude.zero?
 
         (-20 * Math.log10(amplitude) / Vgm::Envelope::DB_PER_STEP).round
       end
 
-      def tone_attenuation(row, held, released)
+      def tone_attenuation(row, held_seconds, release_elapsed_seconds)
         channel = row.channel
         details = channel.details
         return Vgm::Envelope.psg(channel.state == :enabled ? details[:attenuation] : 15) if details.key?(:attenuation)
-        return Vgm::Envelope::MAX_ATTENUATION unless held
+        return Vgm::Envelope::MAX_ATTENUATION_STEPS unless held_seconds
 
         carrier = channel.patch&.operators&.find { |operator| operator.index == 2 }
         if carrier
           Vgm::Envelope.opll_custom(carrier.parameters, block: details[:block].to_i, clock_hz: row.chip.clock_hz.to_f,
-                                                        volume: details[:volume], held: held, released: released,
+                                                        volume: details[:volume], held_seconds: held_seconds,
+                                                        release_elapsed_seconds: release_elapsed_seconds,
                                                         sustain_flag: details[:sustain] || false)
         else
-          Vgm::Envelope.opll_rom(volume: details[:volume], released: released)
+          Vgm::Envelope.opll_rom(volume: details[:volume], release_elapsed_seconds: release_elapsed_seconds)
         end
       end
 
@@ -768,18 +776,24 @@ module RubyPlayer
 
       def operator_level(row, operator)
         opll = opll_chip?(row.chip)
-        held, released = opll ? key_timing(row.channel) : operator_timing(row.channel, operator.index)
-        return 0 unless held
+        held_seconds, release_elapsed_seconds = if opll
+                                                  key_timing(row.channel)
+                                                else
+                                                  operator_timing(row.channel, operator.index)
+                                                end
+        return 0 unless held_seconds
 
         attenuation = if opll
                         details = row.channel.details
                         Vgm::Envelope.opll_custom(operator.parameters, block: details[:block].to_i,
                                                                        clock_hz: row.chip.clock_hz.to_f, volume: 0,
-                                                                       held: held, released: released)
+                                                                       held_seconds: held_seconds,
+                                                                       release_elapsed_seconds: release_elapsed_seconds)
                       else
                         Vgm::Envelope.opn_operator(operator.parameters, keycode: fm_keycode(row.channel),
                                                                         clock_hz: row.chip.clock_hz.to_f,
-                                                                        held: held, released: released)
+                                                                        held_seconds: held_seconds,
+                                                                        release_elapsed_seconds: release_elapsed_seconds)
                       end
         db = Vgm::Envelope.to_db(attenuation)
         ((1 - (-db / LEVEL_FLOOR_DB)).clamp(0.0, 1.0) * 1_000).round
@@ -932,24 +946,26 @@ module RubyPlayer
       def envelope_graph(row, operator, width, rows)
         hold_columns = [(width * 3) / 4, 2].max
         release_columns = [width - hold_columns, 2].max
-        held = log_axis(*HOLD_AXIS, hold_columns)
-        released = log_axis(*RELEASE_AXIS, release_columns)
-        values = held.map { |time| envelope_value(row, operator, time, nil) } +
-                 released.map { |time| envelope_value(row, operator, HOLD_AXIS.last, time) }
+        hold_axis_seconds = log_axis(*HOLD_AXIS_SECONDS, hold_columns)
+        release_axis_seconds = log_axis(*RELEASE_AXIS_SECONDS, release_columns)
+        values = hold_axis_seconds.map { |seconds| envelope_value(row, operator, seconds, nil) } +
+                 release_axis_seconds.map { |seconds| envelope_value(row, operator, HOLD_AXIS_SECONDS.last, seconds) }
         graph(values, 1_000, rows)
       end
 
-      def envelope_value(row, operator, held, released)
+      def envelope_value(row, operator, held_seconds, release_elapsed_seconds)
         parameters = operator.parameters.merge(tl: 0, total_level: 0)
         clock = row.chip.clock_hz.to_f
         attenuation = if parameters.key?(:d1r)
                         Vgm::Envelope.opn_operator(parameters, keycode: envelope_keycode(row), clock_hz: clock,
-                                                               held: held, released: released)
+                                                               held_seconds: held_seconds,
+                                                               release_elapsed_seconds: release_elapsed_seconds)
                       else
                         Vgm::Envelope.opll_custom(parameters, block: envelope_keycode(row), clock_hz: clock, volume: 0,
-                                                              held: held, released: released)
+                                                              held_seconds: held_seconds,
+                                                              release_elapsed_seconds: release_elapsed_seconds)
                       end
-        ((1 - (attenuation / Vgm::Envelope::MAX_ATTENUATION.to_f)) * 1_000).round
+        ((1 - (attenuation / Vgm::Envelope::MAX_ATTENUATION_STEPS.to_f)) * 1_000).round
       end
 
       def log_axis(first, last, count)
