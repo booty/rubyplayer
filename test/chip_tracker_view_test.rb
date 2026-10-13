@@ -6,14 +6,14 @@ require 'minitest/mock'
 require 'rubyplayer/ui/screen'
 require 'rubyplayer/vgm/note_log'
 require 'rubyplayer/vgm/snapshot'
-require 'rubyplayer/ui/vgm_tracker_view'
+require 'rubyplayer/ui/chip_tracker_view'
 
-class VgmTrackerViewTest < Minitest::Test
+class ChipTrackerViewTest < Minitest::Test
   Vgm = RubyPlayer::Vgm
   THEME = RubyPlayer::Theme::DEFAULT
 
   def setup
-    @view = RubyPlayer::UI::VgmTrackerView.new
+    @view = RubyPlayer::UI::ChipTrackerView.new
   end
 
   # A note shorter than one row must survive an on/off pair in the same bucket.
@@ -132,6 +132,45 @@ class VgmTrackerViewTest < Minitest::Test
     end
   end
 
+  def test_title_names_the_source
+    view = RubyPlayer::UI::ChipTrackerView.new(source: 'HES')
+    view.update(snapshot(chips: [chip('huc6280:0', 'HuC6280 PSG', ['Wave 1'], Vgm::NoteLog.new)]))
+
+    assert_includes render(width: 60, height: 8, view: view).join("\n"), 'Song · HES TRACKER · 0:00.00'
+    assert_includes render(width: 60, height: 8).join("\n"), 'VGM TRACKER'
+  end
+
+  # HuC6280 noise and direct-DAC voices have no pitch; their starts are
+  # labeled by channel kind.
+  def test_unpitched_starts_are_labeled_by_channel_kind
+    notes = Vgm::NoteLog.new
+    notes.on(0, 0, nil)
+    notes.on(1, 0, nil)
+    @view.update(snapshot(chips: [chip('huc6280:0', 'HuC6280 PSG', %w[Multi1 Multi2], notes,
+                                       kinds: %i[huc_noise huc_dda])]))
+
+    assert_match(/0:00\.00 +NOI +DAC/, render(width: 40, height: 8).join("\n"))
+  end
+
+  # Native chip trackers count now_sample from player launch; the time
+  # column shows the track position instead, with rows on its 50 ms grid.
+  def test_time_column_follows_the_track_position
+    launch_sample = 10 * Vgm::SAMPLE_RATE
+    notes = Vgm::NoteLog.new
+    notes.on(0, launch_sample - 2_205, 60)
+    @view.update(snapshot(chips: [chip('huc6280:0', 'HuC6280 PSG', ['Wave 1'], notes)], sample: launch_sample))
+    text = render(width: 40, height: 8, now_sample: launch_sample, position_ms: 2_000).join("\n")
+
+    assert_includes text, 'TRACKER · 0:02.00'
+    assert_match(/0:01\.95 +C-4/, text)
+    refute_includes text, '0:10'
+    # A later render's millisecond rounding must not shift the grid.
+    later = render(width: 40, height: 8, now_sample: launch_sample + 2_205, position_ms: 2_049).join("\n")
+
+    assert_match(/0:01\.95 +C-4/, later)
+    assert_includes later, 'TRACKER · 0:02.05'
+  end
+
   private
 
   def snapshot(chips:, sample: 0, revision: 1, status: :ready, message: nil)
@@ -139,9 +178,10 @@ class VgmTrackerViewTest < Minitest::Test
                       message: message, loop_count: 0, chips: chips, warnings: [])
   end
 
-  def chip(id, name, labels, notes)
+  def chip(id, name, labels, notes, kinds: [])
     channels = labels.each_with_index.map do |label, index|
-      Vgm::ChannelSnapshot.new(id: "#{id}:#{index}", label: label, kind: label == 'Noise' ? :noise : :tone,
+      kind = kinds[index] || (label == 'Noise' ? :noise : :tone)
+      Vgm::ChannelSnapshot.new(id: "#{id}:#{index}", label: label, kind: kind,
                                state: :key_on, last_trigger_sample: nil, pitch_hz: nil, note: nil,
                                pan: :lr, patch: nil, details: {})
     end
@@ -149,10 +189,10 @@ class VgmTrackerViewTest < Minitest::Test
                           details: { events: notes.packed })
   end
 
-  def render(width:, height:, now_sample: 0)
+  def render(width:, height:, now_sample: 0, position_ms: nil, view: @view)
     screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: height, cols: width)
-    @view.render(screen, x: 0, y: 0, width: width, height: height, theme: THEME,
-                         track_title: 'Song', now_sample: now_sample)
+    view.render(screen, x: 0, y: 0, width: width, height: height, theme: THEME,
+                        track_title: 'Song', now_sample: now_sample, position_ms: position_ms)
     screen.instance_variable_get(:@back).map { |row| row.map(&:ch).join }
   end
 end

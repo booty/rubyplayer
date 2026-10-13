@@ -2,7 +2,7 @@
 
 require_relative 'chip_live_view'
 require_relative 'spc_live_view'
-require_relative 'vgm_tracker_view'
+require_relative 'chip_tracker_view'
 
 module RubyPlayer
   module UI
@@ -33,7 +33,7 @@ module RubyPlayer
         self.page = page
         @chip_view = chip_view || ChipLiveView.new
         @spc_view = spc_view || SpcLiveView.new
-        @tracker_view = tracker_view || VgmTrackerView.new
+        @tracker_view = tracker_view || ChipTrackerView.new
         @spc_state = nil
         @position_ms = nil
         @now_sample = nil

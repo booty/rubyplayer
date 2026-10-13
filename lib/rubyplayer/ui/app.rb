@@ -10,7 +10,7 @@ require_relative '../playback_engine'
 require_relative '../vgm/telemetry'
 require_relative 'chip_live_view'
 require_relative 'spc_live_view'
-require_relative 'vgm_tracker_view'
+require_relative 'chip_tracker_view'
 require_relative '../gbs/tracker'
 require_relative '../nsf/tracker'
 require_relative '../hes/tracker'
@@ -61,7 +61,7 @@ module RubyPlayer
           event_bus: @bus, max_bytes: @config['ui', 'vgm_telemetry_max_bytes']
         )
         @vgm_live_view = ChipLiveView.new
-        @vgm_tracker_view = VgmTrackerView.new
+        @vgm_tracker_view = ChipTrackerView.new
         @spc_live_view = SpcLiveView.new
         # GBS, NSF, and HES reuse the VGM page; their rows come from chip
         # snapshots, each kind through its own tracker.

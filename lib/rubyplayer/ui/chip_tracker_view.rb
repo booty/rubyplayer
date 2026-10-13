@@ -2,24 +2,29 @@
 
 require_relative '../vgm/note_log'
 require_relative '../vgm/pitch'
+require_relative 'chip_live_view'
 
 module RubyPlayer
   module UI
-    # A tracker-shaped time grid built from VGM note events. VGM commands have
-    # sample timing but no pattern rows, so the rows are fixed 50 ms slices.
-    class VgmTrackerView
+    # A tracker-shaped time grid built from a snapshot's note events (VGM, or
+    # a native chip such as HES). The music has sample timing but no pattern
+    # rows, so the rows are fixed 50 ms slices of the track.
+    class ChipTrackerView
       ROW_SAMPLES = Vgm::SAMPLE_RATE / 20
       HEADER_ROWS = 3
       GUTTER_WIDTH_CELLS = 8
       COLUMN_WIDTH_CELLS = 11
-      CHIP_ORDER = { 'ym2612' => 0, 'sn76489' => 1, 'ym2413' => 2 }.freeze
+      # Starts without a pitch, by channel kind; other kinds stream samples.
+      UNPITCHED_LABELS = { noise: 'NOI', huc_noise: 'NOI', huc_dda: 'DAC' }.freeze
       Channel = Data.define(:chip_id, :chip_name, :voice_index, :label, :kind)
       private_constant :ROW_SAMPLES, :HEADER_ROWS, :GUTTER_WIDTH_CELLS, :COLUMN_WIDTH_CELLS,
-                       :CHIP_ORDER, :Channel
+                       :UNPITCHED_LABELS, :Channel
 
       attr_reader :snapshot
 
-      def initialize
+      # `source` names the format in the title (VGM, HES).
+      def initialize(source: 'VGM')
+        @source = source
         reset
       end
 
@@ -30,8 +35,7 @@ module RubyPlayer
         @snapshot = snapshot
         return self unless snapshot
 
-        ordered_chips = snapshot.chips.sort_by { |chip| [CHIP_ORDER.fetch(chip.id.split(':').first, 3), chip.id] }
-        @channels = ordered_chips.flat_map do |chip|
+        @channels = ChipLiveView.ordered_chips(snapshot.chips).flat_map do |chip|
           chip.channels.each_with_index.map do |channel, voice_index|
             Channel.new(chip_id: chip.id, chip_name: chip.name, voice_index: voice_index,
                         label: channel.label, kind: channel.kind)
@@ -55,9 +59,13 @@ module RubyPlayer
       # rubocop:enable Naming/PredicateMethod
 
       # Screen uses short x/y coordinates as its drawing convention.
+      # `position_ms` is the track position, when now_sample counts something
+      # else (native chips: output frames since launch).
       # rubocop:disable Naming/MethodParameterName
-      def render(screen, x:, y:, width:, height:, theme:, track_title:, now_sample:)
+      def render(screen, x:, y:, width:, height:, theme:, track_title:, now_sample:, position_ms: nil)
         return if width <= 0 || height <= 0
+
+        latch_track_offset(now_sample, position_ms)
 
         # Decoded here, not in update: App feeds both VGM pages every
         # snapshot, and only the page on screen needs its note history.
@@ -68,7 +76,7 @@ module RubyPlayer
                           ((width - GUTTER_WIDTH_CELLS) / COLUMN_WIDTH_CELLS).clamp(1, @channels.size)
                         end
         adjust_window(visible_count)
-        elapsed_sample = now_sample || @snapshot&.sample || 0
+        elapsed_sample = (now_sample || @snapshot&.sample || 0) + @track_offset_sample.to_i
         current_bucket = [elapsed_sample, 0].max / ROW_SAMPLES
         status = @snapshot&.message || (@snapshot ? status_label : 'Loading')
         range = if @channels.empty?
@@ -76,7 +84,7 @@ module RubyPlayer
                 else
                   "#{@window_index + 1}-#{@window_index + visible_count}/#{@channels.size}"
                 end
-        title = "#{track_title} · VGM TRACKER · #{format_time(current_bucket)}"
+        title = "#{track_title} · #{@source} TRACKER · #{format_time(current_bucket)}"
         title += " · #{status}" if status
         put(screen, x, y, width, height, 0, 0, title, fg: theme[:accent], bold: true)
         put(screen, x, y, width, height, 0, width - range.length, range, fg: theme[:text_muted]) unless range.empty?
@@ -94,8 +102,18 @@ module RubyPlayer
         @channels = []
         @packed_by_chip = {}
         @cells_by_chip = {}
+        @track_offset_sample = nil
         @selected_index = 0
         @window_index = 0
+      end
+
+      # Event samples plus this offset are track samples. The offset holds
+      # until the next reset (a seek starts a new generation), so millisecond
+      # rounding in later positions cannot shift notes between rows.
+      def latch_track_offset(now_sample, position_ms)
+        return if @track_offset_sample || @snapshot.nil?
+
+        @track_offset_sample = position_ms && now_sample ? (position_ms * Vgm::SAMPLE_RATE / 1000) - now_sample : 0
       end
 
       def status_label
@@ -112,7 +130,7 @@ module RubyPlayer
         # No default proc: render's dig must not add empty rows for silent voices.
         cells = {}
         Vgm::NoteLog.decode(packed).each do |event|
-          bucket = event.sample / ROW_SAMPLES
+          bucket = (event.sample + @track_offset_sample) / ROW_SAMPLES
           cell = ((cells[event.channel] ||= {})[bucket] ||= {})
           # A start and a later glide in one row both show (C-4>D-4); a
           # newer start replaces both, since the earlier note has ended.
@@ -137,7 +155,7 @@ module RubyPlayer
       end
 
       def unpitched_label(chip, voice_index)
-        chip.channels[voice_index]&.kind == :noise ? 'NOI' : 'PCM'
+        UNPITCHED_LABELS.fetch(chip.channels[voice_index]&.kind, 'PCM')
       end
 
       def adjust_window(visible_count)

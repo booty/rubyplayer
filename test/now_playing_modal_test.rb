@@ -2,7 +2,7 @@ require 'test_helper'
 require 'stringio'
 require 'rubyplayer/vgm/snapshot'
 require 'rubyplayer/ui/chip_live_view'
-require 'rubyplayer/ui/vgm_tracker_view'
+require 'rubyplayer/ui/chip_tracker_view'
 
 class NowPlayingModalTest < Minitest::Test
   def track
@@ -156,7 +156,7 @@ class NowPlayingModalTest < Minitest::Test
   def test_tracker_page_uses_full_screen_frame_and_its_own_hint
     vgm = RubyPlayer::Track.new(id: 3, title: 'Chip song', format: 'vgm')
     modal = RubyPlayer::UI::NowPlayingModal.new(vgm, extras: {}, live_kind: :vgm,
-                                                     tracker_view: RubyPlayer::UI::VgmTrackerView.new, page: :tracker)
+                                                     tracker_view: RubyPlayer::UI::ChipTrackerView.new, page: :tracker)
     screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 15, cols: 40)
     captured_hint = nil
     frame = lambda do |w:, h:, hint:, **_options, &draw|

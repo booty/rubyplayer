@@ -123,6 +123,11 @@ module RubyPlayer
       Row = Struct.new(:chip, :channel, :voice, :key)
       private_constant :Row
 
+      # Chips in table order (shared with ChipTrackerView); unknown ids last.
+      def self.ordered_chips(chips)
+        chips.sort_by { |chip| [CHIP_ORDER.fetch(chip.id.split(':').first, CHIP_ORDER.size), chip.id] }
+      end
+
       attr_reader :selected_channel_id, :snapshot
       attr_accessor :paused
 
@@ -243,7 +248,7 @@ module RubyPlayer
       end
 
       def build_rows(snapshot)
-        chips = Array(snapshot&.chips).sort_by { |chip| [CHIP_ORDER.fetch(chip.id.split(':').first, 3), chip.id] }
+        chips = self.class.ordered_chips(Array(snapshot&.chips))
         rows = chips.flat_map do |chip|
           chip.channels.map { |channel| Row.new(chip, channel, channel.id.split(':').last.to_i) }
         end
@@ -312,7 +317,7 @@ module RubyPlayer
       end
 
       def chip_lines
-        lines = Array(@snapshot.chips).sort_by { |chip| CHIP_ORDER.fetch(chip.id.split(':').first, 99) }.map do |chip|
+        lines = self.class.ordered_chips(Array(@snapshot.chips)).map do |chip|
           chip_type = chip.id.split(':').first
           family = native_panel_families.find { |entry| entry.chip_ids.include?(chip_type) }
           next line(native_panel(family, :summary, chip)) if family
