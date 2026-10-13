@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative '../duration_formatter'
 require_relative '../spc/snapshot'
 require_relative '../spc/dsp'
 require_relative '../spc/brr'
@@ -472,10 +473,7 @@ module RubyPlayer
       def format_hz(frequency) = frequency >= 1000 ? format('%.1f kHz', frequency / 1000.0) : "#{frequency} Hz"
       def format_samples(count) = count >= 1000 ? format('%.1fk smp', count / 1000.0) : "#{count} smp"
 
-      def format_time(milliseconds)
-        seconds = milliseconds.to_i / 1000
-        format('%d:%02d', seconds / 60, seconds % 60)
-      end
+      def format_time(milliseconds) = DurationFormatter.format(milliseconds.to_i)
 
       def title(text) = { text: text, color: :accent, bold: true }
       def line(text, color: :text) = { text: text, color: color }

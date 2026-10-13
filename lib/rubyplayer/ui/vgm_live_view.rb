@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative '../duration_formatter'
 require_relative '../vgm/snapshot'
 require_relative '../vgm/envelope'
 require_relative '../vgm/note_log'
@@ -305,7 +306,7 @@ module RubyPlayer
 
       def header(track_title)
         chips = Array(@snapshot&.chips).map(&:name).uniq.join(' + ')
-        parts = [track_title, "#{@source} LIVE", chips, format_time(@clock)]
+        parts = [track_title, "#{@source} LIVE", chips, format_sample_time(@clock)]
         parts << "Loop #{@snapshot.loop_count}" if @snapshot&.loop_count.to_i.positive?
         parts << (@paused ? 'PAUSED' : 'PLAYING')
         parts << @snapshot.message if @snapshot&.message
@@ -813,7 +814,7 @@ module RubyPlayer
         [title("#{channel.label} · PCM (DAC)"),
          line("Last byte #{value ? format('$%02X (%+d)', value, value - 0x80) : '--'} · " \
               "#{rate&.positive? ? "stream ~#{format_hz(rate)}" : 'no stream'}"),
-         line("#{details[:dac_writes].to_i} writes · last at #{format_time(details[:dac_sample].to_i)}"),
+         line("#{details[:dac_writes].to_i} writes · last at #{format_sample_time(details[:dac_sample])}"),
          line("Pan #{PAN_LABELS.fetch(channel.pan, '--').strip} · FM 6 is replaced while the DAC is on",
               color: :text_muted)]
       end
@@ -1162,10 +1163,8 @@ module RubyPlayer
         frequency >= 1000 ? format('%.1f kHz', frequency / 1000.0) : format('%.1f Hz', frequency)
       end
 
-      def format_time(sample)
-        seconds = sample.to_i / Vgm::SAMPLE_RATE
-        format('%d:%02d', seconds / 60, seconds % 60)
-      end
+      # A position in 44.1 kHz samples, as m:ss.
+      def format_sample_time(sample) = DurationFormatter.format(sample.to_i * 1000 / Vgm::SAMPLE_RATE)
 
       def title(text) = { text: text, color: :accent, bold: true }
       def line(text, color: :text, bold: false) = { text: text, color: color, bold: bold }
