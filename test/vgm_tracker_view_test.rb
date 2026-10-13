@@ -54,6 +54,17 @@ class VgmTrackerViewTest < Minitest::Test
     refute @view.handle_key('up')
   end
 
+  def test_pruned_note_log_keeps_a_held_note_visible_at_its_boundary
+    notes = Vgm::NoteLog.new
+    notes.on(0, 0, 60)
+    notes.on(1, 22 * Vgm::SAMPLE_RATE, 62)
+    @view.update(snapshot(chips: [chip('ym2612:0', 'YM2612', %w[FM1 FM2], notes)],
+                          sample: 2 * Vgm::SAMPLE_RATE))
+
+    assert_match(/0:02\.00.*C-4/, render(width: 50, height: 10,
+                                         now_sample: 2 * Vgm::SAMPLE_RATE).join("\n"))
+  end
+
   def test_status_and_paused_playhead_follow_the_heard_sample
     assert_includes render(width: 50, height: 10).join("\n"), 'Loading'
     @view.update(snapshot(chips: [], status: :ready, message: 'Catching up'))
@@ -63,6 +74,9 @@ class VgmTrackerViewTest < Minitest::Test
     @view.update(snapshot(chips: [], status: :unsupported, message: 'Chip unavailable'))
 
     assert_includes render(width: 50, height: 10).join("\n"), 'Chip unavailable'
+    @view.update(snapshot(chips: [], status: :error, message: nil))
+
+    assert_includes render(width: 50, height: 10).join("\n"), 'Error'
 
     @view.update(snapshot(chips: [chip('ym2612:0', 'YM2612', ['FM1'], Vgm::NoteLog.new)]))
     paused = render(width: 50, height: 10, now_sample: 4_410, paused: true)
