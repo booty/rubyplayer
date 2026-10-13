@@ -7,6 +7,7 @@ require_relative '../spc/brr'
 require_relative '../spc/fir'
 require_relative '../spc/ram_map'
 require_relative 'live_glyphs'
+require_relative 'live_panel_renderer'
 
 module RubyPlayer
   module UI
@@ -15,6 +16,7 @@ module RubyPlayer
     # sample, RAM, and sample-directory panels as space allows.
     class SpcLiveView
       include LiveGlyphs
+      include LivePanelRenderer
 
       VOICES = Spc::VOICES
       TABLE_ROWS = VOICES + 1 # heading + one row per voice
@@ -36,7 +38,6 @@ module RubyPlayer
       # matching the voice_line formats.
       WIDE_FIXED_COLUMNS = 2 + 4 + 6 + 8 + 7 + 17 + 3 + 5 + 7 + 9
       NARROW_FIXED_COLUMNS = 2 + 4 + 7 + 6 + 3 + 5 + 7 + 7
-      COLUMN_GAP = 2
       # A note-start edge stays bold for about two snapshots (~100 ms at 48 kHz).
       EDGE_HOLD_FRAMES = 4_800
       WAVEFORM_SAMPLES = 4_096
@@ -49,7 +50,7 @@ module RubyPlayer
                        :MIN_PANEL_ROWS, :MAX_PANEL_ROWS, :MIN_GRAPH_ROWS, :STACKED_GRAPH_ROWS,
                        :ECHO_FIXED_ROWS, :SAMPLE_FIXED_ROWS, :RAM_FIXED_ROWS, :RAM_LABEL, :RAM_SLICE_ALIGN,
                        :WIDE_FIXED_COLUMNS,
-                       :NARROW_FIXED_COLUMNS, :COLUMN_GAP, :EDGE_HOLD_FRAMES,
+                       :NARROW_FIXED_COLUMNS, :EDGE_HOLD_FRAMES,
                        :WAVEFORM_SAMPLES, :ENV_MAX, :RAM_GLYPHS,
                        :GAIN_LABELS
 
@@ -250,22 +251,6 @@ module RubyPlayer
          ram_panel(derived, global, @width, RAM_FIXED_ROWS + 1)]
       end
 
-      def render_columns(top, rows, panels)
-        width = column_width(panels.size)
-        panels.each_with_index do |panel, index|
-          render_block(top, index * (width + COLUMN_GAP), width, rows, panel)
-        end
-      end
-
-      def column_width(count) = (@width - (COLUMN_GAP * (count - 1))) / count
-
-      def render_block(top, column, width, rows, lines)
-        lines.first([rows, 0].max).each_with_index do |line, index|
-          put(top + index, line[:text][0, width], column: column, fg: @theme[line[:color] || :text],
-                                                  bold: line[:bold] || false)
-        end
-      end
-
       def graph_rows(rows, fixed) = [rows - fixed, MIN_GRAPH_ROWS].max
 
       def echo_panel(global, width, rows)
@@ -382,19 +367,6 @@ module RubyPlayer
         @fingerprint = outside.map(&:hash)
       end
 
-      # One entry per panel: a result is reused only while that panel's own
-      # inputs are unchanged, so memory stays bounded and unrelated changes
-      # (an instrument switch) don't discard it. Building graph lines per
-      # frame dominated render time (~3 ms at 158 columns).
-      def cached(name, key)
-        stored_key, value = @caches[name]
-        return value if @caches.key?(name) && stored_key == key
-
-        value = yield
-        @caches[name] = [key, value]
-        value
-      end
-
       def waveform_lines(derived, entry, width, rows)
         samples = derived[:waveforms][entry[:srcn]] ||=
           Spc::Brr.decode(derived[:ram], entry[:start], max_samples: WAVEFORM_SAMPLES)
@@ -477,17 +449,6 @@ module RubyPlayer
 
       def title(text) = { text: text, color: :accent, bold: true }
       def line(text, color: :text) = { text: text, color: color }
-
-      # Only the track title comes from outside (file tags); the rest is ours.
-      def sanitize(text) = text.to_s.gsub(/[[:cntrl:]]/, ' ')
-
-      # Clips to the widget's rectangle so nothing paints outside it.
-      def put(row, text, column: 0, **style)
-        available = @width - column
-        return unless available.positive? && row.between?(0, @height - 1)
-
-        @screen.put(@top + row, @left + column, text[0, available], **style)
-      end
     end
   end
 end

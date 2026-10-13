@@ -287,6 +287,7 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | `vgm_live_view.rb`, `gb_live_panels.rb`, `nes_live_panels.rb`, `vgm_telemetry_controller.rb` | `VgmLiveView`: the full-modal VGM (and GBS and NSF, through the Game Boy and NES panel modules) live page, rendering snapshots into a rectangle with three-column, two-column, or stacked panels by size; and the visible-consumer refresh controller. The view does not read files, query the engine, or depend on the Now Playing modal. |
 | `gb_live_panels.rb` | `GbLivePanels`: the Game Boy APU parts of `VgmLiveView` (chip line, instrument text, exact levels, voice panel, volume envelope and wave RAM). |
 | `live_glyphs.rb` | Block-character level bars and graphs shared by the live pages. |
+| `live_panel_renderer.rb` | Panel drawing shared by the live pages: equal-width columns of clipped lines and a one-entry cache per panel. Layout stays in each page. |
 | `screen.rb` | `Screen`: the double-buffered renderer described above (`put`/`clear_back`/`flush`), plus truecolor and named ANSI color support. Has no knowledge of panes, tracks, or layout — purely a drawing primitive. |
 | `library_pane.rb` | `LibraryPane`: left-hand source tree with queue/history/favorites/Focus, five smart views, and folder hierarchy. Owns folder breadcrumbs, selection, scrolling, and overflow indicator. |
 | `list_row_renderer.rb` | Shared stateless track-row construction, styled segment drawing, clipping, theme-color resolution, and section-header text. |

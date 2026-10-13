@@ -7,6 +7,7 @@ require_relative '../vgm/note_log'
 require_relative '../vgm/pitch'
 require_relative 'live_glyphs'
 require_relative 'gb_live_panels'
+require_relative 'live_panel_renderer'
 require_relative 'nes_live_panels'
 
 module RubyPlayer
@@ -23,6 +24,7 @@ module RubyPlayer
     # they move smoothly between snapshots.
     class VgmLiveView
       include LiveGlyphs
+      include LivePanelRenderer
       include GbLivePanels
       include NesLivePanels
 
@@ -33,7 +35,6 @@ module RubyPlayer
       THREE_COLUMN_WIDTH = 150
       TWO_COLUMN_WIDTH = 100
       WIDE_TABLE_WIDTH = 110
-      COLUMN_GAP = 2
       MIN_PANEL_ROWS = 6
       KEYBOARD_ROWS = 3 # octave labels, black keys, white keys
       # Columns around the level bar, matching the channel_line formats.
@@ -92,7 +93,7 @@ module RubyPlayer
       OPERATOR_LABEL_WIDTH = 3
       MIN_OPERATOR_LEVEL = 8
       private_constant :CHANNEL_KEYS, :CHIP_ORDER, :THREE_COLUMN_WIDTH, :TWO_COLUMN_WIDTH, :WIDE_TABLE_WIDTH,
-                       :COLUMN_GAP, :MIN_PANEL_ROWS, :KEYBOARD_ROWS, :WIDE_FIXED_COLUMNS, :NARROW_FIXED_COLUMNS,
+                       :MIN_PANEL_ROWS, :KEYBOARD_ROWS, :WIDE_FIXED_COLUMNS, :NARROW_FIXED_COLUMNS,
                        :LEVEL_FLOOR_DB, :RECENT_TRIGGER_SAMPLES, :HISTORY_COLUMN_SAMPLES, :KEYBOARD_LOW,
                        :KEYBOARD_KEYS, :BLACK_KEYS, :HOLD_AXIS, :RELEASE_AXIS, :PAN_LABELS, :STATE_LABELS,
                        :ACTIVE_STATES, :ALGORITHMS, :ALGORITHM_NAMES, :FEEDBACK_NAMES, :AMS_NAMES, :FMS_NAMES,
@@ -275,37 +276,6 @@ module RubyPlayer
           voice = voice_panel(@width, rows).first([rows - history_rows - 1, 1].max)
           history = history_panel(@width, rows - voice.size - 1)
           render_block(top, 0, @width, rows, [*voice, *(history.empty? ? [] : [line(''), *history])])
-        end
-      end
-
-      def render_columns(top, rows, panels)
-        width = column_width(panels.size)
-        panels.each_with_index do |panel, index|
-          render_block(top, index * (width + COLUMN_GAP), width, rows, panel)
-        end
-      end
-
-      def column_width(count) = (@width - (COLUMN_GAP * (count - 1))) / count
-
-      # Lines are { text:, color:, bold: } or { segments: [[text, color, bold], ...] }.
-      def render_block(top, column, width, rows, lines)
-        lines.first([rows, 0].max).each_with_index do |item, index|
-          if item[:segments]
-            put_segments(top + index, column, width, item[:segments])
-          else
-            put(top + index, item[:text][0, width], column: column, fg: @theme[item[:color] || :text],
-                                                    bold: item[:bold] || false)
-          end
-        end
-      end
-
-      def put_segments(row, column, width, segments)
-        offset = 0
-        segments.each do |text, color, bold|
-          break if offset >= width
-
-          put(row, text[0, width - offset], column: column + offset, fg: @theme[color || :text], bold: bold || false)
-          offset += text.length
         end
       end
 
@@ -628,7 +598,7 @@ module RubyPlayer
         low = keyboard_low(keys)
         sounding = sounding_notes
         signature = sounding.transform_values { |rows| rows.map(&:key) }
-        labels, *key_rows = cached([:keyboard, low, keys, key_width, signature, @mute_mask]) do
+        labels, *key_rows = cached(:keyboard, [low, keys, key_width, signature, @mute_mask]) do
           [keyboard_labels(low, keys, key_width),
            *[true, false].map do |black_row|
              cell_runs(Array.new(keys) { |offset| key_cell(low + offset, black_row, sounding) }
@@ -920,7 +890,7 @@ module RubyPlayer
         graph_rows = (((rows - 2) / operators.size) - 1).clamp(1, 4)
         # Keyed on the patch, not the channel: switching between channels
         # that share an instrument reuses the graphs.
-        body = cached([:envelope, row.chip.id, patch.digest, envelope_keycode(row), width, graph_rows]) do
+        body = cached(:envelope, [row.chip.id, patch.digest, envelope_keycode(row), width, graph_rows]) do
           operators.flat_map do |operator|
             [line(envelope_label(operator), color: :text_muted), *envelope_graph(row, operator, width, graph_rows)]
           end
@@ -1010,7 +980,7 @@ module RubyPlayer
         bucket = @playback_sample / HISTORY_COLUMN_SAMPLES
         # Channel states feed open DAC bursts, so they are part of the key.
         states = @rows[first, lanes].map { |row| row.channel.state }
-        body = cached([:history, bucket, @history_version, states, lane_width, first, lanes, @mute_mask]) do
+        body = cached(:history, [bucket, @history_version, states, lane_width, first, lanes, @mute_mask]) do
           @rows[first, lanes].map { |row| { segments: [["#{row.key} ", :text_muted, false], *lane(row, lane_width, bucket)] } }
         end
         [title(format('History · last %.0f s', seconds)), *body]
@@ -1151,17 +1121,6 @@ module RubyPlayer
         }.fetch(status, 'No live channel data')
       end
 
-      # Single-entry cache per panel (see SpcLiveView#cached).
-      def cached(key)
-        name = key.first
-        stored_key, value = @caches[name]
-        return value if @caches.key?(name) && stored_key == key
-
-        value = yield
-        @caches[name] = [key, value]
-        value
-      end
-
       def format_value(value) = value.nil? ? '--' : value.to_s
       def pan_label(channel) = PAN_LABELS.fetch(channel.pan, '--').strip
       def format_clock(frequency) = frequency ? format('%.2f MHz', frequency / 1_000_000.0) : '-- MHz'
@@ -1175,17 +1134,6 @@ module RubyPlayer
 
       def title(text) = { text: text, color: :accent, bold: true }
       def line(text, color: :text, bold: false) = { text: text, color: color, bold: bold }
-
-      # Track titles and chip warnings come from the file; the rest is ours.
-      def sanitize(text) = text.to_s.gsub(/[[:cntrl:]]/, ' ')
-
-      # Clips to the widget's rectangle so nothing paints outside it.
-      def put(row, text, column: 0, **style)
-        available = @width - column
-        return unless available.positive? && row.between?(0, @height - 1)
-
-        @screen.put(@top + row, @left + column, text[0, available], **style)
-      end
     end
   end
 end
