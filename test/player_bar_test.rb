@@ -13,7 +13,7 @@ class PlayerBarTest < Minitest::Test
   def setup
     @bar = RubyPlayer::UI::PlayerBar.new(glyphs: RubyPlayer::DEFAULTS['glyphs'], rows: 4)
     @track = RubyPlayer::Track.new(id: 1, title: 'Flash Man', artist: 'Capcom', duration_ms: 120_000)
-    @details = Details.new(rating: 4, credits: 'Capcom · Mega Man 2 (1988)', format: 'NSF · 2A03 · 48 kHz stereo')
+    @details = Details.new(rating: 4, credits: 'Capcom · Mega Man 2 (1988)', file_facts: 'NSF · 2A03 · 48 kHz stereo')
   end
 
   def test_height_is_the_configured_rows_plus_border_or_one_line_when_short
@@ -79,13 +79,13 @@ class PlayerBarTest < Minitest::Test
                                                      'voice_layout' => '2 pulse + 1 wave + 1 noise' })
 
     assert_equal 'Jake Kaufman · Shantae (2002) · track 1', details.credits
-    assert_equal 'GBS · Game Boy APU · 2 pulse + 1 wave + 1 noise', details.format
+    assert_equal 'GBS · Game Boy APU · 2 pulse + 1 wave + 1 noise', details.file_facts
     song = RubyPlayer::Track.new(id: 4, title: 'Song', artist: 'Band', composer: 'Writer', format: 'm4a')
     details = Details.for(song, rating: nil, extras: { 'codec' => 'aac', 'bit_rate' => '256000',
                                                        'sample_rate' => '44100', 'channels' => '2' })
 
     assert_equal 'Band · composer Writer', details.credits
-    assert_equal 'M4A · AAC · 256 kbps · 44.1 kHz · stereo', details.format
+    assert_equal 'M4A · AAC · 256 kbps · 44.1 kHz · stereo', details.file_facts
     assert_nil Details.for(RubyPlayer::Track.new(id: 5, title: 'Bare'), rating: nil, extras: {}).credits
   end
 

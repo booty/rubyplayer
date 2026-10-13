@@ -8,12 +8,13 @@ module RubyPlayer
     # stop, so it uses the panes' focus style) and supplies the slower facts
     # as Details, read once per track. Short terminals get one line instead.
     class PlayerBar
-      # credits: artist/album/year/composer text; format: file type and
-      # hardware or codec facts. Either may be nil.
-      Details = Data.define(:rating, :credits, :format) do
+      # credits: artist/album/year/composer text; file_facts: file type and
+      # hardware or codec facts. Either may be nil. (Not `format`, which
+      # would hide Kernel#format on every Details.)
+      Details = Data.define(:rating, :credits, :file_facts) do
         # From a track and its stored metadata extras (Library#track_metadata_for).
         def self.for(track, extras:, rating:)
-          new(rating: rating, credits: credits(track, extras), format: file_facts(track, extras))
+          new(rating: rating, credits: credits(track, extras), file_facts: file_facts(track, extras))
         end
 
         def self.credits(track, extras)
@@ -88,11 +89,11 @@ module RubyPlayer
 
       private
 
-      # Title on top and progress on the bottom row; credits and format fill
+      # Title on top and progress on the bottom row; credits and file facts fill
       # the rows between while they fit (nil rows stay blank).
       def info_lines(state, details, rows)
-        middle = %i[credits format].select { |kind| state[:track] && details&.public_send(kind) }
-                                   .first(rows - 2)
+        middle = %i[credits file_facts].select { |kind| state[:track] && details&.public_send(kind) }
+                                       .first(rows - 2)
         [:title, *middle, *Array.new(rows - 2 - middle.size), :progress]
       end
 
@@ -102,7 +103,7 @@ module RubyPlayer
         case kind
         when :title then draw_title(screen, x, y, w, state, details, theme)
         when :credits then screen.put(y, x, details.credits[0, w], fg: theme[:text])
-        when :format then screen.put(y, x, details.format[0, w], fg: theme[:text_muted])
+        when :file_facts then screen.put(y, x, details.file_facts[0, w], fg: theme[:text_muted])
         when :progress then draw_progress(screen, x, y, w, state, theme)
         end
       end
