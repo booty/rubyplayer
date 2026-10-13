@@ -42,11 +42,32 @@ class AppScanningTest < Minitest::Test
     assert_includes @app.tracks_pane.visible_tracks.map(&:title), 'New during scan'
   end
 
+  def test_scan_progress_reveals_a_new_root_before_final_counts
+    @app.handle_events
+    library = @app.instance_variable_get(:@library)
+    root = library.upsert_folder(parent_id: nil, name: 'New root', path: '/new-root', kind: 'dir')
+    library.upsert_track(
+      folder_id: root, physical_path: '/new-root/new.vgm',
+      backend: 'gme', format: 'vgm', title: 'New during scan'
+    )
+    @app.instance_variable_set(
+      :@last_scan_refresh_at,
+      Process.clock_gettime(Process::CLOCK_MONOTONIC) - 1
+    )
+    @app.instance_variable_get(:@bus).publish(:scan_progress, processed: 1, total: 2)
+
+    @app.handle_events
+
+    folders = @app.library_pane.rows.filter_map { |row| row.folder&.fetch('name') }
+
+    assert_includes folders, 'New root'
+  end
+
   def test_scan_progress_refresh_is_throttled_and_deferred
     @app.handle_events
     refreshes = 0
-    original = @app.method(:refresh_panes)
-    @app.define_singleton_method(:refresh_panes) do
+    original = @app.method(:refresh_scan_panes)
+    @app.define_singleton_method(:refresh_scan_panes) do
       refreshes += 1
       original.call
     end
@@ -70,5 +91,25 @@ class AppScanningTest < Minitest::Test
     @app.handle_events
 
     assert_equal 2, refreshes
+  end
+
+  def test_scan_progress_does_not_reload_the_queue
+    @app.handle_events
+    queue_reloads = 0
+    queued = @app.queued_pane
+    original = queued.method(:reload!)
+    queued.define_singleton_method(:reload!) do
+      queue_reloads += 1
+      original.call
+    end
+    @app.instance_variable_set(
+      :@last_scan_refresh_at,
+      Process.clock_gettime(Process::CLOCK_MONOTONIC) - 1
+    )
+    @app.instance_variable_get(:@bus).publish(:scan_progress, processed: 1, total: 2)
+
+    @app.handle_events
+
+    assert_equal 0, queue_reloads
   end
 end

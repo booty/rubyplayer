@@ -228,12 +228,12 @@ module RubyPlayer
       end
     end
 
-    def roots
-      visible_folders('parent_id IS NULL')
+    def roots(include_empty: false)
+      visible_folders('parent_id IS NULL', include_empty: include_empty)
     end
 
-    def children_of(folder_id)
-      visible_folders('parent_id = ?', [folder_id])
+    def children_of(folder_id, include_empty: false)
+      visible_folders('parent_id = ?', [folder_id], include_empty: include_empty)
     end
 
     def tracks_under(folder_id)
@@ -513,10 +513,11 @@ module RubyPlayer
       SQL
     end
 
-    def visible_folders(where, params = [])
+    def visible_folders(where, params = [], include_empty: false)
+      count_filter = include_empty ? '' : ' AND track_count > 0'
       @db.read do |s|
         s.execute(
-          "SELECT * FROM folders WHERE #{where} AND missing = 0 AND track_count > 0 ORDER BY name COLLATE NOCASE", params
+          "SELECT * FROM folders WHERE #{where} AND missing = 0#{count_filter} ORDER BY name COLLATE NOCASE", params
         )
       end
     end

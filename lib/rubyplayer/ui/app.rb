@@ -1155,10 +1155,12 @@ module RubyPlayer
 
       def handle_scan_progress(payload)
         @scan_refresh_pending = true
+        @library_pane.scanning = true
         @status_line.set_message("Scanning: #{payload[:processed]}/#{payload[:total]} files")
       end
 
       def handle_scan_complete(payload)
+        @library_pane.scanning = false
         @status_line.set_message(
           "Scan complete: #{payload[:processed]} files, #{payload[:errored]} errors"
         )
@@ -1172,7 +1174,7 @@ module RubyPlayer
 
         @scan_refresh_pending = false
         @last_scan_refresh_at = now
-        refresh_panes
+        refresh_scan_panes
         :refreshed
       end
 
@@ -1226,6 +1228,13 @@ module RubyPlayer
         # route_to_pane/select_queue) where resetting the cursor is desired.
         @tracks_pane.reload!
         @queued_pane.reload!
+      end
+
+      def refresh_scan_panes
+        @folder_stats = nil
+        @needs_render = true
+        @library_pane.rebuild!
+        @tracks_pane.reload!
       end
 
       def reload_config_if_changed

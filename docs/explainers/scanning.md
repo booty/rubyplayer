@@ -86,8 +86,11 @@ one archive or multi-subtune file can yield many tracks. `errored` counts failed
 WorkItems; individual entry failures can be isolated inside an otherwise
 successfully processed archive. App progressively reloads panes at most once
 every 250 ms so extracted metadata appears during a large scan without making
-each completed file trigger a full pane rebuild. Completion always performs a
-final refresh after folder counts are recomputed. The UI never decodes files.
+each completed file trigger a full pane rebuild. While counts are pending, the
+Library pane includes zero-count folders so newly discovered roots and folders
+can be browsed; progressive refresh skips the unrelated queue/history query.
+Completion always performs a final full refresh after folder counts are
+recomputed. The UI never decodes files.
 
 The final UI steps in the diagram can occur throughout the scan as events arrive.
 Completion is emitted per root because App invokes `process` separately for

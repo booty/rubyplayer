@@ -54,7 +54,7 @@ module RubyPlayer
 
     class Gme
       class Error < StandardError; end
-      OpenEmu = Data.define(:pointer, :m3u_loaded)
+      OpenEmu = Data.define(:pointer, :m3u_loaded, :m3u_duration_entries)
       private_constant :OpenEmu
 
       def name = 'gme'
@@ -64,8 +64,11 @@ module RubyPlayer
       end
 
       def metadata(path, subtune_index)
-        with_emu(path, GmeLib::GME_INFO_ONLY) do |emu, m3u_loaded|
-          metadata_for(emu, path, subtune_index, ChiptuneMetadata.read(path), m3u_loaded: m3u_loaded)
+        with_emu(path, GmeLib::GME_INFO_ONLY, inspect_m3u_duration: true) do |emu, m3u_loaded, m3u_duration_entries|
+          metadata_for(
+            emu, path, subtune_index, ChiptuneMetadata.read(path),
+            m3u_loaded: m3u_loaded, m3u_duration: m3u_duration_entries&.at(subtune_index)
+          )
         end
       end
 
@@ -73,11 +76,15 @@ module RubyPlayer
       def each_metadata(path)
         return enum_for(__method__, path) unless block_given?
 
-        with_emu(path, GmeLib::GME_INFO_ONLY) do |emu, m3u_loaded|
+        with_emu(path, GmeLib::GME_INFO_ONLY, inspect_m3u_duration: true) do |emu, m3u_loaded, m3u_duration_entries|
           count = GmeLib.gme_track_count(emu)
           hardware = ChiptuneMetadata.read(path)
           count.times do |i|
-            yield metadata_for(emu, path, i, hardware, m3u_loaded: m3u_loaded), i, count
+            meta = metadata_for(
+              emu, path, i, hardware,
+              m3u_loaded: m3u_loaded, m3u_duration: m3u_duration_entries&.at(i)
+            )
+            yield meta, i, count
           end
         end
       end
@@ -181,7 +188,7 @@ module RubyPlayer
 
       private
 
-      def metadata_for(emu, path, subtune_index, hardware, m3u_loaded:)
+      def metadata_for(emu, path, subtune_index, hardware, m3u_loaded:, m3u_duration:)
         with_info(emu, subtune_index) do |info|
           {
             title: MetadataHelper.presence(info[:song]) || format('Track %02d', subtune_index + 1),
@@ -189,7 +196,8 @@ module RubyPlayer
             artist: MetadataHelper.presence(info[:author]),
             composer: MetadataHelper.presence(info[:author]),
             track_number: subtune_index + 1,
-            **duration_metadata(info, m3u_loaded: m3u_loaded),
+            **duration_metadata(info, m3u_loaded: m3u_loaded,
+                                      m3u_duration: m3u_duration),
             format: MetadataHelper.format_extension(path),
             extra: hardware.merge(info_extras(info))
           }
@@ -206,13 +214,16 @@ module RubyPlayer
         extras.compact
       end
 
-      def open_emu(path, sample_rate)
+      def open_emu(path, sample_rate, inspect_m3u_duration: false)
         out = FFI::MemoryPointer.new(:pointer)
         err = GmeLib.gme_open_file(path, out, sample_rate)
         raise Error, err if err
 
         emu = out.read_pointer
-        OpenEmu.new(emu, load_sibling_m3u(emu, path))
+        m3u_duration_entries = m3u_duration_entries(path) if inspect_m3u_duration
+        m3u_loaded = load_sibling_m3u(emu, path)
+        m3u_duration_entries = nil unless m3u_loaded
+        OpenEmu.new(emu, m3u_loaded, m3u_duration_entries)
       end
 
       # NSF/HES-family rips rarely embed real per-track lengths themselves;
@@ -227,10 +238,78 @@ module RubyPlayer
         GmeLib.gme_load_m3u(emu, m3u_path).nil?
       end
 
-      def duration_metadata(info, m3u_loaded:)
+      # libgme exposes the effective duration but not whether an individual
+      # playlist entry supplied it. Parse only enough of its M3U grammar to
+      # identify the length field; nil entries are ignored conservatively.
+      def m3u_duration_entries(path)
+        m3u_path = "#{path.sub(/\.[^.]+\z/, '')}.m3u"
+        return unless File.file?(m3u_path)
+
+        File.binread(m3u_path).lines(chomp: true).each_with_object([]) do |line, entries|
+          next if line.empty? || line.start_with?('#')
+
+          duration = m3u_entry_duration(line)
+          entries << duration unless duration.nil?
+        end
+      rescue SystemCallError
+        nil
+      end
+
+      def m3u_entry_duration(line)
+        fields = m3u_fields_after_filename(line)
+        return false unless fields
+
+        track = fields.match(/\A(?:\$[0-9a-f]+|\d*)\s*,\s*/i)
+        return unless track
+
+        m3u_name_has_duration?(fields.byteslice(track[0].bytesize..))
+      end
+
+      def m3u_name_has_duration?(name_and_timing)
+        index = 0
+        while index < name_and_timing.bytesize
+          byte = name_and_timing.getbyte(index)
+          if byte == 92 # escaped character
+            index += 2
+            next
+          end
+          if byte == 44 # comma
+            timing = name_and_timing.byteslice((index + 1)..).lstrip
+            first = timing.getbyte(0)
+            return digit_byte?(first) if first == 44 || first == 45 || digit_byte?(first)
+          end
+          index += 1
+        end
+        false
+      end
+
+      def m3u_fields_after_filename(line)
+        index = 0
+        while index < line.bytesize
+          byte = line.getbyte(index)
+          if byte == 92 # escaped character
+            index += 2
+            next
+          end
+          if line.byteslice(index, 2) == '::'
+            comma = line.index(',', index + 2)
+            return line.byteslice((comma + 1)..).lstrip if comma && comma > index + 3
+          elsif byte == 44
+            fields = line.byteslice((index + 1)..).lstrip
+            first = fields.getbyte(0)
+            return fields if first == 36 || digit_byte?(first)
+          end
+          index += 1
+        end
+        nil
+      end
+
+      def digit_byte?(byte) = byte&.between?(48, 57)
+
+      def duration_metadata(info, m3u_loaded:, m3u_duration:)
         duration_ms = real_length(info)
         source = if duration_ms
-                   m3u_loaded ? 'm3u' : 'file'
+                   m3u_loaded && m3u_duration ? 'm3u' : 'file'
                  elsif info[:loop_length].positive?
                    'loop_policy'
                  else
@@ -250,9 +329,9 @@ module RubyPlayer
         info[:length] >= 0 ? info[:length] : nil
       end
 
-      def with_emu(path, sample_rate)
-        opened = open_emu(path, sample_rate)
-        yield opened.pointer, opened.m3u_loaded
+      def with_emu(path, sample_rate, inspect_m3u_duration: false)
+        opened = open_emu(path, sample_rate, inspect_m3u_duration: inspect_m3u_duration)
+        yield opened.pointer, opened.m3u_loaded, opened.m3u_duration_entries
       ensure
         GmeLib.gme_delete(opened.pointer) if opened
       end

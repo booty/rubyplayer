@@ -21,7 +21,10 @@ module RubyPlayer
         @scroll = 0
         @rows = []
         @page_size = ScrollableList::PAGE_SIZE_FALLBACK
+        @scanning = false
       end
+
+      attr_writer :scanning
 
       def rebuild!
         @breadcrumbs = {}
@@ -37,7 +40,9 @@ module RubyPlayer
             @rows << Row.new(kind: :playlist, playlist: playlist, depth: 1)
           end
         end
-        @library.roots.each { |f| append_folder(f, 1, []) } if @expanded[:all]
+        # Aggregate counts finalize after workers join. During extraction,
+        # include zero-count rows so newly discovered folders are browsable.
+        @library.roots(include_empty: @scanning).each { |f| append_folder(f, 1, []) } if @expanded[:all]
         @selection = @selection.clamp(0, [@rows.size - 1, 0].max)
       end
 
@@ -109,7 +114,9 @@ module RubyPlayer
         @rows << Row.new(kind: :folder, folder: folder, depth: depth)
         return unless @expanded[folder['id']]
 
-        @library.children_of(folder['id']).each { |c| append_folder(c, depth + 1, path) }
+        @library.children_of(folder['id'], include_empty: @scanning).each do |child|
+          append_folder(child, depth + 1, path)
+        end
       end
 
       def toggle_expand(open)

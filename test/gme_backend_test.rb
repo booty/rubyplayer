@@ -1,6 +1,8 @@
 require 'test_helper'
 require 'rubyplayer/backends/gme'
 require_relative 'support/rip_fixtures'
+require 'tmpdir'
+require 'fileutils'
 
 class GmeBackendTest < Minitest::Test
   Rips = TestSupport::RipFixtures
@@ -60,9 +62,9 @@ class GmeBackendTest < Minitest::Test
     expected = Array.new(@gme.track_count(path)) { |i| @gme.metadata(path, i) }
     opens = 0
     original = @gme.method(:open_emu)
-    @gme.define_singleton_method(:open_emu) do |*args|
+    @gme.define_singleton_method(:open_emu) do |*args, **kwargs|
       opens += 1
-      original.call(*args)
+      original.call(*args, **kwargs)
     end
     entries = @gme.each_metadata(path).to_a
 
@@ -96,6 +98,73 @@ class GmeBackendTest < Minitest::Test
     assert_nil meta[:duration_ms]
     assert_equal 29_215, meta[:play_length_ms]
     assert_equal 'loop_policy', meta[:duration_source]
+  end
+
+  def test_title_only_m3u_does_not_claim_an_embedded_duration
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, 'song.spc')
+      FileUtils.cp(File.join(FIXTURES, 'spc/earthbound-megaton-walk.spc'), path)
+      File.write(File.join(dir, 'song.m3u'), "song.spc::SPC,0,Renamed\n")
+
+      meta = @gme.metadata(path, 0)
+
+      assert_equal 'Renamed', meta[:title]
+      assert_equal 24_000, meta[:duration_ms]
+      assert_equal 'file', meta[:duration_source]
+    end
+  end
+
+  def test_repeated_title_only_m3u_entries_keep_file_duration_provenance
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, 'song.spc')
+      FileUtils.cp(File.join(FIXTURES, 'spc/earthbound-megaton-walk.spc'), path)
+      File.write(
+        File.join(dir, 'song.m3u'),
+        "song.spc::SPC,0,First\nsong.spc::SPC,0,Second\n"
+      )
+
+      entries = @gme.each_metadata(path).to_a.map(&:first)
+
+      assert_equal %w[First Second], entries.map { |meta| meta[:title] }
+      assert_equal [24_000, 24_000], entries.map { |meta| meta[:duration_ms] }
+      assert_equal %w[file file], entries.map { |meta| meta[:duration_source] }
+    end
+  end
+
+  def test_filename_only_m3u_entry_keeps_later_duration_provenance_aligned
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, 'song.spc')
+      FileUtils.cp(File.join(FIXTURES, 'spc/earthbound-megaton-walk.spc'), path)
+      File.write(
+        File.join(dir, 'song.m3u'),
+        "song.spc\nsong.spc::SPC,0,Timed,0:50\n"
+      )
+
+      entries = @gme.each_metadata(path).to_a.map(&:first)
+
+      assert_equal ['Megaton Walk', 'Timed'], entries.map { |meta| meta[:title] }
+      assert_equal [24_000, 50_000], entries.map { |meta| meta[:duration_ms] }
+      assert_equal %w[file m3u], entries.map { |meta| meta[:duration_source] }
+    end
+  end
+
+  def test_m3u_duration_provenance_is_tracked_per_entry
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, 'game.hes')
+      FileUtils.cp(File.join(FIXTURES, 'hes/air-zonk.hes'), path)
+      File.write(
+        File.join(dir, 'game.m3u'),
+        "game.hes::HES,$42,Title only\ngame.hes::HES,$43,Timed,0:50\n"
+      )
+
+      title_only = @gme.metadata(path, 0)
+      timed = @gme.metadata(path, 1)
+
+      assert_nil title_only[:duration_ms]
+      assert_equal 'default', title_only[:duration_source]
+      assert_equal 50_000, timed[:duration_ms]
+      assert_equal 'm3u', timed[:duration_source]
+    end
   end
 
   # Every HES rip, and Lagrange Point, ships with a sibling .m3u (a genre

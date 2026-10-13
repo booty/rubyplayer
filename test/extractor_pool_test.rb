@@ -99,9 +99,9 @@ class ExtractorPoolTest < Minitest::Test
     backend = @reg.backend_for(File.join(@music, 'any.vgm'))
     opens = 0
     original = backend.method(:open_emu)
-    backend.define_singleton_method(:open_emu) do |*args|
+    backend.define_singleton_method(:open_emu) do |*args, **kwargs|
       opens += 1
-      original.call(*args)
+      original.call(*args, **kwargs)
     end
     @pool.process(@scanner.reconcile(path))
 
@@ -234,7 +234,7 @@ class ExtractorPoolTest < Minitest::Test
     progress = events.filter_map { |type, payload| payload if type == :scan_progress }
 
     assert_equal 3, progress.size
-    assert_equal [1, 2, 3], progress.map { |payload| payload[:processed] }.sort
+    assert_equal [1, 2, 3], progress.map { |payload| payload[:processed] }
     assert_equal [3], progress.map { |payload| payload[:total] }.uniq
     assert_equal(1, events.count { |t, _| t == :scan_complete })
   end
