@@ -14,7 +14,6 @@ RubyPlayer.configure do |config|
   # Common UI settings
   # config.ui.theme = "ocean_mist"
   # config.ui.library_pane_percent = 30
-  # config.ui.queued_pane = true
   # config.ui.queued_pane_width = 36
   # config.ui.seek_seconds = 10
   # config.ui.vgm_telemetry_fps = 15

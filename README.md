@@ -67,7 +67,7 @@ Select **Focus** in the Library pane, then choose a noise recipe in Tracks and p
 - Tracks pane title shows current source or folder breadcrumb plus visible item count. Long breadcrumbs keep leaf name and count visible.
 - Pane-edge scrollbar appears only when rows overflow viewport.
 - Terminals narrower than 72 columns show one full-width pane; Tab switches panes. Wider terminals retain two-pane layout.
-- Wide terminals show a **Queued** pane with upcoming tracks and the three latest playback-history entries. Tab selects it while visible; upcoming rows support the same queue actions as the top-level **Playback Queue** view, while history rows are informational. Press `B` to toggle it. It hides when the terminal cannot retain 72 columns for Library + Tracks and while the top-level **Playback Queue** view is selected; hidden Queued is excluded from Tab traversal.
+- The **Queued** pane always shows upcoming tracks and the three latest playback-history entries: a right-hand column when Library + Tracks keep 72 columns beside it, otherwise stacked under Tracks (or under the single pane on narrow terminals). Tab selects it; upcoming rows support the same queue actions as the top-level **Playback Queue** view, while history rows are informational. It hides only while the **Playback Queue** view is selected (which already shows the queue) or on screens too short to share.
 - The **Now Playing** bar under the panes shows the playing track's title, rating, and state; its artist, album, year, track number, and composer; its file type and hardware or codec facts; and a progress bar, beside a spectrum as tall as the bar (album art too in `pane` art mode). It is the last Tab stop. Terminals under 30 rows show it as one line (title, rating, time, and a small spectrum).
 - Keys `1`–`6` rate a track and `0` clears its rating: the highlighted track in Tracks or Queued, or the playing track from the Now Playing bar. The Library pane rates nothing.
 - In Tracks and Queued, Shift+↑/↓ selects a range of tracks (the Tracks title counts them). Enter puts the whole range at the head of the queue and plays its first track; `Q`/`N` queue it, `1`–`6`/`0` rate it, `L` adds it to a playlist, and `X` removes it from a playlist or, in the Playback Queue view or Queued, from the queue as one undoable edit (a playing track in the range is skipped). Any other movement, sorting, filtering, or Escape ends the range. Playlist entries move one at a time.
@@ -454,7 +454,6 @@ restart.
 | `config.ui.format_track_grouped` | callable | Grouped-row formatter. |
 | `config.ui.format_track_ungrouped` | callable | Flat-row formatter. |
 | `config.ui.format_track_queued` | callable | Queued-pane track formatter. |
-| `config.ui.queued_pane` | `true` | Enable the read-only Queued pane when width permits. |
 | `config.ui.queued_pane_width` | `36` | Queued pane width; positive integer columns. |
 | `config.ui.theme` | `"default"` | Id from `Theme::ALL_IDS`. |
 | `config.ui.art_mode` | `"off"` | Album-art placement: off, inset, pane, or corner. |

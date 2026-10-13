@@ -109,12 +109,6 @@ class BottomLinesTest < Minitest::Test
     refute_includes view, '?:help'
   end
 
-  def test_queued_pane_binding_has_human_label
-    labels = RubyPlayer::UI::HotkeyLine::LABELS
-
-    assert_equal 'queue bar', labels[:toggle_queued_pane]
-  end
-
   def test_feature_toggle_labels_show_current_state_without_decorating_transport
     [false, true].each do |enabled|
       rows = hotkey_rows(toggle_states: { toggle_skip_disliked: enabled, toggle_group: enabled })

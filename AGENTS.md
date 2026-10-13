@@ -87,14 +87,16 @@ Ruby comes from mise. Plain `bundle exec` may select wrong Ruby.
   changes: bump version; do not add migrations.
 - Playback state key is `state[:track]`, not `state[:current]`.
 - Config persistence uses separate managed blocks through `persist_managed` for
-  `theme`, `art_mode`, and `queued_pane`; each update preserves user
-  code/comments. New persisted settings follow same per-setting managed-block
-  pattern.
-- Queued-pane preference and effective visibility are separate: narrow width or
-  the top-level Playback Queue hides it without persisting `false`. Hidden
-  Queued is excluded from Tab; if it loses visibility while active, move focus
-  to the next eligible pane. `QueueSelection` owns identity-preserving
-  selection/scroll for upcoming tracks; history rows stay decorative.
+  `theme` and `art_mode`; each update preserves user code/comments. New
+  persisted settings follow same per-setting managed-block pattern; retiring
+  one removes it from `MANAGED_SETTINGS` so its stale block is scrubbed.
+- Queued is always shown: a right-hand column when Library + Tracks keep 72
+  columns, otherwise stacked under Tracks (or the single pane). It hides only
+  while the top-level Playback Queue view is selected or the screen is too
+  short to share. Hidden Queued is excluded from Tab; if it loses visibility
+  while active, move focus to the next eligible pane. `QueueSelection` owns
+  identity-preserving selection/scroll for upcoming tracks; history rows stay
+  decorative.
 - Archives use macOS `bsdtar`; without `-P`, path-traversal entry names refuse.
 - `.spc` plays through `ext/rp_spc` (vendored libgme snes_spc core), not
   libgme. Its output must stay bit-identical to libgme:

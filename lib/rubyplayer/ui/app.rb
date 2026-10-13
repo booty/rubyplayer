@@ -21,6 +21,9 @@ module RubyPlayer
     class App
       SINGLE_PANE_MAX_WIDTH = 71
       MIN_BOX_WIDTH = 3
+      # Smallest stacked Queued pane (border, two headers, a few rows), and
+      # the least height left above it.
+      MIN_STACKED_QUEUED_ROWS = 7
       RATE_ACTIONS = { rate_0: nil, rate_1: 1, rate_2: 2, rate_3: 3,
                        rate_4: 4, rate_5: 5, rate_6: 6 }.freeze
       ART_MODES = %i[off inset pane corner].freeze
@@ -95,7 +98,6 @@ module RubyPlayer
             @library.history(limit: QueuedPane::HISTORY_LIMIT).map { |entry| entry[:track] }
           }
         )
-        @queued_pane_enabled = @config['ui', 'queued_pane']
         @player_bar = PlayerBar.new(glyphs: glyphs, rows: @config['ui', 'player_bar_rows'])
         @status_line = StatusLine.new(seconds: @config['ui', 'status_message_seconds'])
         @hotkey_line = HotkeyLine.new(keymap: @keymap)
@@ -467,7 +469,6 @@ module RubyPlayer
         when :show_help then @show_help = true
         when :show_theme_picker then request_show_theme_picker
         when :cycle_art_mode then cycle_art_mode
-        when :toggle_queued_pane then toggle_queued_pane
         when :show_now_playing then request_show_now_playing
         when :add_to_playlist then request_add_to_playlist
         when :rename_playlist then request_playlist_name(:rename)
@@ -610,20 +611,6 @@ module RubyPlayer
       end
 
       # ---- album art ----
-
-      def toggle_queued_pane
-        @queued_pane_enabled = !@queued_pane_enabled
-        begin
-          @config.persist_queued_pane(@queued_pane_enabled)
-        rescue ConfigError => e
-          @config_error = e
-        end
-
-        message = "Queued pane: #{@queued_pane_enabled ? 'ON' : 'OFF'}"
-        @status_line.set_message(message)
-        normalize_active_pane!
-        invalidate_screen!
-      end
 
       def normalize_art_mode(value)
         mode = value.to_s.to_sym
@@ -1245,7 +1232,6 @@ module RubyPlayer
           refresh_hz: [@config['ui', 'vgm_telemetry_fps'], @config['ui', 'frame_fps']].min
         )
         @tracks_pane.update_config(@config)
-        @queued_pane_enabled = @config['ui', 'queued_pane']
         normalize_active_pane!
         @queued_pane.apply_config(prepared_queued_config)
         invalidate_screen!
@@ -1310,7 +1296,7 @@ module RubyPlayer
         rows = @screen.rows
         cols = @screen.cols
         bar_h = @player_bar.height(rows)
-        content_h = rows - bar_h - 1 - HotkeyLine::ROWS # player bar, status, and command rows below
+        content_h = content_height
         render_panes(cols, content_h)
         playback_state = @engine.state
         render_player_bar(content_h, cols, bar_h, playback_state)
@@ -1350,50 +1336,63 @@ module RubyPlayer
       def render_panes(cols, content_h)
         @art_region = nil
         normalize_active_pane!
+        placement = queued_placement(cols, content_h)
+        queued_rows = placement == :stacked ? stacked_queued_rows(content_h) : 0
         # Below 72 columns, two bordered panes leave too little usable text.
         # Keep full-width active pane and let existing Tab binding switch it.
         # Art is skipped entirely here — there's no room it could take
         # without starving the single pane.
         if cols <= SINGLE_PANE_MAX_WIDTH
+          pane_h = content_h - queued_rows
           if @active_pane == :library
-            draw_box(0, 0, cols, content_h, active: true, title: 'Library')
-            @library_pane.render(@screen, x: 1, y: 1, w: cols - 2, h: content_h - 2,
+            draw_box(0, 0, cols, pane_h, active: true, title: 'Library')
+            @library_pane.render(@screen, x: 1, y: 1, w: cols - 2, h: pane_h - 2,
                                           active: true, theme: @theme)
           else
             title = @tracks_pane.title(max_width: cols - 6)
-            draw_box(0, 0, cols, content_h, active: true, title: title)
-            @tracks_pane.render(@screen, x: 1, y: 1, w: cols - 2, h: content_h - 2,
-                                         active: true, theme: @theme)
+            draw_box(0, 0, cols, pane_h, active: @active_pane == :tracks, title: title)
+            @tracks_pane.render(@screen, x: 1, y: 1, w: cols - 2, h: pane_h - 2,
+                                         active: @active_pane == :tracks, theme: @theme)
           end
+          render_queued_pane(0, pane_h, cols, queued_rows) if queued_rows.positive?
           return
         end
 
-        queued_cols = queued_pane_cols(cols)
+        queued_cols = placement == :column ? @config['ui', 'queued_pane_width'] : 0
         usable = cols - queued_cols
+        tracks_h = content_h - queued_rows
         lib_w = usable * @config['ui', 'library_pane_percent'] / 100
         tracks_w = usable - lib_w
         inset_h = @art_mode == :inset ? art_inset_rows(lib_w, content_h) : 0
         draw_box(0, 0, lib_w, content_h, active: @active_pane == :library, title: 'Library')
-        draw_box(lib_w, 0, tracks_w, content_h, active: @active_pane == :tracks,
-                                                title: @tracks_pane.title(max_width: tracks_w - 6))
+        draw_box(lib_w, 0, tracks_w, tracks_h, active: @active_pane == :tracks,
+                                               title: @tracks_pane.title(max_width: tracks_w - 6))
         @library_pane.render(@screen, x: 1, y: 1, w: lib_w - 2, h: content_h - 2 - inset_h,
                                       active: @active_pane == :library, theme: @theme)
         @tracks_pane.render(@screen, x: lib_w + 1, y: 1, w: tracks_w - 2,
-                                     h: content_h - 2, active: @active_pane == :tracks, theme: @theme)
+                                     h: tracks_h - 2, active: @active_pane == :tracks, theme: @theme)
         if inset_h.positive?
           @art_region = { x: 1, y: content_h - 1 - inset_h, w: lib_w - 2, h: inset_h }
         elsif @art_mode == :corner
-          place_art_corner(usable, content_h)
+          place_art_corner(usable, tracks_h)
         end
-        return unless queued_cols.positive?
+        if placement == :column
+          render_queued_pane(usable, 0, queued_cols, content_h)
+        elsif queued_rows.positive?
+          render_queued_pane(lib_w, tracks_h, tracks_w, queued_rows)
+        end
+      end
 
-        queued_x = cols - queued_cols
-        queued_active = @active_pane == :queued
-        draw_box(queued_x, 0, queued_cols, content_h, active: queued_active, title: 'Queued')
-        @queued_pane.render(
-          @screen, x: queued_x + 1, y: 1,
-                   w: queued_cols - 2, h: content_h - 2, active: queued_active, theme: @theme
-        )
+      def render_queued_pane(x, y, w, h)
+        active = @active_pane == :queued
+        draw_box(x, y, w, h, active: active, title: 'Queued')
+        @queued_pane.render(@screen, x: x + 1, y: y + 1, w: w - 2, h: h - 2, active: active, theme: @theme)
+      end
+
+      # Rows above the Now Playing bar, status, and command rows.
+      def content_height
+        rows = @screen.rows
+        rows - @player_bar.height(rows) - 1 - HotkeyLine::ROWS
       end
 
       # Cells are roughly twice as tall as wide, so a visually square image
@@ -1405,20 +1404,30 @@ module RubyPlayer
         rows >= @config['ui', 'art_min_rows'] ? rows : 0
       end
 
-      def queued_pane_cols(cols)
-        return 0 unless @queued_pane_enabled
-        return 0 if @library_pane.selected&.kind == :queue
+      # Where the Queued pane goes: its own right-hand column when Library
+      # and Tracks keep 72 columns beside it, else :stacked under Tracks (or
+      # the single pane). nil only while the Playback Queue view already
+      # shows the queue, or when the screen is too short to share.
+      def queued_placement(cols, content_h)
+        return if @library_pane.selected&.kind == :queue
 
         width = @config['ui', 'queued_pane_width']
-        return 0 if width < MIN_BOX_WIDTH
+        return :column if width >= MIN_BOX_WIDTH && cols - width > SINGLE_PANE_MAX_WIDTH
 
-        cols - width > SINGLE_PANE_MAX_WIDTH ? width : 0
+        :stacked if stacked_queued_rows(content_h).positive?
+      end
+
+      # A third of the height, enough for a few upcoming and recent rows,
+      # or 0 when what is left above it would be too short to use.
+      def stacked_queued_rows(content_h)
+        rows = [content_h / 3, MIN_STACKED_QUEUED_ROWS].max
+        content_h - rows >= MIN_STACKED_QUEUED_ROWS ? rows : 0
       end
 
       # The Now Playing bar is always shown, so it is always a Tab stop.
       def focusable_panes
         panes = %i[library tracks]
-        panes << :queued if queued_pane_cols(@screen.cols).positive?
+        panes << :queued if queued_placement(@screen.cols, content_height)
         panes << :now_playing
       end
 

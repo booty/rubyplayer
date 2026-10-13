@@ -325,8 +325,8 @@ class AppTest < Minitest::Test
 
     assert_operator bindings.size, :>, rows # otherwise there's no 2nd column to prove
 
-    first_key = bindings.first.first.upcase
-    second_col_key = bindings[rows].first.upcase
+    first_key = RubyPlayer::UI::HotkeyLine.key_label(bindings.first.first)
+    second_col_key = RubyPlayer::UI::HotkeyLine.key_label(bindings[rows].first)
     row_with_first_key = back.map { |r| r.map(&:ch).join }.find { |line| line.include?(first_key) }
 
     refute_nil row_with_first_key

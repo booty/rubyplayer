@@ -53,7 +53,6 @@ module RubyPlayer
       'format_track_grouped' => DEFAULT_FORMAT_GROUPED,
       'format_track_ungrouped' => DEFAULT_FORMAT_UNGROUPED,
       'format_track_queued' => DEFAULT_FORMAT_QUEUED,
-      'queued_pane' => true,
       'queued_pane_width' => 36,
       'theme' => 'default',
       # Album art placement: off | inset (bottom of library pane) |
@@ -166,7 +165,7 @@ module RubyPlayer
     # fallback snapshot, which had faithfully copied the same block). Such
     # blocks are app-authored, so the app deletes them; hand-written
     # unknown settings still fail loudly.
-    MANAGED_SETTINGS = %w[theme art_mode queued_pane].freeze
+    MANAGED_SETTINGS = %w[theme art_mode].freeze
     MANAGED_BLOCK_PATTERN =
       /^# rubyplayer: managed (\w+) begin\n.*?^# rubyplayer: managed \1 end\n?/m
 
@@ -217,10 +216,6 @@ module RubyPlayer
 
     def persist_art_mode(mode)
       persist_managed('art_mode', "config.ui.art_mode = #{mode.to_s.inspect}")
-    end
-
-    def persist_queued_pane(visible)
-      persist_managed('queued_pane', "config.ui.queued_pane = #{visible}")
     end
 
     private

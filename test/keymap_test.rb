@@ -162,10 +162,11 @@ class KeymapTest < Minitest::Test
     assert_equal :move_entry_down, map.action_for('ctrl_down', pane: :tracks)
   end
 
-  def test_b_toggles_queued_pane_from_both_interactive_scopes
+  # The Queued pane is always shown, so B no longer toggles it.
+  def test_b_is_unbound
     keymap = RubyPlayer::Keymap.new
 
-    assert_equal :toggle_queued_pane, keymap.action_for('b', pane: :library)
-    assert_equal :toggle_queued_pane, keymap.action_for('B', pane: :tracks)
+    assert_nil keymap.action_for('b', pane: :library)
+    assert_nil keymap.action_for('B', pane: :tracks)
   end
 end

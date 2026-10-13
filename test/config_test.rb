@@ -32,7 +32,6 @@ class ConfigTest < Minitest::Test
   def test_queued_pane_defaults
     config = RubyPlayer::ConfigStore.new(path: @path)
 
-    assert config['ui', 'queued_pane']
     assert_equal 36, config['ui', 'queued_pane_width']
     assert_respond_to config['ui', 'format_track_queued'], :call
   end
@@ -56,14 +55,12 @@ class ConfigTest < Minitest::Test
   def test_boolean_settings_accept_false
     write_config <<~RUBY
       RubyPlayer.configure do |config|
-        config.ui.queued_pane = false
         config.ui.art_accent = false
       end
     RUBY
 
     config = RubyPlayer::ConfigStore.new(path: @path)
 
-    refute config['ui', 'queued_pane']
     refute config['ui', 'art_accent']
   end
 
@@ -389,21 +386,19 @@ class ConfigTest < Minitest::Test
     assert_equal 'pane', config['ui', 'art_mode']
   end
 
-  def test_persist_queued_pane_replaces_only_its_managed_block
+  # The Queued pane is always shown now; the block the B toggle wrote is
+  # scrubbed like any retired managed setting.
+  def test_retired_queued_pane_block_is_scrubbed
+    write_config <<~RUBY
+      # rubyplayer: managed queued_pane begin
+      RubyPlayer.configure { |config| config.ui.queued_pane = true }
+      # rubyplayer: managed queued_pane end
+    RUBY
+
     config = RubyPlayer::ConfigStore.new(path: @path)
-    config.persist_theme(:basic_terminal)
-    config.persist_art_mode(:corner)
 
-    assert config.persist_queued_pane(false)
-    assert config.persist_queued_pane(true)
-
-    source = File.read(@path)
-
-    assert_equal 1, source.scan('managed queued_pane begin').size
-    assert_equal 1, source.scan('managed theme begin').size
-    assert_equal 1, source.scan('managed art_mode begin').size
-    assert_match(/config\.ui\.queued_pane = true/, source)
-    assert config['ui', 'queued_pane']
+    assert_nil config.startup_error
+    refute_includes File.read(@path), 'queued_pane'
   end
 
   # Regression: the app persisted ui.pulse_mode via a managed block, the
