@@ -65,17 +65,19 @@ The current two-state `:live`/`:info` toggle in `App#toggle_now_playing_page` an
 
 ### Task 2: Build the VGM tracker renderer from existing note history
 
+**Checkpoint:** Complete. Commits `8540657f46f34200debd0a589f0be9d829232e14` and `fabe18c5df129e2ffa950d0bbd25f6bedc1947e7` pushed to `origin/main`. Verification: 905 tests, 0 failures/errors; RuboCop 190 files, 0 offenses. The tracker is a standalone renderer; Task 3 connects it to Now Playing.
+
 **Files:** Create `lib/rubyplayer/ui/vgm_tracker_view.rb`, `test/vgm_tracker_view_test.rb`.
 
 **Interfaces:** `VgmTrackerView#update(snapshot)` accepts `Vgm::Snapshot` or `nil`; `#render(screen, x:, y:, width:, height:, theme:, track_title:, now_sample:, paused:)` draws in a caller-owned rectangle; `#handle_key(key)` consumes Left/Right; `#snapshot` exposes the current snapshot for stale-state checks. No engine or worker reference is allowed in this class.
 
-- [ ] Write failing tests using synthetic `Vgm::Snapshot`/`ChipSnapshot`/`ChannelSnapshot` and packed `Vgm::NoteLog` events. Assert 50 ms row placement, note-on/off/pitch markers, simultaneous-event ordering, a short note's visibility, unpitched DAC/noise labels, and held-note continuity at a pruned history boundary. Use `Vgm::Pitch.note_name` for pitch text.
-- [ ] Run `mise exec -- bundle exec ruby -Itest test/vgm_tracker_view_test.rb`; confirm failure because the renderer does not exist.
-- [ ] Implement `#update` to decode each chip's `details[:events]`, keyed by chip ID and voice index. Reuse packed-buffer equality to avoid decoding unchanged histories. Reset on `snapshot.nil?`, generation change, or revision change. Preserve the immutable event order, including equal-sample order; collapse events into 2,205-sample buckets, retaining the last pitch and whether a later note-off occurred in the same bucket.
-- [ ] Implement `#render` with a stable header, chip/channel headings, elapsed-time gutter, and time-grid rows. Clamp all writes to the supplied rectangle. Anchor the current sample row near the lower third, with blank rows before sample zero. Show status text before data exists and use snapshot `message`/`warnings` where appropriate. Derive the visible channel count from available width; always fit at least one column where the rectangle permits. Define named column/gutter constants with units in names where relevant.
-- [ ] Implement horizontal window movement and selection with Left/Right; reset on generation/revision changes. Highlight the current row and selected channel using the supplied `theme`, and render a visible-range indicator when columns overflow.
-- [ ] Add tests at wide and narrow dimensions, outside-rectangle sentinel cells, stable paused position, window bounds, seek/source reset, `Loading`/`Catching up`/error/unsupported statuses, and an empty-chip snapshot.
-- [ ] Re-run `test/vgm_tracker_view_test.rb`; expect PASS. Run `test/vgm_live_view_test.rb` to confirm the existing overview is unchanged.
+- [x] Write failing tests using synthetic `Vgm::Snapshot`/`ChipSnapshot`/`ChannelSnapshot` and packed `Vgm::NoteLog` events. Assert 50 ms row placement, note-on/off/pitch markers, simultaneous-event ordering, a short note's visibility, unpitched DAC/noise labels, and held-note continuity at a pruned history boundary. Use `Vgm::Pitch.note_name` for pitch text.
+- [x] Run `mise exec -- bundle exec ruby -Itest test/vgm_tracker_view_test.rb`; confirm failure because the renderer does not exist.
+- [x] Implement `#update` to decode each chip's `details[:events]`, keyed by chip ID and voice index. Reuse packed-buffer equality to avoid decoding unchanged histories. Reset on `snapshot.nil?`, generation change, or revision change. Preserve the immutable event order, including equal-sample order; collapse events into 2,205-sample buckets, retaining the last pitch and whether a later note-off occurred in the same bucket.
+- [x] Implement `#render` with a stable header, chip/channel headings, elapsed-time gutter, and time-grid rows. Clamp all writes to the supplied rectangle. Anchor the current sample row near the lower third, with blank rows before sample zero. Show status text before data exists and use snapshot `message`/`warnings` where appropriate. Derive the visible channel count from available width; always fit at least one column where the rectangle permits. Define named column/gutter constants with units in names where relevant.
+- [x] Implement horizontal window movement and selection with Left/Right; reset on generation/revision changes. Highlight the current row and selected channel using the supplied `theme`, and render a visible-range indicator when columns overflow.
+- [x] Add tests at wide and narrow dimensions, outside-rectangle sentinel cells, stable paused position, window bounds, seek/source reset, `Loading`/`Catching up`/error/unsupported statuses, and an empty-chip snapshot.
+- [x] Re-run `test/vgm_tracker_view_test.rb`; expect PASS. Run `test/vgm_live_view_test.rb` to confirm the existing overview is unchanged.
 
 ### Task 3: Wire rendering and the shared telemetry lifecycle
 
