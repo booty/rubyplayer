@@ -387,7 +387,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
     controller = @app.instance_variable_get(:@vgm_telemetry_controller)
 
     assert_equal 1_048_576, telemetry.instance_variable_get(:@max_bytes)
-    assert_in_delta 0.125, controller.instance_variable_get(:@interval), 0.0001
+    assert_in_delta 0.125, controller.instance_variable_get(:@request_interval_seconds), 0.0001
   end
 
   def test_invalid_queued_formatter_hot_reload_keeps_active_config_and_rows

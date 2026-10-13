@@ -12,7 +12,7 @@ module RubyPlayer
       def initialize(engine:, telemetry:, refresh_hz:, clock:)
         @engine = engine
         @telemetry = telemetry
-        @interval = interval_for(refresh_hz)
+        @request_interval_seconds = request_interval_seconds_for(refresh_hz)
         @clock = clock
         @visible = false
         @suspended = true
@@ -34,7 +34,7 @@ module RubyPlayer
       end
 
       def configure(refresh_hz:)
-        @interval = interval_for(refresh_hz)
+        @request_interval_seconds = request_interval_seconds_for(refresh_hz)
         @telemetry.suspend if @visible && !@suspended
         @suspended = true
         clear_session
@@ -57,17 +57,17 @@ module RubyPlayer
         @target_sample = request.sample
         return false if @terminal
 
-        now = @clock.call
-        immediate = changed || @suspended || @next_request_at.nil?
+        now_seconds = @clock.call
+        immediate = changed || @suspended || @next_request_at_seconds.nil?
         # Replay may stop short of a target to stay responsive; a paused
         # engine never moves the target, so behind-target results still need
         # follow-up requests at the refresh rate.
         recurring = !request.paused || catching_up?
-        return false unless immediate || (recurring && now >= @next_request_at)
+        return false unless immediate || (recurring && now_seconds >= @next_request_at_seconds)
 
         @telemetry.request(request)
         @suspended = false
-        @next_request_at = now + @interval
+        @next_request_at_seconds = now_seconds + @request_interval_seconds
         true
       end
 
@@ -95,9 +95,9 @@ module RubyPlayer
       # Lets an idle main loop wake for catch-up requests instead of waiting
       # for its slower idle poll; nil when no follow-up is due.
       def seconds_until_due
-        return unless @visible && !@terminal && @next_request_at && catching_up?
+        return unless @visible && !@terminal && @next_request_at_seconds && catching_up?
 
-        [@next_request_at - @clock.call, 0].max
+        [@next_request_at_seconds - @clock.call, 0].max
       end
 
       def shutdown
@@ -107,7 +107,7 @@ module RubyPlayer
 
       private
 
-      def interval_for(refresh_hz)
+      def request_interval_seconds_for(refresh_hz)
         unless refresh_hz.is_a?(Integer) && REFRESH_HZ_RANGE.cover?(refresh_hz)
           raise ArgumentError, "refresh_hz must be an Integer from #{REFRESH_HZ_RANGE.min} to #{REFRESH_HZ_RANGE.max}"
         end
@@ -136,7 +136,7 @@ module RubyPlayer
         @snapshot = nil
         @last_accepted_sample = nil
         @terminal = false
-        @next_request_at = nil
+        @next_request_at_seconds = nil
       end
 
       def suspend
