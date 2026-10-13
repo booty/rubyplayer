@@ -22,15 +22,18 @@ class VgmTrackerViewTest < Minitest::Test
     fm.off(0, 3_000)
     fm.on(1, 4_410, 60)
     fm.note(1, 5_000, 62)
+    fm.note(1, 7_000, 64)
     psg = Vgm::NoteLog.new
     psg.on(0, 0, nil)
     @view.update(snapshot(chips: [chip('ym2612:0', 'YM2612', %w[FM1 FM2], fm),
-                                  chip('sn76489:0', 'SN76489', ['Noise'], psg)], sample: 6_615))
+                                  chip('sn76489:0', 'SN76489', ['Noise'], psg)], sample: 8_820))
 
-    text = render(width: 65, height: 12, now_sample: 6_615).join("\n")
+    text = render(width: 65, height: 12, now_sample: 8_820).join("\n")
 
     assert_match(/0:00\.05.*C-4!/, text)
-    assert_match(/0:00\.10.*>D-4/, text)
+    # A note that starts and glides in one row shows both; a later glide-only row has no start.
+    assert_match(/0:00\.10 +\.\.\. +C-4>D-4/, text)
+    assert_match(/0:00\.15 +\.\.\. +>E-4/, text)
     assert_match(/0:00\.00.*NOI/, text)
     assert_includes text, 'YM2612'
     assert_includes text, 'SN76489'

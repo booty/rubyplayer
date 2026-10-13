@@ -111,12 +111,15 @@ module RubyPlayer
         Vgm::NoteLog.decode(packed).each do |event|
           bucket = event.sample / ROW_SAMPLES
           cell = (cells[event.channel][bucket] ||= {})
+          # A start and a later glide in one row both show (C-4>D-4); a
+          # newer start replaces both, since the earlier note has ended.
           case event.kind
           when :on
-            cell[:label] = event.midi ? pitch_label(event.midi) : unpitched_label(chip, event.channel)
+            cell[:start] = event.midi ? pitch_label(event.midi) : unpitched_label(chip, event.channel)
+            cell[:glide] = nil
             cell[:released] = false
           when :note
-            cell[:label] = event.midi ? ">#{pitch_label(event.midi)}" : nil
+            cell[:glide] = ">#{pitch_label(event.midi)}"
             cell[:released] = false
           when :off
             cell[:released] = true
@@ -177,9 +180,11 @@ module RubyPlayer
 
       def cell_text(cell)
         return '...' unless cell
-        return '===' unless cell[:label]
 
-        cell[:released] ? "#{cell[:label]}!" : cell[:label]
+        label = "#{cell[:start]}#{cell[:glide]}"
+        return '===' if label.empty?
+
+        cell[:released] ? "#{label}!" : label
       end
 
       def format_time(bucket)

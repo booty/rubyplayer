@@ -126,7 +126,9 @@ closing the popup suspends live replay.
 The **Tracker** page scrolls a FastTracker-style time grid upward beneath the
 playhead. Each row is 50 ms, with an elapsed timestamp and columns for the VGM
 chip channels. Note starts, pitch changes, and releases come from the existing
-VGM note history; a short note that starts and ends in one row remains visible.
+VGM note history. A cell shows a start as `C-4`, a pitch change as `>D-4`, and
+a release with a trailing `!` or `===`; a note that starts and glides in one
+row shows both (`C-4>D-4`), and one that also ends there stays visible.
 `Left`/`Right` moves between channel columns when they do not all fit. This is
 a view of timed VGM events: VGM has no pattern rows or reliable tempo, and the
 page does not infer historical instruments, volume, or effects from the current
