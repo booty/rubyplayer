@@ -190,8 +190,34 @@ class AppNowPlayingTest < Minitest::Test
     assert_equal :live, @app.instance_variable_get(:@now_playing_page)
     @app.handle_key('o')
 
+    assert_equal :tracker, @app.instance_variable_get(:@now_playing_page)
+    assert @app.show_now_playing
+    @app.handle_key('o')
+
     refute @app.show_now_playing
     refute controller.instance_variable_get(:@visible)
+  end
+
+  def test_vgm_page_cycle_and_info_return
+    start_live_vgm_track
+    @app.handle_key('o')
+
+    assert_equal :live, @app.instance_variable_get(:@now_playing_page)
+    @app.handle_key('o')
+
+    assert_equal :tracker, @app.instance_variable_get(:@now_playing_page)
+    @app.handle_key('tab')
+
+    assert_equal :info, @app.instance_variable_get(:@now_playing_page)
+    @app.handle_key('tab')
+
+    assert_equal :tracker, @app.instance_variable_get(:@now_playing_page)
+    @app.handle_key('o')
+
+    refute @app.show_now_playing
+    @app.handle_key('o')
+
+    assert_equal :live, @app.instance_variable_get(:@now_playing_page)
   end
 
   # The fixture declares a YM2612 and an SN76489: libgme voices FM 1-6,

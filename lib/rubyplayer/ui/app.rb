@@ -272,10 +272,12 @@ module RubyPlayer
         action = @keymap.action_for(key, pane: @active_pane)
         if NOW_PLAYING_PLAYBACK_ACTIONS.include?(action)
           dispatch(action)
-        elsif %w[o escape enter].include?(key)
+        elsif key == 'o'
+          advance_now_playing_page
+        elsif %w[escape enter].include?(key)
           close_now_playing
         elsif key == 'tab'
-          toggle_now_playing_page if live_kind
+          toggle_now_playing_info if @now_playing_modal&.live_pages&.any?
         elsif @now_playing_page == :live
           return invalidate_screen! if handle_mute_key(key)
 
@@ -641,6 +643,7 @@ module RubyPlayer
         kind = live_kind
         live = !kind.nil?
         @now_playing_page = live ? :live : :info
+        @last_live_page = live ? :live : nil
         @vgm_live_view.update(nil)
         modal = NowPlayingModal.new(track, extras: @library.track_metadata_for(track.id),
                                            page: @now_playing_page,
@@ -669,15 +672,33 @@ module RubyPlayer
         end
       end
 
-      def toggle_now_playing_page
-        page = @now_playing_page == :live ? :info : :live
+      def advance_now_playing_page
+        page = @now_playing_modal.next_live_page
+        return close_now_playing unless page
+
+        change_now_playing_page(page)
+      end
+
+      def toggle_now_playing_info
+        if @now_playing_modal.live_page?
+          @last_live_page = @now_playing_page
+          page = :info
+        else
+          page = @last_live_page || @now_playing_modal.live_pages.first
+        end
+        change_now_playing_page(page)
+      end
+
+      def change_now_playing_page(page)
+        was_live = @now_playing_modal.live_page?
         @now_playing_page = page
         @now_playing_modal.page = page
-        if page == :live
+        is_live = @now_playing_modal.live_page?
+        if is_live && !was_live
           @vgm_live_view.update(nil)
           @vgm_telemetry_controller.visible = @now_playing_modal.live_kind == :vgm
           set_art(nil)
-        else
+        elsif !is_live
           @vgm_telemetry_controller.visible = false
           fetch_art(@engine.state[:track])
         end
@@ -688,6 +709,7 @@ module RubyPlayer
         @show_now_playing = false
         @vgm_telemetry_controller.visible = false
         @now_playing_page = :info
+        @last_live_page = nil
         track = @engine.state[:track]
         fetch_art(track) if track && @art_bytes.nil?
         invalidate_screen!

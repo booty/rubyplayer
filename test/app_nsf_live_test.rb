@@ -30,6 +30,13 @@ class AppNsfLiveTest < Minitest::Test
     assert_includes text, 'Konami VRC6 · 1.79 MHz'
   end
 
+  def test_second_o_closes_single_live_page
+    @app.handle_key('o')
+    @app.handle_key('o')
+
+    refute @app.show_now_playing
+  end
+
   # Channels mute by libgme voice: the VRC6 saw is voice 5 though listed last.
   def test_m_mutes_and_s_solos_the_selected_channel
     @app.handle_key('o')

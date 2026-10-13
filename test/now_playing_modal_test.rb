@@ -95,7 +95,7 @@ class NowPlayingModalTest < Minitest::Test
     modal = RubyPlayer::UI::NowPlayingModal.new(track, extras: {
                                                   'sound_chips' => 'YM2612 + SN76489',
                                                   'system' => 'Sega Mega Drive'
-                                                }, page: :live, chip_view: view)
+                                                }, page: :live, chip_view: view, live_kind: :vgm)
     view.update(RubyPlayer::Vgm::Snapshot.new(
                   generation: 1, revision: 0, sample: 44_100, status: :ready,
                   message: nil, loop_count: 2, chips: [], warnings: []
@@ -106,6 +106,42 @@ class NowPlayingModalTest < Minitest::Test
 
     assert_includes text, 'Song — Artist · VGM LIVE'
     assert_includes text, '0:02 · Loop 2'
+    assert_nil art
+  end
+
+  def test_live_page_order_depends_on_playback_kind
+    vgm = RubyPlayer::UI::NowPlayingModal.new(track, extras: {}, live_kind: :vgm, page: :live)
+
+    assert_equal %i[live tracker], vgm.live_pages
+    assert_predicate vgm, :live_page?
+    assert_equal :tracker, vgm.next_live_page
+    vgm.page = :tracker
+
+    assert_predicate vgm, :live_page?
+    assert_nil vgm.next_live_page
+
+    %i[spc gbs nsf].each do |kind|
+      modal = RubyPlayer::UI::NowPlayingModal.new(track, extras: {}, live_kind: kind, page: :live)
+
+      assert_equal [:live], modal.live_pages
+      assert_nil modal.next_live_page
+    end
+
+    ordinary = RubyPlayer::UI::NowPlayingModal.new(track, extras: {}, page: :live)
+
+    assert_empty ordinary.live_pages
+    assert_equal :info, ordinary.page
+    vgm.page = :unsupported
+
+    assert_equal :info, vgm.page
+  end
+
+  def test_interim_tracker_page_keeps_the_vgm_live_frame
+    vgm = RubyPlayer::Track.new(id: 3, title: 'Chip song', format: 'vgm')
+    modal = RubyPlayer::UI::NowPlayingModal.new(vgm, extras: {}, live_kind: :vgm, page: :tracker)
+    text, art = render_modal(modal)
+
+    assert_includes text, 'VGM LIVE'
     assert_nil art
   end
 

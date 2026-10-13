@@ -7,6 +7,8 @@ module RubyPlayer
   module UI
     # Owns a snapshot only: App loads metadata and delivers background updates.
     class NowPlayingModal
+      LIVE_PAGES = { vgm: %i[live tracker].freeze, spc: [:live].freeze,
+                     gbs: [:live].freeze, nsf: [:live].freeze }.freeze
       MAX_WIDTH = 88
       ART_MIN_WIDTH = 64
       FRAME_ROWS = 6
@@ -23,10 +25,10 @@ module RubyPlayer
         @track = track
         @metadata = {}
         @extras = extras
-        @page = %i[info live].include?(page) ? page : :info
+        @live_kind = live_kind
+        self.page = page
         @chip_view = chip_view || ChipLiveView.new
         @spc_view = spc_view || SpcLiveView.new
-        @live_kind = live_kind
         @spc_state = nil
         @position_ms = nil
         @now_sample = nil
@@ -41,6 +43,14 @@ module RubyPlayer
       end
 
       attr_reader :page, :live_kind
+
+      def live_pages = LIVE_PAGES.fetch(@live_kind, [])
+
+      def live_page? = live_pages.include?(@page)
+
+      def next_live_page
+        live_pages[live_pages.index(@page) + 1] if live_page?
+      end
 
       # The App hands over the engine's SPC state before each render.
       def update_spc(state:, position_ms:)
@@ -58,7 +68,7 @@ module RubyPlayer
       end
 
       def page=(page)
-        @page = %i[info live].include?(page) ? page : :info
+        @page = page == :info || live_pages.include?(page) ? page : :info
       end
 
       def handle_live_key(key) = @live_kind == :spc ? @spc_view.handle_key(key) : @chip_view.handle_key(key)
@@ -76,7 +86,7 @@ module RubyPlayer
       def render(screen, theme:, frame:, min_art_rows:)
         return if screen.rows < 5 || screen.cols < 8
         return render_spc_live(screen, theme: theme, frame: frame) if @page == :live && @live_kind == :spc
-        return render_live(screen, theme: theme, frame: frame) if @page == :live
+        return render_live(screen, theme: theme, frame: frame) if live_page?
 
         width = (screen.cols - 2).clamp(4, MAX_WIDTH)
         max_height = screen.rows - 2

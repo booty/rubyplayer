@@ -32,6 +32,13 @@ class AppSpcLiveTest < Minitest::Test
     assert_operator heading.index('State'), :>, 88, 'live page should use more than the info page width'
   end
 
+  def test_second_o_closes_single_live_page
+    @app.handle_key('o')
+    @app.handle_key('o')
+
+    refute @app.show_now_playing
+  end
+
   def test_tab_switches_between_info_and_live
     @app.handle_key('o')
     @app.handle_key('tab')

@@ -40,6 +40,13 @@ class AppGbsLiveTest < Minitest::Test
     assert_includes wait_for_rows, 'GBS LIVE'
   end
 
+  def test_second_o_closes_single_live_page
+    @app.handle_key('o')
+    @app.handle_key('o')
+
+    refute @app.show_now_playing
+  end
+
   # Each Game Boy channel is its own libgme voice.
   def test_m_mutes_and_s_solos_the_selected_channel
     @app.handle_key('o')
