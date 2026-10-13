@@ -10,9 +10,6 @@ module RubyPlayer
       GB_KINDS = %i[gb_pulse gb_wave gb_noise].freeze
       # Duty cycles as one 8-step period of the square wave.
       DUTY_WAVES = { 12.5 => '▔▁▁▁▁▁▁▁', 25 => '▔▔▁▁▁▁▁▁', 50 => '▔▔▔▔▁▁▁▁', 75 => '▔▔▔▔▔▔▁▁' }.freeze
-      # Envelope graph spans, in seconds: the shortest that shows the whole
-      # envelope (or length cut-off).
-      ENVELOPE_SPANS = [0.25, 0.5, 1.0, 2.0, 4.0].freeze
       MAX_GRAPH_ROWS = 8
 
       private
@@ -89,17 +86,10 @@ module RubyPlayer
         details = row.channel.details
         return wave_panel(details, width, rows) if row.channel.kind == :gb_wave
 
-        span = envelope_span(details)
-        graph_rows = (rows - 4).clamp(1, MAX_GRAPH_ROWS)
-        columns = [width, 8].max
-        values = Array.new(columns) { |column| envelope_volume(details, span * column / columns) }
-        lines = [title('Volume envelope'), line(envelope_summary(details), color: :text_muted),
-                 *graph(values, 15, graph_rows)]
-        elapsed = row.channel.last_trigger_sample && (@playback_sample - row.channel.last_trigger_sample).fdiv(Vgm::SAMPLE_RATE)
-        marker = elapsed && elapsed < span ? "#{' ' * (elapsed / span * columns).floor}▲ now" : ''
-        lines << line(marker[0, width], color: :accent)
-        label = format_span(span)
-        lines << line("trigger #{'─' * [width - label.length - 9, 0].max} #{label}", color: :text_muted)
+        envelope_chart(summary: envelope_summary(details), span_seconds: envelope_span(details),
+                       elapsed_seconds: seconds_since_trigger(row.channel), width: width, rows: rows) do |seconds|
+          envelope_volume(details, seconds)
+        end
       end
 
       def wave_panel(details, width, rows)
@@ -126,7 +116,7 @@ module RubyPlayer
         pace = details[:envelope_pace]
         steps = details[:envelope_up] ? 15 - details[:initial_volume] : details[:initial_volume]
         ends = [pace.zero? ? nil : steps * pace / 64.0, length_seconds(details)].compact
-        ENVELOPE_SPANS.find { |span| span >= (ends.min || 0) } || ENVELOPE_SPANS.last
+        envelope_span_seconds(ends.min || 0)
       end
 
       # Length counter load, in seconds, when the length counter is on.
@@ -178,8 +168,6 @@ module RubyPlayer
       def wave_sparkline(details)
         details[:samples].each_slice(2).map { |pair| LiveGlyphs::LEVEL_GLYPHS[1 + (pair.sum * 7 / 30)] }.join
       end
-
-      def format_span(seconds) = seconds < 1 ? "#{(seconds * 1000).round} ms" : "#{seconds.to_s.delete_suffix('.0')} s"
     end
   end
 end

@@ -19,7 +19,6 @@ module RubyPlayer
       S5B_DB_PER_STEP = 3.0
       # The VRC6 saw accumulator wraps above 255: rates past 42 clip.
       VRC6_SAW_FULL_RATE = 42
-      NES_ENVELOPE_SPANS = [0.25, 0.5, 1.0, 2.0, 4.0].freeze
       NES_NO_DETAIL = { nes_dmc: 'Delta PCM: each sample bit steps the level up or down by 2',
                         nes_pcm: 'Raw PCM: the level is the last sample written',
                         vrc6_pulse: 'No envelope: the level is the volume register',
@@ -236,36 +235,39 @@ module RubyPlayer
 
       def nes_envelope_panel(row, width, rows)
         details = row.channel.details
-        rate = nes_quarter_frame_hz(row)
-        elapsed = row.channel.last_trigger_sample && (@playback_sample - row.channel.last_trigger_sample).fdiv(Vgm::SAMPLE_RATE)
-        cut = details[:loop] || details[:length].to_i.zero? ? nil : (elapsed || 0) + (details[:length] * 2 / rate)
-        span = nes_envelope_span(details, rate, cut)
-        columns = [width, 8].max
-        values = Array.new(columns) { |column| nes_envelope_volume(details, span * column / columns, rate, cut) }
-        lines = [title('Volume envelope'), line("#{nes_envelope_text(details)}#{format(' · cut at %d ms', cut * 1000) if cut}",
-                                                color: :text_muted),
-                 *graph(values, 15, (rows - 4).clamp(1, NES_GRAPH_ROWS))]
-        marker = elapsed && elapsed < span ? "#{' ' * (elapsed / span * columns).floor}▲ now" : ''
-        lines << line(marker[0, width], color: :accent)
-        label = format_span(span)
-        lines << line("trigger #{'─' * [width - label.length - 9, 0].max} #{label}", color: :text_muted)
+        quarter_frame_hz = nes_quarter_frame_hz(row)
+        elapsed_seconds = seconds_since_trigger(row.channel)
+        cutoff_seconds = nes_cutoff_seconds(details, quarter_frame_hz, elapsed_seconds)
+        summary = "#{nes_envelope_text(details)}#{format(' · cut at %d ms', cutoff_seconds * 1000) if cutoff_seconds}"
+        envelope_chart(summary: summary, span_seconds: nes_envelope_span(details, quarter_frame_hz, cutoff_seconds),
+                       elapsed_seconds: elapsed_seconds, width: width, rows: rows) do |seconds|
+          nes_envelope_volume(details, seconds, quarter_frame_hz, cutoff_seconds)
+        end
       end
 
-      def nes_envelope_volume(details, seconds, rate, cut)
-        return 0 if cut && seconds >= cut
+      # When the length counter silences the note, in seconds after the
+      # trigger; nil while it is halted. It counts down at half the
+      # quarter-frame rate, hence the factor of 2.
+      def nes_cutoff_seconds(details, quarter_frame_hz, elapsed_seconds)
+        return if details[:loop] || details[:length].to_i.zero?
+
+        remaining_length_seconds = details[:length] * 2 / quarter_frame_hz
+        (elapsed_seconds || 0) + remaining_length_seconds
+      end
+
+      def nes_envelope_volume(details, seconds, quarter_frame_hz, cutoff_seconds)
+        return 0 if cutoff_seconds && seconds >= cutoff_seconds
         return details[:envelope_period] if details[:constant]
 
-        steps = (seconds * rate / (details[:envelope_period] + 1)).floor
+        steps = (seconds * quarter_frame_hz / (details[:envelope_period] + 1)).floor
         details[:loop] ? (15 - steps) % 16 : [15 - steps, 0].max
       end
 
-      def nes_envelope_span(details, rate, cut)
-        decay = details[:constant] || details[:loop] ? nil : 16 * (details[:envelope_period] + 1) / rate
-        ends = [decay, cut].compact
-        NES_ENVELOPE_SPANS.find { |span| span >= (ends.min || 0) } || NES_ENVELOPE_SPANS.last
+      def nes_envelope_span(details, quarter_frame_hz, cutoff_seconds)
+        decay = details[:constant] || details[:loop] ? nil : 16 * (details[:envelope_period] + 1) / quarter_frame_hz
+        envelope_span_seconds([decay, cutoff_seconds].compact.min || 0)
       end
 
-      # Expansion chips run off the 2A03's clock and region.
       def nes_quarter_frame_hz(_row)
         apu = Array(@snapshot&.chips).find { |chip| chip.id.start_with?('2a03') }
         QUARTER_FRAME_HZ.fetch(apu&.details&.dig(:pal) ? :pal : :ntsc)
