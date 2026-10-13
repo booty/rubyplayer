@@ -47,7 +47,7 @@ class ChipLiveViewFamiliesTest < Minitest::Test
   def test_families_cover_the_native_chips
     families = UI::ChipLiveView::NATIVE_PANEL_FAMILIES.to_h { |family| [family.prefix, family] }
 
-    assert_equal %i[gb nes], families.keys
+    assert_equal %i[gb nes hes], families.keys
     assert_includes families[:gb].chip_ids, 'gb_dmg'
     assert_includes families[:nes].kinds, :n163_wave
   end

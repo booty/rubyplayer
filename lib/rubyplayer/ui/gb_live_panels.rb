@@ -83,19 +83,12 @@ module RubyPlayer
 
       def gb_detail_panel(row, width, rows)
         details = row.channel.details
-        return wave_panel(details, width, rows) if row.channel.kind == :gb_wave
+        return wave_ram_panel(details[:samples], 15, width, rows) if row.channel.kind == :gb_wave
 
         envelope_chart(summary: envelope_summary(details), span_seconds: gb_envelope_span_seconds(details),
                        elapsed_seconds: seconds_since_trigger(row.channel), width: width, rows: rows) do |seconds|
           envelope_volume(details, seconds)
         end
-      end
-
-      def wave_panel(details, width, rows)
-        samples = details[:samples]
-        lines = [title('Wave RAM · 32 × 4-bit'), *sample_graph(samples, 15, width, rows - 2)]
-        lines << line(samples.each_slice(2).map { |high, low| format('%X%X', high, low) }.join(' ')[0, width],
-                      color: :text_muted)
       end
 
       def envelope_volume(details, seconds)

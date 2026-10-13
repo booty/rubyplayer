@@ -185,6 +185,19 @@ through libgme's own NSF emulator, vendored with the same kind of hooks
 fixture, every chip included; `config.backends[".nsf"] = :gme` switches back,
 and the app does so automatically if `librp_nsf.dylib` is missing.
 
+HES (PC Engine / TurboGrafx-16) tracks open on an **HES** live page laid out
+the same way, for the HuC6280 PSG's six voices (Wave 1-4, Multi 1-2): the chip
+line (master balance, VBlank rate), each voice's mode (32-step 5-bit wave,
+noise on Multi 1-2, or direct DAC), period and pitch for waves, volume,
+balance, and libgme's output gain, the selected wave's 32 samples, and note
+history. Noise and DAC voices show no note. Levels are libgme's gain, not the
+sound, so they are labeled estimates; the PSG has no envelopes, and libgme
+plays neither its LFO nor the CD-ROM ADPCM voice. Each voice mutes and solos
+as its own libgme voice. `.hes` plays through libgme's own HES emulator
+(`ext/rp_hes`), verified sample-for-sample against Homebrew libgme;
+`config.backends[".hes"] = :gme` switches back, and the app does so
+automatically if `librp_hes.dylib` is missing.
+
 Artwork comes from embedded pictures in FFmpeg-backed files, falling back to
 images in the track's folder (such as `cover.jpg` or `folder.png`). Archived
 tracks look beside their entry inside the archive first (rip zips often pack
@@ -270,7 +283,7 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | `runtime_dependencies.rb` | `RuntimeDependencies`: checks external tools and libraries plus all four bundled native libraries before App loads; rebuilds missing or unloadable bundled libraries once and reports startup failures. |
 | `event_bus.rb` | `EventBus`: thread-safe event queue with a self-pipe wakeup, so the main loop's `IO.select` can block on stdin *and* background events simultaneously instead of polling. |
 | `level_tap.rb` | `LevelTap`: feeds the bottom-line EQ animation. Runs a Goertzel-algorithm frequency analysis at log-spaced band frequencies over the window of audio the device is playing: `push` (decoder thread) tags audio with its output-timeline frame as it enters the ring; `levels` (UI thread) reads the window ending at `frames_played`. |
-| `playback_engine/chip_state.rb` | `PlaybackEngine::ChipState`: live chip state for handles that record native snapshots — pushes each chunk's snapshots into a `ChipTimeline` at the chunk's output frame; returns the SPC snapshot being heard (`spc_live`) or every GBS or NSF snapshot heard since the last call (`chip_live`), and which kind the track has (`chip_live_kind`). |
+| `playback_engine/chip_state.rb` | `PlaybackEngine::ChipState`: live chip state for handles that record native snapshots — pushes each chunk's snapshots into a `ChipTimeline` at the chunk's output frame; returns the SPC snapshot being heard (`spc_live`) or every GBS, NSF, or HES snapshot heard since the last call (`chip_live`), and which kind the track has (`chip_live_kind`). |
 | `chip_timeline.rb` | `ChipTimeline`: packed native snapshots (any record class) indexed by output-timeline frame: the latest heard (`at`) or each heard record once, in order (`take_through`). |
 | `playback_engine/voice_muting.rb` | `PlaybackEngine::VoiceMuting`: user voice muting for any handle with `#mute` (native SPC, libgme), queued for the decoder thread and tied to the track it targets. |
 | `spc/snapshot.rb` | `Spc::Snapshot` (one decoded S-DSP state record) and `Spc::LiveState`. |
@@ -302,8 +315,9 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 |---|---|
 | `app.rb` | `UI::App`: wires every other component together and owns the main loop — key dispatch, event handling, config hot-reload, and the top-level `render`. This is the natural place to look first to see how a keypress becomes an action and how state changes reach the screen. |
 | `spc_live_view.rb` | `SpcLiveView`: the full-modal SPC live page. Renders a `Spc::LiveState` into a rectangle, choosing three-column, two-column, or stacked panels by size; graphs are memoized per input. |
-| `chip_live_view.rb`, `gb_live_panels.rb`, `nes_live_panels.rb`, `vgm_telemetry_controller.rb` | `ChipLiveView`: the full-modal VGM (and GBS and NSF, through the Game Boy and NES panel modules, registered in `NATIVE_PANEL_FAMILIES`) live page, rendering snapshots into a rectangle with three-column, two-column, or stacked panels by size; and the visible-consumer refresh controller. The view does not read files, query the engine, or depend on the Now Playing modal. |
+| `chip_live_view.rb`, `gb_live_panels.rb`, `nes_live_panels.rb`, `vgm_telemetry_controller.rb` | `ChipLiveView`: the full-modal VGM (and GBS, NSF, and HES, through the Game Boy, NES, and HES panel modules, registered in `NATIVE_PANEL_FAMILIES`) live page, rendering snapshots into a rectangle with three-column, two-column, or stacked panels by size; and the visible-consumer refresh controller. The view does not read files, query the engine, or depend on the Now Playing modal. |
 | `vgm_tracker_view.rb` | `VgmTrackerView`: the VGM Tracker page. Buckets the snapshot's packed note history into 50 ms rows and renders a scrolling time grid with a horizontal channel window. Like `ChipLiveView`, it reads only snapshots. |
+| `hes_live_panels.rb` | `HesLivePanels`: the HuC6280 PSG parts of `ChipLiveView` (chip line, mode-specific instrument text, estimated levels from libgme's gain, voice panel, wave RAM). |
 | `gb_live_panels.rb` | `GbLivePanels`: the Game Boy APU parts of `ChipLiveView` (chip line, instrument text, exact levels, voice panel, volume envelope and wave RAM). |
 | `live_glyphs.rb` | Block-character level bars and graphs shared by the live pages. |
 | `chip_sample_panels.rb` | `ChipSamplePanels`: wave sparklines, wave graphs, and amplitude-to-attenuation levels shared by the Game Boy, NES, and HES panel modules. |

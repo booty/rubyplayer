@@ -13,6 +13,7 @@ require_relative 'spc_live_view'
 require_relative 'vgm_tracker_view'
 require_relative '../gbs/tracker'
 require_relative '../nsf/tracker'
+require_relative '../hes/tracker'
 require_relative 'vgm_telemetry_controller'
 
 module RubyPlayer
@@ -62,10 +63,11 @@ module RubyPlayer
         @vgm_live_view = ChipLiveView.new
         @vgm_tracker_view = VgmTrackerView.new
         @spc_live_view = SpcLiveView.new
-        # GBS and NSF reuse the VGM page; their rows come from chip snapshots,
-        # each kind through its own tracker.
+        # GBS, NSF, and HES reuse the VGM page; their rows come from chip
+        # snapshots, each kind through its own tracker.
         @chip_pages = { gbs: ChipPage.new(view: ChipLiveView.new(source: 'GBS'), tracker: Gbs::Tracker.new),
-                        nsf: ChipPage.new(view: ChipLiveView.new(source: 'NSF'), tracker: Nsf::Tracker.new) }
+                        nsf: ChipPage.new(view: ChipLiveView.new(source: 'NSF'), tracker: Nsf::Tracker.new),
+                        hes: ChipPage.new(view: ChipLiveView.new(source: 'HES'), tracker: Hes::Tracker.new) }
         @vgm_telemetry_controller = VgmTelemetryController.new(
           engine: @engine, telemetry: @vgm_telemetry,
           refresh_hz: [@config['ui', 'vgm_telemetry_fps'], @config['ui', 'frame_fps']].min,
@@ -293,7 +295,7 @@ module RubyPlayer
         case @now_playing_modal&.live_kind
         when :spc then handle_spc_mute_key(key)
         when :vgm then handle_channel_mute_key(key, @vgm_live_view)
-        when :gbs, :nsf then handle_channel_mute_key(key, @chip_pages.fetch(@now_playing_modal.live_kind).view)
+        when *@chip_pages.keys then handle_channel_mute_key(key, @chip_pages.fetch(@now_playing_modal.live_kind).view)
         else false
         end
       end
@@ -1462,7 +1464,7 @@ module RubyPlayer
         when :vgm
           @now_playing_modal.update_chip(now_sample: @engine.vgm_telemetry_request&.sample,
                                          mute_mask: @engine.voice_mute_mask)
-        when :gbs, :nsf then update_chip_live(@now_playing_modal.live_kind)
+        when *@chip_pages.keys then update_chip_live(@now_playing_modal.live_kind)
         end
         @art_region = @now_playing_modal.render(@screen, theme: @theme, frame: method(:render_modal),
                                                          min_art_rows: @config['ui', 'art_min_rows'])

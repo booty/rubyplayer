@@ -9,6 +9,7 @@ require_relative 'live_glyphs'
 require_relative 'chip_sample_panels'
 require_relative 'envelope_chart'
 require_relative 'gb_live_panels'
+require_relative 'hes_live_panels'
 require_relative 'live_panel_renderer'
 require_relative 'nes_live_panels'
 
@@ -31,6 +32,7 @@ module RubyPlayer
       include ChipSamplePanels
       include GbLivePanels
       include NesLivePanels
+      include HesLivePanels
 
       # Native chip families draw through their own panel module, which
       # implements <prefix>_summary(chip), <prefix>_instrument_texts(channel),
@@ -42,12 +44,13 @@ module RubyPlayer
       NATIVE_PANEL_FAMILIES = [
         NativePanelFamily.new(prefix: :gb, kinds: GB_KINDS, chip_ids: %w[gb_dmg].freeze, exact_levels: true),
         NativePanelFamily.new(prefix: :nes, kinds: NES_KINDS, chip_ids: %w[2a03 vrc6 n163 s5b fds mmc5].freeze,
-                              exact_levels: true)
+                              exact_levels: true),
+        NativePanelFamily.new(prefix: :hes, kinds: HES_KINDS, chip_ids: %w[huc6280].freeze, exact_levels: false)
       ].freeze
       CHANNEL_KEYS = [*'1'..'9', *'a'..'z'].freeze
       # NSF chips follow libgme's voice order, 2A03 first.
       CHIP_ORDER = { 'ym2612' => 0, 'sn76489' => 1, 'ym2413' => 2, 'gb_dmg' => 3, '2a03' => 4, 'vrc6' => 5, 'n163' => 6,
-                     's5b' => 7, 'fds' => 8, 'mmc5' => 9, 'vrc7' => 10 }.freeze
+                     's5b' => 7, 'fds' => 8, 'mmc5' => 9, 'vrc7' => 10, 'huc6280' => 11 }.freeze
       THREE_COLUMN_WIDTH = 150
       TWO_COLUMN_WIDTH = 100
       WIDE_TABLE_WIDTH = 110

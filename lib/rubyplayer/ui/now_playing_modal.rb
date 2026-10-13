@@ -9,7 +9,7 @@ module RubyPlayer
     # Owns a snapshot only: App loads metadata and delivers background updates.
     class NowPlayingModal
       LIVE_PAGES = { vgm: %i[live tracker].freeze, spc: [:live].freeze,
-                     gbs: [:live].freeze, nsf: [:live].freeze }.freeze
+                     gbs: [:live].freeze, nsf: [:live].freeze, hes: [:live].freeze }.freeze
       MAX_WIDTH = 88
       ART_MIN_WIDTH = 64
       FRAME_ROWS = 6
@@ -23,7 +23,7 @@ module RubyPlayer
       TRACKER_LIVE_HINT = '[o] Next/Close [Tab] Info [←/→] Channels [esc/enter] Close'
       private_constant :SPC_LIVE_HINT, :CHIP_LIVE_HINT, :VGM_LIVE_HINT, :TRACKER_LIVE_HINT
 
-      # live_kind is :vgm or :spc when a live page exists for this track.
+      # live_kind names the track's live pages (LIVE_PAGES) when it has any.
       def initialize(track, extras:, page: :info, chip_view: nil, live_available: nil, live_kind: nil,
                      spc_view: nil, tracker_view: nil)
         @track = track

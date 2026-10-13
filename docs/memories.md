@@ -123,3 +123,9 @@ the authority for workflow and invariants.
   keeps changing. VRC7 reuses the YM2413 model
   (register writes rebuilt from snapshot diffs). libgme numbers voices APU,
   VRC6 (saw first), N163, 5B, FDS, MMC5, VRC7; the page mutes by that.
+- Live HES view (hes_native): the HuC6280 PSG changes only when written, so
+  libgme's pre-write and driver hooks suffice (no frame-end patch); observe a
+  write's effect at the next hook. Record `dac` only in direct-DAC mode:
+  elsewhere it is the running output, which muted seek skips leave stale.
+  libgme's HES driver hook fires only near 60 Hz, so cap pending writes by
+  age (1/240 s) or timer drivers never publish.
