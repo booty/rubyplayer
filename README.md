@@ -79,7 +79,7 @@ now-playing view. Other terminals show an artwork placeholder while track
 information remains available.
 
 Now Playing separates artist and album information from technical file details.
-Playback keys keep working while it is open, on either page: Space plays or
+Playback keys keep working while it is open, on any page: Space plays or
 pauses, `<`/`>` go to the previous or next track (the popup follows), and
 `[`/`]` seek.
 Track numbers show `N of M` when the file tags include a total. The technical
@@ -92,8 +92,11 @@ and comments appear when available. Opening the popup loads fresh details for
 ordinary audio files and chiptunes without a rescan. Unknown fields are omitted.
 
 For VGM/VGZ tracks, Now Playing opens on a full-screen **VGM** live page when
-the current playback source is a VGM stream. Press `Tab` to switch between
-**Info** and **Live**. Live covers YM2612/YM3438 FM, SN76489 PSG, and YM2413
+the current playback source is a VGM stream. Press `O` again for the
+**Tracker** page, then `O` once more to close Now Playing. `Tab` switches
+between **Info** and whichever live page was last open; `Escape` and `Enter`
+close from any page. Other formats with one live page close on the second `O`.
+The VGM overview covers YM2612/YM3438 FM, SN76489 PSG, and YM2413
 OPLL chips when libgme renders them, and uses the whole terminal: one line per
 chip (LFO, channel 3 mode, DAC stream rate, timers; PSG noise mode and stereo;
 OPLL rhythm keys), every channel (operator keys, note and cents, frequency, an
@@ -104,10 +107,11 @@ shapes, and a few seconds of per-channel note history. Up/Down selects a
 channel; `M` mutes or unmutes its libgme voice and `S` solos it. libgme mixes
 some channels as one voice (the PSG beside an FM chip, OPLL channels 6–9, OPLL
 rhythm), so those mute together. Mute is heard once already-decoded audio
-drains. The Live page reads VGM commands on one bounded background worker and follows
-the sample position already consumed by the audio output, so decoder read-ahead
-does not move the display early. Opening Live deep into a dense track replays
-in bounded slices and shows **Catching up** until it reaches the playhead,
+drains. Both VGM pages read VGM commands on one bounded background worker and
+follow the sample position already consumed by the audio output, so decoder
+read-ahead does not move the display early. Switching between them keeps that
+replay. Opening either page deep into a dense track replays in bounded slices
+and shows **Catching up** until it reaches the playhead,
 including while paused. GME also preserves VGM leading silence so the audio and
 register timelines begin together; this also turns off libgme's silence-based
 end-of-track detection for VGM, which instead ends on its end command or
@@ -117,6 +121,15 @@ chips and partial DAC/stream cases are labeled in the page; for example,
 libgme's YM2612 priority makes mixed YM2612/YM2413 files unavailable for OPLL
 detail, and YM2151/T6W28 live detail is not provided. Switching to Info or
 closing the popup suspends live replay.
+
+The **Tracker** page scrolls a FastTracker-style time grid upward beneath the
+playhead. Each row is 50 ms, with an elapsed timestamp and columns for the VGM
+chip channels. Note starts, pitch changes, and releases come from the existing
+VGM note history; a short note that starts and ends in one row remains visible.
+`Left`/`Right` moves between channel columns when they do not all fit. This is
+a view of timed VGM events: VGM has no pattern rows or reliable tempo, and the
+page does not infer historical instruments, volume, or effects from the current
+registers. Mute and solo remain on the VGM overview.
 
 For SPC (SNES) tracks, Now Playing opens on a full-screen **S-DSP** live page
 that uses the whole terminal: a global row (main/echo volume, FLG, key-on and
@@ -286,6 +299,7 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | `app.rb` | `UI::App`: wires every other component together and owns the main loop — key dispatch, event handling, config hot-reload, and the top-level `render`. This is the natural place to look first to see how a keypress becomes an action and how state changes reach the screen. |
 | `spc_live_view.rb` | `SpcLiveView`: the full-modal SPC live page. Renders a `Spc::LiveState` into a rectangle, choosing three-column, two-column, or stacked panels by size; graphs are memoized per input. |
 | `chip_live_view.rb`, `gb_live_panels.rb`, `nes_live_panels.rb`, `vgm_telemetry_controller.rb` | `ChipLiveView`: the full-modal VGM (and GBS and NSF, through the Game Boy and NES panel modules) live page, rendering snapshots into a rectangle with three-column, two-column, or stacked panels by size; and the visible-consumer refresh controller. The view does not read files, query the engine, or depend on the Now Playing modal. |
+| `vgm_tracker_view.rb` | `VgmTrackerView`: the VGM Tracker page. Buckets the snapshot's packed note history into 50 ms rows and renders a scrolling time grid with a horizontal channel window. Like `ChipLiveView`, it reads only snapshots. |
 | `gb_live_panels.rb` | `GbLivePanels`: the Game Boy APU parts of `ChipLiveView` (chip line, instrument text, exact levels, voice panel, volume envelope and wave RAM). |
 | `live_glyphs.rb` | Block-character level bars and graphs shared by the live pages. |
 | `live_panel_renderer.rb` | Panel drawing shared by the live pages: equal-width columns of clipped lines and a one-entry cache per panel. Layout stays in each page. |

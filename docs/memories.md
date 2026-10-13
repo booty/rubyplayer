@@ -73,7 +73,10 @@ the authority for workflow and invariants.
   ignoring), so the first mute disables it for the track. libgme groups some
   VGM voices (PSG beside FM, OPLL 6-9, rhythm); mute those as a group.
   Single-entry render caches must be keyed per panel, not per item: keying a
-  shared slot per operator thrashed and recomputed every frame.
+  shared slot per operator thrashed and recomputed every frame. The Tracker
+  page reads the same `NoteLog` events, so both VGM pages share one controller
+  session; set `VgmTelemetryController#visible` only when crossing Info/live
+  or closing, because `visible = true` clears the session and restarts replay.
 - VGM register-model fidelity: check chip formulas against a reference
   emulator (Nuked-OPN2/MAME), not self-derived expectations — the YM2612 pitch
   test once pinned an octave error. OPN2 frequency high bytes go through one

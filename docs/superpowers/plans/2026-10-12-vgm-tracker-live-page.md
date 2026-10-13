@@ -96,12 +96,14 @@ The current two-state `:live`/`:info` toggle in `App#toggle_now_playing_page` an
 
 ### Task 4: Document and verify the finished feature
 
+**Checkpoint:** Complete. Verification: 909 tests, 0 failures/errors; RuboCop 190 files, 0 offenses.
+
 **Files:** Modify `README.md`; adjust affected assertions in the test files above where existing help strings or page-cycle expectations changed.
 
-- [ ] Update the Now Playing navigation section: `o` cycles VGM overview→tracker→close, single-page kinds close on the second `o`, Tab enters/leaves Info, tracker Left/Right moves channel columns. Explain the 50 ms time grid and that VGM supplies no pattern/tempo or historical instrument/effect data.
-- [ ] Run `mise exec -- bundle exec rake test`; require zero failures/errors. Run `mise exec -- bundle exec rubocop` (without `-a`) and resolve any offenses in changed Ruby files. No native source changes are planned, so no compile-only run is needed beyond the test task's prerequisite.
-- [ ] Review `git diff --check`, `git diff --stat`, and the full diff. Ensure the unrelated `.tmp/readability-pass-oct-12-2026.md` change is neither staged nor overwritten.
-- [ ] Stage only this feature's files, commit once, and push `main` to its verified current remote after tests and RuboCop pass, as `AGENTS.md` requires. Record any nonduplicative implementation lesson in `docs/memories.md` before the commit.
+- [x] Update the Now Playing navigation section: `o` cycles VGM overview→tracker→close, single-page kinds close on the second `o`, Tab enters/leaves Info, tracker Left/Right moves channel columns. Explain the 50 ms time grid and that VGM supplies no pattern/tempo or historical instrument/effect data.
+- [x] Run `mise exec -- bundle exec rake test`; require zero failures/errors. Run `mise exec -- bundle exec rubocop` (without `-a`) and resolve any offenses in changed Ruby files. No native source changes are planned, so no compile-only run is needed beyond the test task's prerequisite.
+- [x] Review `git diff --check`, `git diff --stat`, and the full diff. Ensure the unrelated `.tmp/readability-pass-oct-12-2026.md` change is neither staged nor overwritten.
+- [x] Stage only this feature's files, commit once, and push `main` to its verified current remote after tests and RuboCop pass, as `AGENTS.md` requires. Record any nonduplicative implementation lesson in `docs/memories.md` before the commit.
 
 ## Completion criteria
 
