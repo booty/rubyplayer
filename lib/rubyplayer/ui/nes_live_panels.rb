@@ -235,7 +235,7 @@ module RubyPlayer
 
       def nes_envelope_panel(row, width, rows)
         details = row.channel.details
-        quarter_frame_hz = nes_quarter_frame_hz(row)
+        quarter_frame_hz = nes_quarter_frame_hz
         elapsed_seconds = seconds_since_trigger(row.channel)
         cutoff_seconds = nes_cutoff_seconds(details, quarter_frame_hz, elapsed_seconds)
         summary = "#{nes_envelope_text(details)}#{format(' · cut at %d ms', cutoff_seconds * 1000) if cutoff_seconds}"
@@ -268,7 +268,7 @@ module RubyPlayer
         envelope_span_seconds([decay, cutoff_seconds].compact.min || 0)
       end
 
-      def nes_quarter_frame_hz(_row)
+      def nes_quarter_frame_hz
         apu = Array(@snapshot&.chips).find { |chip| chip.id.start_with?('2a03') }
         QUARTER_FRAME_HZ.fetch(apu&.details&.dig(:pal) ? :pal : :ntsc)
       end
@@ -312,7 +312,7 @@ module RubyPlayer
         details = row.channel.details
         return 'Length counter halted (sounds until stopped)' if details[:loop] || details[:held]
 
-        format('Length %d ms left', details[:length] * 2000 / nes_quarter_frame_hz(row))
+        format('Length %d ms left', details[:length] * 2000 / nes_quarter_frame_hz)
       end
 
       # The squares' pitch sweep, or nil when off.

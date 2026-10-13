@@ -25,6 +25,14 @@ module RubyPlayer
       # The short noise mode repeats every 93 steps, so it has a pitch.
       SHORT_NOISE_STEPS = 93
       N163_CHANNELS = 8
+      # Namco 163 timing: the enabled channels take turns, one update every
+      # 15 CPU clocks, each adding its phase increment to a phase that
+      # advances one wave sample per 65,536.
+      N163_CLOCKS_PER_UPDATE = 15.0
+      N163_PHASE_PER_SAMPLE = 65_536
+      # FDS: the wave (64 samples) and modulator advance by their phase
+      # increment per CPU clock; a full cycle is 65,536 × 64 phase units.
+      FDS_PHASE_PER_CYCLE = 4_194_304.0
       FDS_MASTER_VOLUME = [100, 67, 50, 40].freeze
 
       module_function
@@ -98,16 +106,20 @@ module RubyPlayer
                  details: { active: active })
       end
 
-      def n163_channel(state, ram, osc, voice, number, active)
+      def n163_channel(state, ram, osc, voice, number, active_channel_count)
         reg = ram[0x40 + (osc * 8), 8]
-        freq = ((reg[4] & 3) << 16) | (reg[2] << 8) | reg[0]
+        phase_increment = ((reg[4] & 3) << 16) | (reg[2] << 8) | reg[0]
         # libgme's wave length: 32 samples less 4 per step of bits 2-4.
-        length = 32 - (((reg[4] >> 2) & 7) * 4)
-        enabled = number < active
-        hz = state.clock_rate * freq / (15.0 * 65_536 * active * length) if enabled && length.positive? && freq.positive?
+        wave_length_samples = 32 - (((reg[4] >> 2) & 7) * 4)
+        enabled = number < active_channel_count
+        if enabled && wave_length_samples.positive? && phase_increment.positive?
+          hz = state.clock_rate * phase_increment /
+               (N163_CLOCKS_PER_UPDATE * N163_PHASE_PER_SAMPLE * active_channel_count * wave_length_samples)
+        end
         Channel.new(label: "N163 Wave #{number + 1}", kind: :n163_wave, voice: voice, pitch_hz: hz,
-                    details: { volume: reg[7] & 0x0f, freq: freq, wave_length: length, wave_address: reg[6],
-                               samples: n163_wave(ram, reg[6], length), enabled: enabled })
+                    details: { volume: reg[7] & 0x0f, freq: phase_increment, wave_length: wave_length_samples,
+                               wave_address: reg[6], samples: n163_wave(ram, reg[6], wave_length_samples),
+                               enabled: enabled })
       end
 
       # `length` 4-bit samples from nibble `address` on, low nibble first.
@@ -141,10 +153,10 @@ module RubyPlayer
       # envelope and a 32-step frequency modulator.
       def fds(state, base)
         regs = state.fds_regs.bytes
-        freq = ((regs[3] & 0x0f) << 8) | regs[2]
-        channel = Channel.new(label: 'FDS Wave', kind: :fds_wave, voice: base,
-                              pitch_hz: freq.positive? ? state.clock_rate * freq / 4_194_304.0 : nil,
-                              details: { freq: freq, gain: state.fds_env_gain, envelope: fds_envelope(regs[0]),
+        wave_phase_increment = ((regs[3] & 0x0f) << 8) | regs[2]
+        pitch_hz = state.clock_rate * wave_phase_increment / FDS_PHASE_PER_CYCLE if wave_phase_increment.positive?
+        channel = Channel.new(label: 'FDS Wave', kind: :fds_wave, voice: base, pitch_hz: pitch_hz,
+                              details: { freq: wave_phase_increment, gain: state.fds_env_gain, envelope: fds_envelope(regs[0]),
                                          master_volume: FDS_MASTER_VOLUME[regs[9] & 3], halted: regs[3].anybits?(0x80),
                                          samples: state.fds_wave.bytes, **fds_modulator(state, regs) })
         Chip.new(key: 'fds', name: 'Famicom Disk System', clock_hz: state.clock_rate, channels: [channel],
@@ -154,10 +166,10 @@ module RubyPlayer
       # The modulator steps through its 64-entry table (32 values, each
       # twice) bending the wave's pitch by up to `mod_depth`.
       def fds_modulator(state, regs)
-        mod_freq = ((regs[7] & 0x0f) << 8) | regs[6]
-        { mod_table: state.fds_mod.bytes, mod_depth: state.fds_sweep_gain, mod_freq: mod_freq,
-          mod_enabled: regs[7].nobits?(0x80) && mod_freq.positive?,
-          mod_hz: state.clock_rate * mod_freq / 4_194_304.0 }
+        modulation_phase_increment = ((regs[7] & 0x0f) << 8) | regs[6]
+        { mod_table: state.fds_mod.bytes, mod_depth: state.fds_sweep_gain, mod_freq: modulation_phase_increment,
+          mod_enabled: regs[7].nobits?(0x80) && modulation_phase_increment.positive?,
+          mod_hz: state.clock_rate * modulation_phase_increment / FDS_PHASE_PER_CYCLE }
       end
 
       # $4080: an envelope ramping down or up (bit 6) at speed bits 0-5, or

@@ -74,7 +74,7 @@ module RubyPlayer
         load = KINDS[voice] == :gb_wave ? 256 - regs[base + 1] : 64 - (regs[base + 1] & 0x3f)
         common = { volume: state.volume[voice], length: state.length[voice], length_load: load,
                    length_enabled: regs[base + 4][6] == 1, enabled: state.enabled[voice] == 1,
-                   frequency: frequency(regs, base) }
+                   frequency: frequency_register(regs, base) }
         case KINDS[voice]
         when :gb_pulse then common.merge(pulse_details(state, voice, base))
         when :gb_wave then common.merge(wave_details(regs))
@@ -110,13 +110,14 @@ module RubyPlayer
           lfsr_hz: NOISE_BASE_HZ / (divisor.zero? ? 0.5 : divisor) / (2**(shift + 1)) }
       end
 
-      def frequency(regs, base) = ((regs[base + 4] & 7) << 8) | regs[base + 3]
+      # NRx3 and NRx4 bits 0-2: the 11-bit timer value x in clock / (2048 - x), not Hz.
+      def frequency_register(regs, base) = ((regs[base + 4] & 7) << 8) | regs[base + 3]
 
       def pitch_hz(state, voice)
         regs = state.regs
         case KINDS[voice]
-        when :gb_pulse then SQUARE_HZ / (2048 - frequency(regs, BASES[voice]))
-        when :gb_wave then WAVE_HZ / (2048 - frequency(regs, BASES[voice]))
+        when :gb_pulse then SQUARE_HZ / (2048 - frequency_register(regs, BASES[voice]))
+        when :gb_wave then WAVE_HZ / (2048 - frequency_register(regs, BASES[voice]))
         else
           # 7-bit noise repeats every 127 steps, so it has a pitch.
           noise = noise_details(regs[BASES[voice] + 3])
