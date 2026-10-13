@@ -1,23 +1,20 @@
 # frozen_string_literal: true
 
 require 'test_helper'
-require 'ffi'
 require 'fileutils'
 require 'tmpdir'
-require 'rubyplayer/backends/gme'
 require 'rubyplayer/backends/gbs_native_lib'
+require_relative 'support/native_parity'
 
 # librp_gbs builds libgme's own GBS emulator (vendored, plus snapshot hooks),
 # so .gbs playback can leave Homebrew libgme without changing a sample. Any
 # difference is a regression in the vendored core, its patch, or rp_gbs.cpp
 # (the snapshot hooks must not disturb emulation).
 class GbsNativeParityTest < Minitest::Test
-  Gme = RubyPlayer::Backends::GmeLib
+  include TestSupport::NativeParity
+
   Lib = RubyPlayer::Backends::GbsNativeLib
-  RATE = 48_000
-  # The engine's default decode chunk: libgme decides fades per call, so
-  # both sides must be driven with identical call sizes.
-  CHUNK_FRAMES = 16_384
+  NATIVE = Native.new(lib: Lib, prefix: 'rp_gbs')
   PATH = File.join(FIXTURES, 'shantae.gbs')
   TRACKS = [0, 1, 5, 12, 20].freeze
 
@@ -34,8 +31,8 @@ class GbsNativeParityTest < Minitest::Test
   end
 
   def test_seeks_match_libgme
-    compare(1, seconds: 2, seek_ms: 20_000)
-    compare(1, seconds: 2, seek_ms: 20_000, then_seek_ms: 3_000)
+    compare(1, seconds: 2, seeks: [20_000])
+    compare(1, seconds: 2, seeks: [20_000, 3_000])
   end
 
   # A sibling m3u remaps track numbers and supplies lengths; both players
@@ -54,10 +51,10 @@ class GbsNativeParityTest < Minitest::Test
   end
 
   def test_snapshots_follow_the_music_driver
-    ours = open_ours(0)
-    buf = FFI::MemoryPointer.new(:float, CHUNK_FRAMES * 2)
-    first = play_snapshot_frames(ours, buf)
-    steady = play_snapshot_frames(ours, buf)
+    native_handle = open_native(NATIVE, PATH, 0)
+    native_output = FFI::MemoryPointer.new(:float, CHUNK_FRAMES * 2)
+    first = play_snapshot_frames(native_handle, native_output)
+    steady = play_snapshot_frames(native_handle, native_output)
 
     # The first play also gets what libgme emulated ahead while skipping
     # leading silence, starting with the state its first note starts from.
@@ -68,77 +65,20 @@ class GbsNativeParityTest < Minitest::Test
     assert_equal steady.sort, steady
     assert_equal 80, Lib.rp_gbs_snapshot_size
   ensure
-    Lib.rp_gbs_close(ours) if ours
+    Lib.rp_gbs_close(native_handle) if native_handle
   end
 
   private
 
-  def compare(track, seconds:, ignore_silence: false, fade_ms: nil, seek_ms: nil, then_seek_ms: nil, mute: 0,
-              path: PATH, m3u: false)
-    options = { ignore_silence: ignore_silence, fade_ms: fade_ms, path: path, m3u: m3u }
-    gme = open_gme(track, **options)
-    ours = open_ours(track, **options)
-    Gme.gme_mute_voices(gme, mute)
-    Lib.rp_gbs_mute_voices(ours, mute)
-    [seek_ms, then_seek_ms].compact.each do |ms|
-      assert_nil Gme.gme_seek(gme, ms)
-      assert_equal 1, Lib.rp_gbs_seek(ours, ms)
-    end
-    gme_buf = FFI::MemoryPointer.new(:short, CHUNK_FRAMES * 2)
-    our_buf = FFI::MemoryPointer.new(:float, CHUNK_FRAMES * 2)
-    audible = false
-    ((seconds * RATE) / CHUNK_FRAMES).ceil.times do |chunk|
-      assert_nil Gme.gme_play(gme, CHUNK_FRAMES * 2, gme_buf)
-      assert_equal 1, Lib.rp_gbs_play(ours, our_buf, CHUNK_FRAMES)
-      expected = gme_buf.read_array_of_int16(CHUNK_FRAMES * 2)
-      actual = our_buf.read_array_of_float(CHUNK_FRAMES * 2).map { |sample| (sample * 32_768).round }
-      audible ||= expected.any? { |sample| sample.abs > 100 }
-
-      assert_equal expected, actual, "track #{track} chunk #{chunk} differs"
-      assert_equal Gme.gme_track_ended(gme), Lib.rp_gbs_track_ended(ours)
-    end
-
-    assert audible, "track #{track} was silent; the comparison proves nothing"
-  ensure
-    Gme.gme_delete(gme) if gme
-    Lib.rp_gbs_close(ours) if ours
+  def compare(track, seconds:, path: PATH, m3u: false, **)
+    assert_matches_libgme(NATIVE, path, track, seconds: seconds, label: "track #{track}",
+                                               m3u_path: (path.sub(/\.gbs\z/, '.m3u') if m3u), **)
   end
 
-  def play_snapshot_frames(handle, buf)
-    Lib.rp_gbs_play(handle, buf, CHUNK_FRAMES)
+  def play_snapshot_frames(handle, output)
+    Lib.rp_gbs_play(handle, output, CHUNK_FRAMES)
     count = Lib.rp_gbs_snapshot_count(handle)
     packed = Lib.rp_gbs_snapshots(handle).read_bytes(count * Lib.rp_gbs_snapshot_size)
     Array.new(count) { |index| packed.unpack1('l<', offset: index * Lib.rp_gbs_snapshot_size) }
-  end
-
-  def open_gme(track, ignore_silence: false, fade_ms: nil, path: PATH, m3u: false)
-    out = FFI::MemoryPointer.new(:pointer)
-
-    assert_nil Gme.gme_open_file(path, out, RATE)
-    emu = out.read_pointer
-    assert_nil Gme.gme_load_m3u(emu, path.sub(/\.gbs\z/, '.m3u')) if m3u
-    Gme.gme_ignore_silence(emu, 1) if ignore_silence
-
-    assert_nil Gme.gme_start_track(emu, track)
-    Gme.gme_set_fade(emu, fade_ms) if fade_ms
-    emu
-  end
-
-  def open_ours(track, ignore_silence: false, fade_ms: nil, path: PATH, m3u: false)
-    handle = Lib.rp_gbs_open(*buffer(File.binread(path)), RATE)
-
-    refute_predicate handle, :null?
-    assert_equal 1, Lib.rp_gbs_load_m3u(handle, *buffer(File.binread(path.sub(/\.gbs\z/, '.m3u')))) if m3u
-    Lib.rp_gbs_ignore_silence(handle, 1) if ignore_silence
-
-    assert_equal 1, Lib.rp_gbs_start_track(handle, track)
-    Lib.rp_gbs_set_fade(handle, fade_ms) if fade_ms
-    handle
-  end
-
-  def buffer(bytes)
-    data = FFI::MemoryPointer.new(:uchar, bytes.bytesize)
-    data.put_bytes(0, bytes)
-    [data, bytes.bytesize]
   end
 end
