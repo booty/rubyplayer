@@ -8,7 +8,7 @@ module RubyPlayer
   # AudioOutput producer; no FFI write can outlive process replacement/teardown.
   class FocusPlayer
     class Error < StandardError; end
-    READ_SIZE = 16 * 1024
+    READ_CHUNK_BYTES = 16 * 1024
     TERMINATE_GRACE_PERIOD_SECONDS = 1
     REAP_POLL_INTERVAL_SECONDS = 0.01
     private_constant :TERMINATE_GRACE_PERIOD_SECONDS, :REAP_POLL_INTERVAL_SECONDS
@@ -59,7 +59,7 @@ module RubyPlayer
 
       # Nonblocking read is essential because this runs on decoder thread; a
       # stalled child must not prevent that thread from receiving stop/shutdown.
-      chunk = @reader.read_nonblock(READ_SIZE, exception: false)
+      chunk = @reader.read_nonblock(READ_CHUNK_BYTES, exception: false)
       return +''.b if chunk == :wait_readable
 
       if chunk.nil?

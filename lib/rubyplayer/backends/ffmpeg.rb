@@ -13,7 +13,7 @@ module RubyPlayer
     class Ffmpeg
       class Error < StandardError; end
 
-      READ_SIZE = 16 * 1024
+      READ_CHUNK_BYTES = 16 * 1024
 
       # Tags folded into named metadata fields; everything else lands in
       # :extra rather than being silently dropped.
@@ -139,7 +139,7 @@ module RubyPlayer
         def read_exactly(bytes_wanted)
           out = +''.b
           while out.bytesize < bytes_wanted
-            chunk = @stdout.readpartial([READ_SIZE, bytes_wanted - out.bytesize].min)
+            chunk = @stdout.readpartial([READ_CHUNK_BYTES, bytes_wanted - out.bytesize].min)
             out << chunk
           end
           out

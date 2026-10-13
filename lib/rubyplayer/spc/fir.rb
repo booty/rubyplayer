@@ -4,7 +4,7 @@ module RubyPlayer
   module Spc
     # Frequency response of the S-DSP's 8-tap echo FIR filter.
     module Fir
-      NATIVE_RATE = 32_000.0
+      NATIVE_SAMPLE_RATE_HZ = 32_000.0
       TAP_UNITY = 128.0 # a single tap of 128 passes the echo unchanged
       LOW_HZ = 50.0
       HIGH_HZ = 16_000.0
@@ -28,22 +28,22 @@ module RubyPlayer
         return 'flat' if curve.max - curve.min < FLAT_RANGE_DB
 
         quarter = KIND_POINTS / 4
-        low = mean(curve.first(quarter))
-        high = mean(curve.last(quarter))
-        middle = mean(curve[quarter...-quarter])
-        return 'low-pass' if low >= high + SLOPE_DB && low >= middle - 3
-        return 'high-pass' if high >= low + SLOPE_DB && high >= middle - 3
-        return 'band-pass' if middle >= low + SLOPE_DB && middle >= high + SLOPE_DB
+        low_band_db = mean(curve.first(quarter))
+        high_band_db = mean(curve.last(quarter))
+        middle_band_db = mean(curve[quarter...-quarter])
+        return 'low-pass' if low_band_db >= high_band_db + SLOPE_DB && low_band_db >= middle_band_db - 3
+        return 'high-pass' if high_band_db >= low_band_db + SLOPE_DB && high_band_db >= middle_band_db - 3
+        return 'band-pass' if middle_band_db >= low_band_db + SLOPE_DB && middle_band_db >= high_band_db + SLOPE_DB
 
         'shaped'
       end
 
-      def magnitude_db(taps, frequency)
+      def magnitude_db(taps, frequency_hz)
         real = imaginary = 0.0
         taps.each_with_index do |tap, index|
-          angle = 2 * Math::PI * frequency * index / NATIVE_RATE
-          real += tap * Math.cos(angle)
-          imaginary -= tap * Math.sin(angle)
+          angle_radians = 2 * Math::PI * frequency_hz * index / NATIVE_SAMPLE_RATE_HZ
+          real += tap * Math.cos(angle_radians)
+          imaginary -= tap * Math.sin(angle_radians)
         end
         magnitude = Math.hypot(real, imaginary) / TAP_UNITY
         return MIN_DB if magnitude.zero?

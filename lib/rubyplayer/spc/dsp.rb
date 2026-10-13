@@ -11,7 +11,7 @@ module RubyPlayer
                   667, 800, 1000, 1300, 1600, 2000, 2700, 3200, 4000, 5300, 6400, 8000, 10_700,
                   16_000, 32_000].freeze
       GAIN_MODES = %i[linear_decrease exp_decrease linear_increase bent_increase].freeze
-      NATIVE_RATE = 32_000
+      NATIVE_SAMPLE_RATE_HZ = 32_000
       PITCH_UNITY = 0x1000 # pitch value that plays a sample at its native 32 kHz
       # Each EDL step is 16 ms of echo and 2 KB of buffer; EDL 0 still uses 4 bytes.
       ECHO_MS_PER_STEP = 16
@@ -32,7 +32,7 @@ module RubyPlayer
         pitch = regs[base + 2] | ((regs[base + 3] & 0x3f) << 8)
         {
           vol_l: vol_l, vol_r: vol_r, pan: pan(vol_l, vol_r), balance: balance(vol_l, vol_r),
-          pitch: pitch, rate_hz: pitch * NATIVE_RATE.to_f / PITCH_UNITY,
+          pitch: pitch, rate_hz: pitch * NATIVE_SAMPLE_RATE_HZ.to_f / PITCH_UNITY,
           pitch_ratio: pitch.to_f / PITCH_UNITY, srcn: regs[base + 4],
           adsr: adsr(regs[base + 5], regs[base + 6]), gain: gain(regs[base + 7]),
           envx: regs[base + 8], outx: signed(regs[base + 9])
