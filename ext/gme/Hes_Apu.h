@@ -47,6 +47,11 @@ public:
 
 	void end_frame( blip_time_t );
 
+	// rubyplayer patch: read-only state for live state snapshots.
+	Hes_Osc const& rp_osc( int i ) const { return oscs [i]; }
+	int rp_balance() const { return balance; }
+	int rp_latch() const { return latch; }
+
 public:
 	Hes_Apu();
 private:

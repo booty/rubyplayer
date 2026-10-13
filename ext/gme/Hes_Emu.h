@@ -30,6 +30,10 @@ public:
 	// Header for currently loaded file
 	header_t const& header() const { return header_; }
 
+	// rubyplayer patch: read-only PSG and driver timing for live state snapshots.
+	Hes_Apu const& rp_apu() const { return apu; }
+	hes_time_t rp_play_period() const { return play_period; }
+
 	static gme_type_t static_type() { return gme_hes_type; }
 
 public:

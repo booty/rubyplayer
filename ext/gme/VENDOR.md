@@ -170,5 +170,27 @@ in `Nsf_Emu::run_clocks` just before `apu.end_frame( duration );`:
 	RP_NSF_FRAME_END_HOOK( this, duration );
 ```
 
+### HES
+
+`Hes_Emu.h`, public, after `header()`:
+
+```cpp
+	// rubyplayer patch: read-only PSG and driver timing for live state snapshots.
+	Hes_Apu const& rp_apu() const { return apu; }
+	hes_time_t rp_play_period() const { return play_period; }
+```
+
+`Hes_Apu.h`, public, after `end_frame()`:
+
+```cpp
+	// rubyplayer patch: read-only state for live state snapshots.
+	Hes_Osc const& rp_osc( int i ) const { return oscs [i]; }
+	int rp_balance() const { return balance; }
+	int rp_latch() const { return latch; }
+```
+
+No hook call is patched in: the PSG changes only when written, so libgme's own `GME_APU_HOOK`
+and `GME_FRAME_HOOK` (defined in `ext/rp_hes/rp_hes_hooks.h`) observe everything.
+
 To update: re-download the files from the new tag, keep the empty `gme_types.h`, re-apply this
 patch, and rerun every parity test.
