@@ -169,7 +169,7 @@ class NowPlayingModalTest < Minitest::Test
     text = screen.instance_variable_get(:@back).map { |row| row.map(&:ch).join }.join("\n")
 
     assert_includes text, 'VGM TRACKER'
-    assert_includes captured_hint, 'Left/Right'
+    assert_includes captured_hint, '[←/→] Channels'
     assert_nil art
   end
 

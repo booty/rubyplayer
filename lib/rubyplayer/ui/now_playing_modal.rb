@@ -20,7 +20,7 @@ module RubyPlayer
       CHIP_LIVE_HINT = '[Tab] Info/Live [↑/↓] Channel [M] Mute [S] Solo [o/esc/enter] Close'
       # The VGM overview is the one live page with a page after it, so `o` advances instead of closing.
       VGM_LIVE_HINT = '[o] Tracker [Tab] Info [↑/↓] Channel [M] Mute [S] Solo [esc/enter] Close'
-      TRACKER_LIVE_HINT = '[o] Next/Close [Tab] Info [Left/Right] Channels [esc/enter] Close'
+      TRACKER_LIVE_HINT = '[o] Next/Close [Tab] Info [←/→] Channels [esc/enter] Close'
       private_constant :SPC_LIVE_HINT, :CHIP_LIVE_HINT, :VGM_LIVE_HINT, :TRACKER_LIVE_HINT
 
       # live_kind is :vgm or :spc when a live page exists for this track.
