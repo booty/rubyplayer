@@ -133,13 +133,7 @@ module RubyPlayer
       # NR51: bit n sends voice n to the right output, bit n + 4 to the left.
       def pan(state, voice)
         routing = state.regs[NR51]
-        left = routing[voice + 4] == 1
-        right = routing[voice] == 1
-        if left && right then :lr
-        elsif left then :l
-        elsif right then :r
-        else :none
-        end
+        pan_from(left: routing[voice + 4] == 1, right: routing[voice] == 1)
       end
     end
   end

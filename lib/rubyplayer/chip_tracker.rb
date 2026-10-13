@@ -81,6 +81,15 @@ module RubyPlayer
       end
     end
 
+    # Stereo placement from whether a voice reaches each side.
+    def pan_from(left:, right:)
+      if left && right then :lr
+      elsif left then :l
+      elsif right then :r
+      else :none
+      end
+    end
+
     # The view snapshot around `chips`, at `native_snapshot`'s time.
     def view_snapshot(native_snapshot, chips)
       Vgm::Snapshot.new(generation: @track_generation, revision: @generation, sample: to_sample(native_snapshot.frame),
