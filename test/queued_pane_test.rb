@@ -103,7 +103,9 @@ class QueuedPaneTest < Minitest::Test
     ], texts(7)
   end
 
-  def test_short_height_preserves_previous_before_upcoming
+  # Queued takes focus and actions, so its selected upcoming track keeps a
+  # row before history fills the rest.
+  def test_short_height_keeps_the_selected_upcoming_row_before_history
     @upcoming = [track(1, title: 'Next', duration_ms: 60_000)]
     @history = Array.new(3) do |index|
       track(10 + index, title: "Past #{index}", duration_ms: 60_000)
@@ -111,8 +113,26 @@ class QueuedPaneTest < Minitest::Test
     @pane.reload!
 
     assert_equal [
-      'Previously', 'Past 0 1:00 Artist', 'Past 1 1:00 Artist', 'Past 2 1:00 Artist'
+      'Upcoming (1/1:00)', 'Next 1:00 Artist', 'Previously', 'Past 0 1:00 Artist'
     ], texts(4)
+  end
+
+  # Five rows (a stacked Queued pane's inside) with full history: the
+  # selected track stays in view while navigating, without an overflow note.
+  def test_five_rows_keep_the_selected_track_in_view_while_navigating
+    @upcoming = Array.new(4) do |index|
+      track(index, title: "Song #{index}", duration_ms: 60_000)
+    end
+    @history = Array.new(3) do |index|
+      track(20 + index, title: "Past #{index}", duration_ms: 60_000)
+    end
+    @pane.reload!
+
+    4.times do |index|
+      assert_equal ['Upcoming (4/4:00)', "Song #{index} 1:00 Artist", 'Previously',
+                    'Past 0 1:00 Artist', 'Past 1 1:00 Artist'], texts(5)
+      @pane.handle_action(:nav_down)
+    end
   end
 
   def test_exactly_fitting_upcoming_rows_do_not_add_overflow_row

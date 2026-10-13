@@ -66,6 +66,28 @@ class AppRenderingThemeConfigTest < Minitest::Test
     assert_includes @app.send(:focusable_panes), :queued
   end
 
+  # A stacked Queued pane is short; with full history its selected
+  # upcoming track must still show (it takes the rating and X keys).
+  def test_stacked_queued_keeps_the_selected_track_in_view
+    library = @app.instance_variable_get(:@library)
+    tracks = library.all_tracks.first(4)
+    tracks.first(3).each do |track|
+      library.record_history(track_id: track.id, started_at: Time.now.utc.iso8601, ended_at: Time.now.utc.iso8601)
+    end
+    @app.engine.enqueue_end(tracks)
+    @app.refresh_panes
+    select_library_kind(:folder)
+    use_screen(rows: 30, cols: 80)
+    @app.handle_key('tab') until @app.active_pane == :queued
+
+    4.times do
+      @app.render
+
+      assert_includes stacked_queued_backgrounds, RubyPlayer::Theme::DEFAULT[:selection_bg]
+      @app.handle_key('down')
+    end
+  end
+
   # A single full-width pane keeps the queue beneath it too.
   def test_single_pane_layout_stacks_the_queue
     select_tracks_for(:folder)
@@ -833,5 +855,16 @@ class AppRenderingThemeConfigTest < Minitest::Test
     assert_equal :ocean_mist, fallback_app.theme_id
   ensure
     fallback_app&.shutdown
+  end
+
+  private
+
+  # The first cell inside the stacked Queued pane's border, for each row
+  # under its title.
+  def stacked_queued_backgrounds
+    back = @app.instance_variable_get(:@screen).instance_variable_get(:@back)
+    title_row = back.index { |row| row.map(&:ch).join.include?('Queued') }
+    column = back[title_row].map(&:ch).join.index('Queued') - 2
+    back.drop(title_row + 1).map { |row| row[column]&.bg }
   end
 end

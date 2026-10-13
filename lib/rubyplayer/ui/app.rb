@@ -22,7 +22,9 @@ module RubyPlayer
       SINGLE_PANE_MAX_WIDTH = 71
       MIN_BOX_WIDTH = 3
       # Smallest stacked Queued pane (border, two headers, a few rows), and
-      # the least height left above it.
+      # the least height left above it. Its five inner rows always fit the
+      # selected upcoming track (QueuedPane::UPCOMING_MIN_ROWS), so a placed
+      # Queued pane is always safe to focus.
       MIN_STACKED_QUEUED_ROWS = 7
       RATE_ACTIONS = { rate_0: nil, rate_1: 1, rate_2: 2, rate_3: 3,
                        rate_4: 4, rate_5: 5, rate_6: 6 }.freeze

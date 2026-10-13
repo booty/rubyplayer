@@ -5,6 +5,9 @@ module RubyPlayer
     # Read-only overview of upcoming playback and recent history.
     class QueuedPane
       HISTORY_LIMIT = 3
+      # Upcoming's header and the selected track (or "Queue empty"). The pane
+      # takes focus and track actions, so these outrank history for space.
+      UPCOMING_MIN_ROWS = 2
       PreparedConfig = Data.define(:formatter, :star_glyph, :upcoming_rows, :previous_rows)
       private_constant :PreparedConfig
 
@@ -74,11 +77,8 @@ module RubyPlayer
       def display_rows(height)
         return [] unless height.positive?
 
-        previous_block = previous_rows_for(height)
-        remaining = height - previous_block.size
-        return previous_block if remaining <= 0
-
-        upcoming_rows_for(remaining) + previous_block
+        previous_block = previous_rows_for(height - UPCOMING_MIN_ROWS)
+        upcoming_rows_for(height - previous_block.size) + previous_block
       end
 
       def render(screen, x:, y:, w:, h:, theme:, active: false) # rubocop:disable Naming/MethodParameterName
@@ -118,6 +118,8 @@ module RubyPlayer
       end
 
       def previous_rows_for(height)
+        return [] unless height.positive?
+
         body = if @previous_rows.empty?
                  [{ type: :empty, text: 'No playback history yet' }]
                else
@@ -135,13 +137,11 @@ module RubyPlayer
         return [header] unless body_capacity.positive?
         return [header, { type: :empty, text: 'Queue empty' }] if @upcoming_rows.empty?
 
-        overflow = @upcoming_rows.size > body_capacity
-        visible_count = overflow ? [body_capacity - 1, 0].max : body_capacity
-        return [header, { type: :empty, text: "+ #{@upcoming_rows.size} more" }] if visible_count.zero?
-
-        visible, hidden_count = @selection.visible_items(visible_count)
+        # The "+ N more" note never takes the selected track's only row.
+        note = @upcoming_rows.size > body_capacity && body_capacity > 1
+        visible, hidden_count = @selection.visible_items(note ? body_capacity - 1 : body_capacity)
         rows = [header] + @upcoming_rows[@selection.scroll, visible.size].to_a
-        return rows if !overflow || hidden_count.zero?
+        return rows unless note && hidden_count.positive?
 
         rows + [{ type: :empty, text: "+ #{hidden_count} more" }]
       end
