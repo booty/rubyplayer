@@ -66,6 +66,43 @@ class AppMultiSelectTest < Minitest::Test
     assert_equal [tracks[0].id, tracks[3].id], library.playlist_tracks(id).map(&:id)
   end
 
+  # A playlist can hold a track twice; a range started on the second copy
+  # covers only the rows between it and the cursor.
+  def test_range_from_a_later_duplicate_removes_only_its_rows
+    a, b, c = library.all_tracks.first(3)
+    id = duplicate_playlist(a, b, a, c)
+    2.times { @app.handle_key('down') }
+    @app.handle_key('shift_down')
+
+    assert_equal [2, 3], @app.tracks_pane.selected_track_indexes
+    @app.handle_key('x')
+
+    assert_equal [a.id, b.id], library.playlist_tracks(id).map(&:id)
+  end
+
+  def test_upward_range_from_a_later_duplicate_removes_only_its_rows
+    a, b, c = library.all_tracks.first(3)
+    id = duplicate_playlist(a, b, a, c)
+    2.times { @app.handle_key('down') }
+    @app.handle_key('shift_up')
+
+    assert_equal [1, 2], @app.tracks_pane.selected_track_indexes
+    @app.handle_key('x')
+
+    assert_equal [a.id, c.id], library.playlist_tracks(id).map(&:id)
+  end
+
+  # Rating reloads the list; the cursor and range stay on the same copies.
+  def test_rating_keeps_a_range_on_the_later_duplicate
+    a, b, c = library.all_tracks.first(3)
+    duplicate_playlist(a, b, a, c)
+    2.times { @app.handle_key('down') }
+    @app.handle_key('shift_down')
+    @app.handle_key('4')
+
+    assert_equal [2, 3], @app.tracks_pane.selected_track_indexes
+  end
+
   def test_escape_ends_the_range
     @app.handle_key('escape')
 
@@ -75,4 +112,11 @@ class AppMultiSelectTest < Minitest::Test
   private
 
   def library = @app.instance_variable_get(:@library)
+
+  def duplicate_playlist(*tracks)
+    id = library.create_playlist('Dupes')
+    tracks.each { |track| library.add_to_playlist(id, track.id) }
+    open_playlist(id)
+    id
+  end
 end

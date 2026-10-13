@@ -28,9 +28,10 @@ module RubyPlayer
         @view_states = {}
         @page_size = ScrollableList::PAGE_SIZE_FALLBACK
         @queue_selection = QueueSelection.new
-        # Range selection: the track Shift+arrows started from; the range runs
-        # from it to the cursor. Kept by id so a reload (a rating) keeps it.
-        @anchor_track_id = nil
+        # Range selection: the row Shift+arrows started from, as a track
+        # occurrence (see #track_occurrence); the range runs from it to the
+        # cursor. Kept by occurrence so a reload (a rating) keeps it.
+        @anchor_occurrence = nil
         update_config(config)
       end
 
@@ -44,7 +45,7 @@ module RubyPlayer
 
       def show(library_row, breadcrumb: nil)
         save_view_state if @mode
-        @anchor_track_id = nil
+        @anchor_occurrence = nil
         @mode =
           case library_row.kind
           when :folder then [:folder, library_row.folder['id']]
@@ -90,7 +91,7 @@ module RubyPlayer
         previous_scroll = @scroll
         load_tracks
         if @mode == :queue
-          @queue_selection.restore(identity: identity&.last, fallback: previous_selection,
+          @queue_selection.restore(identity: identity&.at(1), fallback: previous_selection,
                                    scroll: previous_scroll)
           sync_queue_cursor
           return
@@ -101,12 +102,12 @@ module RubyPlayer
 
       def filter=(value)
         identity = selected_identity
-        @anchor_track_id = nil
+        @anchor_occurrence = nil
         @filter = value.to_s
         invalidate_rows!
         if @mode == :queue
           @queue_selection.replace(filtered_tracks)
-          @queue_selection.restore(identity: identity&.last, fallback: 0,
+          @queue_selection.restore(identity: identity&.at(1), fallback: 0,
                                    scroll: @scroll)
           sync_queue_cursor
           return
@@ -166,8 +167,8 @@ module RubyPlayer
         return extend_selection(EXTEND_ACTIONS[action]) if EXTEND_ACTIONS.key?(action)
 
         # Escape, and any other movement, sort, or grouping, ends a range.
-        had_range = !@anchor_track_id.nil?
-        @anchor_track_id = nil
+        had_range = !@anchor_occurrence.nil?
+        @anchor_occurrence = nil
         return had_range if action == :clear_selection
 
         if @mode == :queue && %i[nav_up nav_down nav_page_up nav_page_down].include?(action)
@@ -338,14 +339,14 @@ module RubyPlayer
       def extend_selection(nav_action)
         return handle_action(nav_action) if %i[focus playlists].include?(@mode) || !selected_track
 
-        anchor = @anchor_track_id || selected_track.id
+        anchor = @anchor_occurrence || track_occurrence(@selection)
         move_selection(nav_action == :nav_up ? -1 : 1)
-        @anchor_track_id = anchor
+        @anchor_occurrence = anchor
         true
       end
 
       # Display-row indexes from the anchor to the cursor, or nil without a
-      # range (or once the anchor's track has left the view). Cached per
+      # range (or once the anchor's occurrence has left the view). Cached per
       # row list, since render and title ask every frame.
       def range_row_indexes
         if @mode == :queue
@@ -353,16 +354,15 @@ module RubyPlayer
           indexes = @queue_selection.selected_indexes
           return @queue_selection.range? ? (indexes.first..indexes.last) : nil
         end
-        return unless @anchor_track_id
+        return unless @anchor_occurrence
 
         rows = display_rows
         cache = @anchor_cache
-        unless cache && cache[0].equal?(rows) && cache[1] == @anchor_track_id
-          index = rows.index { |row| row[:type] == :track && row[:track].id == @anchor_track_id }
-          @anchor_cache = [rows, @anchor_track_id, index]
+        unless cache && cache[0].equal?(rows) && cache[1] == @anchor_occurrence
+          @anchor_cache = [rows, @anchor_occurrence, row_index_of(*@anchor_occurrence)]
         end
         anchor = @anchor_cache.last
-        return @anchor_track_id = nil unless anchor
+        return @anchor_occurrence = nil unless anchor
 
         anchor < @selection ? (anchor..@selection) : (@selection..anchor)
       end
@@ -507,7 +507,7 @@ module RubyPlayer
 
         row = display_rows[@selection]
         case row&.dig(:type)
-        when :track then [:track, row[:track].id]
+        when :track then [:track, *track_occurrence(@selection)]
         when :focus then [:focus, row[:focus_sound].id]
         when :playlist then [:playlist, row[:playlist]['id']]
         end
@@ -522,7 +522,7 @@ module RubyPlayer
 
       def restore_view_state(state)
         if @mode == :queue
-          @queue_selection.restore(identity: state[:selection_identity]&.last,
+          @queue_selection.restore(identity: state[:selection_identity]&.at(1),
                                    fallback: state.fetch(:selection, 0),
                                    scroll: state.fetch(:scroll, 0))
           sync_queue_cursor
@@ -534,21 +534,39 @@ module RubyPlayer
 
       def restore_selection(identity, fallback)
         if @mode == :queue
-          @queue_selection.restore(identity: identity&.last, fallback: fallback, scroll: @scroll)
+          @queue_selection.restore(identity: identity&.at(1), fallback: fallback, scroll: @scroll)
           sync_queue_cursor
           return
         end
 
         rows = display_rows
-        match = rows.index do |row|
-          case identity&.first
-          when :track then row[:type] == :track && row[:track].id == identity[1]
-          when :focus then row[:type] == :focus && row[:focus_sound].id == identity[1]
-          when :playlist then row[:type] == :playlist && row[:playlist]['id'] == identity[1]
-          end
-        end
+        match = if identity&.first == :track
+                  row_index_of(identity[1], identity[2] || 0)
+                else
+                  rows.index do |row|
+                    case identity&.first
+                    when :focus then row[:type] == :focus && row[:focus_sound].id == identity[1]
+                    when :playlist then row[:type] == :playlist && row[:playlist]['id'] == identity[1]
+                    end
+                  end
+                end
         @selection = match || fallback
         clamp_selection
+      end
+
+      # A track row's identity: its id and which copy of that track it is,
+      # since a playlist (or History) can list one track several times and
+      # an id alone would always find the first copy.
+      def track_occurrence(row_index)
+        rows = display_rows
+        id = rows[row_index][:track].id
+        [id, rows[0...row_index].count { |row| row[:type] == :track && row[:track].id == id }]
+      end
+
+      # The display-row index of the `copy`th row of track `id`, or nil.
+      def row_index_of(id, copy)
+        seen = -1
+        display_rows.index { |row| row[:type] == :track && row[:track].id == id && (seen += 1) == copy }
       end
 
       def move_selection(delta)
