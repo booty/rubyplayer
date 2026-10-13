@@ -49,17 +49,19 @@ The current two-state `:live`/`:info` toggle in `App#toggle_now_playing_page` an
 
 ### Task 1: Introduce ordered Now Playing pages
 
+**Checkpoint:** Complete. Commits `edc5a2bc1dfc5899df74dd560d852e46f2e34362` and `ede18d7117388597b3794f32acfb098e7d8b60ab` pushed to `origin/main`. Verification: 900 tests, 0 failures/errors; RuboCop 188 files, 0 offenses. The temporary tracker state renders the existing VGM overview until Task 3 wires its renderer.
+
 **Files:** Modify `lib/rubyplayer/ui/now_playing_modal.rb`, `lib/rubyplayer/ui/app.rb`; test `test/now_playing_modal_test.rb`, `test/app_now_playing_test.rb`, `test/app_gbs_live_test.rb`, `test/app_nsf_live_test.rb`, `test/app_spc_live_test.rb`.
 
 **Interfaces:** `NowPlayingModal#live_pages` returns `[:live, :tracker]` for `:vgm`, `[:live]` for `:spc/:gbs/:nsf`, and `[]` otherwise. `#live_page?` checks whether `page` is in that list. `#next_live_page` returns the next live page or `nil` at the end. `#page=` accepts `:info` or one of `live_pages` and normalizes unsupported values to `:info`. `App#advance_now_playing_page` uses those methods; `App#toggle_now_playing_info` saves/restores `@last_live_page`, reset on opening a different track or closing.
 
-- [ ] Write failing modal tests for each kind's `live_pages`, page validation, and the VGM `:live → :tracker → nil` sequence. Keep `:info` available via Tab, not in `live_pages`.
-- [ ] Run `mise exec -- bundle exec ruby -Itest test/now_playing_modal_test.rb`; confirm the new tests fail for missing page API.
-- [ ] Implement the modal page API and replace the hard-coded `:live/:info` setter. Keep the existing live renderer for `:live`; tracker rendering comes in Task 3.
-- [ ] Write failing App tests for `o` opening/advancing/closing VGM, the one-page kinds closing on their second `o`, no-live Info closing on second `o`, `Tab` returning from Info to the last live page, and `Escape`/`Enter` closing from either VGM live page. Update older assertions that expected `o` to close VGM immediately. Test playback keys on `:tracker` as well.
-- [ ] Run the relevant `app_*_test.rb` files; confirm page-sequence tests fail before changing App.
-- [ ] Implement `App#advance_now_playing_page` and `App#toggle_now_playing_info`; route `o` separately from Escape/Enter in `handle_now_playing_key`. Keep keymap `o` unchanged, and let mute/live-navigation dispatch run only on the relevant page.
-- [ ] Run the affected modal and App tests; expect PASS. This task ends with VGM cycling through a temporary tracker page state, even before it has its own drawing.
+- [x] Write failing modal tests for each kind's `live_pages`, page validation, and the VGM `:live → :tracker → nil` sequence. Keep `:info` available via Tab, not in `live_pages`.
+- [x] Run `mise exec -- bundle exec ruby -Itest test/now_playing_modal_test.rb`; confirm the new tests fail for missing page API.
+- [x] Implement the modal page API and replace the hard-coded `:live/:info` setter. Keep the existing live renderer for `:live`; tracker rendering comes in Task 3.
+- [x] Write failing App tests for `o` opening/advancing/closing VGM, the one-page kinds closing on their second `o`, no-live Info closing on second `o`, `Tab` returning from Info to the last live page, and `Escape`/`Enter` closing from either VGM live page. Update older assertions that expected `o` to close VGM immediately. Test playback keys on `:tracker` as well.
+- [x] Run the relevant `app_*_test.rb` files; confirm page-sequence tests fail before changing App.
+- [x] Implement `App#advance_now_playing_page` and `App#toggle_now_playing_info`; route `o` separately from Escape/Enter in `handle_now_playing_key`. Keep keymap `o` unchanged, and let mute/live-navigation dispatch run only on the relevant page.
+- [x] Run the affected modal and App tests; expect PASS. This task ends with VGM cycling through a temporary tracker page state, even before it has its own drawing.
 
 ### Task 2: Build the VGM tracker renderer from existing note history
 
