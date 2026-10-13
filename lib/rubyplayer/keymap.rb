@@ -36,14 +36,16 @@ module RubyPlayer
         # "l" for "list": opens the add-to-playlist modal on the highlighted track.
         'l' => 'add_to_playlist'
       },
-      # Page navigation gets three spellings per direction: pgup/pgdn for
-      # full-size keyboards, shift+arrows for keyboards without those keys,
-      # and ctrl_u/ctrl_d for vim habits.
+      # Page navigation gets several spellings per direction: pgup/pgdn for
+      # full-size keyboards (Fn+arrows on Mac laptops), Option+arrows as in
+      # macOS lists, and ctrl_u/ctrl_d and ctrl_b/ctrl_f for vim habits.
+      # Shift+arrows stay free for extending a selection.
       'library' => {
         'up' => 'nav_up', 'down' => 'nav_down',
         'pgup' => 'nav_page_up', 'pgdn' => 'nav_page_down',
-        'shift_up' => 'nav_page_up', 'shift_down' => 'nav_page_down',
+        'alt_up' => 'nav_page_up', 'alt_down' => 'nav_page_down',
         'ctrl_u' => 'nav_page_up', 'ctrl_d' => 'nav_page_down',
+        'ctrl_b' => 'nav_page_up', 'ctrl_f' => 'nav_page_down',
         'left' => 'collapse', 'right' => 'expand',
         # Overrides the global "x" => remove_from_queue binding while the
         # Library pane is focused (pane-local bindings win, see #action_for).
@@ -64,8 +66,9 @@ module RubyPlayer
       'tracks' => {
         'up' => 'nav_up', 'down' => 'nav_down',
         'pgup' => 'nav_page_up', 'pgdn' => 'nav_page_down',
-        'shift_up' => 'nav_page_up', 'shift_down' => 'nav_page_down',
+        'alt_up' => 'nav_page_up', 'alt_down' => 'nav_page_down',
         'ctrl_u' => 'nav_page_up', 'ctrl_d' => 'nav_page_down',
+        'ctrl_b' => 'nav_page_up', 'ctrl_f' => 'nav_page_down',
         'g' => 'toggle_group',
         'y' => 'sort_title', '#' => 'sort_number', '@' => 'sort_artist',
         # "e" (yEar): "y" was already claimed by sort_title for the same
@@ -79,8 +82,9 @@ module RubyPlayer
       'queued' => {
         'up' => 'nav_up', 'down' => 'nav_down',
         'pgup' => 'nav_page_up', 'pgdn' => 'nav_page_down',
-        'shift_up' => 'nav_page_up', 'shift_down' => 'nav_page_down',
-        'ctrl_u' => 'nav_page_up', 'ctrl_d' => 'nav_page_down'
+        'alt_up' => 'nav_page_up', 'alt_down' => 'nav_page_down',
+        'ctrl_u' => 'nav_page_up', 'ctrl_d' => 'nav_page_down',
+        'ctrl_b' => 'nav_page_up', 'ctrl_f' => 'nav_page_down'
       }
     }.freeze
 

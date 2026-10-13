@@ -9,9 +9,15 @@ module RubyPlayer
       PASTE_END = "\e[201~"
       ESC_SEQS = { '[A' => 'up', '[B' => 'down', '[C' => 'right', '[D' => 'left',
                    '[5~' => 'pgup', '[6~' => 'pgdn',
-                   # xterm-style modifier encoding: "1;2" = shift, "1;5" = ctrl
+                   # xterm-style modifier encoding: "1;2" = shift, "1;3" = alt
+                   # (macOS Option), "1;5" = ctrl; iTerm2 has also sent "1;9"
+                   # (meta) for Option.
                    '[1;2A' => 'shift_up', '[1;2B' => 'shift_down',
+                   '[1;3A' => 'alt_up', '[1;3B' => 'alt_down',
+                   '[1;9A' => 'alt_up', '[1;9B' => 'alt_down',
                    '[1;5A' => 'ctrl_up', '[1;5B' => 'ctrl_down' }.freeze
+      # With Option set to "Esc+", Option+arrow is ESC before a plain arrow.
+      ESC_PREFIXED_KEYS = { 'up' => 'alt_up', 'down' => 'alt_down' }.freeze
 
       def self.decode(bytes)
         keys = []
@@ -32,10 +38,11 @@ module RubyPlayer
             end
           elsif ch == "\e"
             if bytes[i + 1] == '['
-              seq_end = i + 2
-              seq_end += 1 while seq_end < bytes.length && !bytes[seq_end].match?(/[a-zA-Z~]/)
-              seq = bytes[(i + 1)..seq_end]
+              seq, seq_end = sequence_at(bytes, i)
               keys << ESC_SEQS[seq] if ESC_SEQS[seq] # paste markers & unknown seqs: dropped
+              i = seq_end + 1
+            elsif (prefixed, seq_end = esc_prefixed_key(bytes, i))
+              keys << prefixed
               i = seq_end + 1
             else
               keys << 'escape'
@@ -57,6 +64,24 @@ module RubyPlayer
           end
         end
         keys
+      end
+
+      # An ESC-prefixed arrow at `index` (Option+arrow), as [key, index of
+      # its final byte]; nil for anything else, which reads as Escape.
+      def self.esc_prefixed_key(bytes, index)
+        return unless bytes[index + 1] == "\e" && bytes[index + 2] == '['
+
+        seq, seq_end = sequence_at(bytes, index + 1)
+        key = ESC_PREFIXED_KEYS[ESC_SEQS[seq]]
+        [key, seq_end] if key
+      end
+
+      # The CSI sequence after the ESC at `index` (without the ESC), and the
+      # index of its final byte.
+      def self.sequence_at(bytes, index)
+        seq_end = index + 2
+        seq_end += 1 while seq_end < bytes.length && !bytes[seq_end].match?(/[a-zA-Z~]/)
+        [bytes[(index + 1)..seq_end], seq_end]
       end
     end
   end

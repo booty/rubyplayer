@@ -29,12 +29,23 @@ class KeymapTest < Minitest::Test
     %i[library tracks queued].each do |pane|
       assert_equal :nav_page_up, k.action_for('pgup', pane: pane)
       assert_equal :nav_page_down, k.action_for('pgdn', pane: pane)
-      # for keyboards without pgup/pgdn keys
-      assert_equal :nav_page_up, k.action_for('shift_up', pane: pane)
-      assert_equal :nav_page_down, k.action_for('shift_down', pane: pane)
+      # macOS Option+arrows, for keyboards without pgup/pgdn keys
+      assert_equal :nav_page_up, k.action_for('alt_up', pane: pane)
+      assert_equal :nav_page_down, k.action_for('alt_down', pane: pane)
       # vim-ish aliases
       assert_equal :nav_page_up, k.action_for('ctrl_u', pane: pane)
       assert_equal :nav_page_down, k.action_for('ctrl_d', pane: pane)
+      assert_equal :nav_page_up, k.action_for('ctrl_b', pane: pane)
+      assert_equal :nav_page_down, k.action_for('ctrl_f', pane: pane)
+    end
+  end
+
+  # Shift+arrows are left free for extending a selection.
+  def test_shift_arrows_are_unbound
+    k = RubyPlayer::Keymap.new
+    %i[library tracks queued].each do |pane|
+      assert_nil k.action_for('shift_up', pane: pane)
+      assert_nil k.action_for('shift_down', pane: pane)
     end
   end
 

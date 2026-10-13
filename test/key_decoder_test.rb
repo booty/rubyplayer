@@ -29,6 +29,16 @@ class KeyDecoderTest < Minitest::Test
     assert_equal ['shift_down'], decode("\e[1;2B")
   end
 
+  # Option+arrows arrive as xterm's alt modifier (3), iTerm2's legacy meta
+  # modifier (9), or, with Option as Esc+, an ESC before a plain arrow.
+  def test_option_arrows
+    ["\e[1;3A", "\e[1;9A", "\e\e[A"].each { |bytes| assert_equal ['alt_up'], decode(bytes), bytes.inspect }
+    ["\e[1;3B", "\e[1;9B", "\e\e[B"].each { |bytes| assert_equal ['alt_down'], decode(bytes), bytes.inspect }
+    # Escape then another key still reads as two keys.
+    assert_equal %w[escape right], decode("\e\e[C")
+    assert_equal %w[escape escape], decode("\e\e")
+  end
+
   def test_decodes_ctrl_arrows
     assert_equal ['ctrl_up'], decode("\e[1;5A")
     assert_equal ['ctrl_down'], decode("\e[1;5B")
