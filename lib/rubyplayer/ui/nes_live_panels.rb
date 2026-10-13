@@ -23,7 +23,6 @@ module RubyPlayer
                         nes_pcm: 'Raw PCM: the level is the last sample written',
                         vrc6_pulse: 'No envelope: the level is the volume register',
                         s5b_square: 'No envelope (libgme does not play the 5B envelope)' }.freeze
-      NES_GRAPH_ROWS = 8
 
       private
 
@@ -117,12 +116,6 @@ module RubyPlayer
         when :fds_wave then [details[:gain], 32].min / 32.0 * details[:master_volume] / 100.0
         else 0.0
         end
-      end
-
-      def amplitude_attenuation(amplitude)
-        return Vgm::Envelope::MAX_ATTENUATION_STEPS unless amplitude.positive?
-
-        (-20 * Math.log10(amplitude) / Vgm::Envelope::DB_PER_STEP).round
       end
 
       # The voice panel, by kind (nes_pulse_lines, ...).
@@ -275,9 +268,7 @@ module RubyPlayer
       end
 
       def sample_panel(heading, samples, max, width, rows)
-        columns = [width / samples.size, 1].max
-        [title("#{heading} · #{samples.size} steps × #{max.bit_length}-bit"),
-         *graph(samples.flat_map { |sample| Array.new(columns, sample) }, max, (rows - 1).clamp(1, NES_GRAPH_ROWS))]
+        [title("#{heading} · #{samples.size} steps × #{max.bit_length}-bit"), *sample_graph(samples, max, width, rows - 1)]
       end
 
       def shape_panel(heading, samples, width, rows)
@@ -287,13 +278,6 @@ module RubyPlayer
       def triangle_samples = [*15.downto(0), *0..15]
 
       def triangle_wave(width) = '▇▆▅▄▃▂▁▁▂▃▄▅▆▇'.*((width / 14) + 1)[0, width]
-
-      # Samples as one bar glyph each (pairs averaged past 16), so the shape
-      # reads as one line.
-      def sample_sparkline(samples, max)
-        group = [samples.size / 16, 1].max
-        samples.each_slice(group).map { |slice| LiveGlyphs::LEVEL_GLYPHS[1 + (slice.sum * 7 / (max * slice.size))] }.join
-      end
 
       def nes_duty(details) = "#{details[:duty].to_s.delete_suffix('.0')}%"
 

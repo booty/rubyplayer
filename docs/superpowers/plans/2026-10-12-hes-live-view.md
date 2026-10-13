@@ -128,13 +128,15 @@ The native API uses the same signatures as `rp_gbs_*` for `open`, `close`, `load
 
 ### Task 6: Extract ChipLiveView's native panel-family dispatch
 
+**Checkpoint:** Complete in two commits. Beyond the planned dispatch table, the same review found three helpers GB and NES each had (or that HES would copy): wave sparklines, wave graphs, and amplitude-to-attenuation levels. They moved to `UI::ChipSamplePanels`, which Task 7's HES panels use. A stub family test proves dispatch goes through the table.
+
 **Files:** Modify `lib/rubyplayer/ui/chip_live_view.rb`, `gb_live_panels.rb`, `nes_live_panels.rb`; test through `test/gbs_live_view_test.rb`, `test/nsf_live_view_test.rb`, and `test/vgm_live_view_test.rb`.
 
 **Interfaces:** `ChipLiveView::NATIVE_PANEL_FAMILIES` maps a family prefix (`:gb`, `:nes`) to its channel kinds, chip-id prefixes, and whether levels are exact. Each panel module implements `<family>_summary(chip)`, `<family>_instrument_texts(channel)`, `<family>_attenuation(channel)`, `<family>_voice_lines(row, width)`, `<family>_detail?(channel)`, and `<family>_detail_panel(row, width, rows)`. `ChipLiveView` dispatches through one `native_family(channel)` lookup; VGM chips keep their explicit branches.
 
-- [ ] Add a failing test that a view with a stub family module registered in the table renders that module's summary, instrument text, and detail panel, so the protocol (not the GB/NES branches) is what is exercised. Keep every existing GBS/NSF/VGM view assertion unchanged.
-- [ ] Rename `gb_envelope_panel` to `gb_detail_panel`, add `gb_detail?` (always true, as `envelope?` assumes today), and replace each `gb_kind?`/`nes_kind?` chain with the table lookup. Comment the naming convention where the dispatch happens, since the protocol's method names are built from the family prefix.
-- [ ] Run the three view test files, the full suite, and RuboCop. Commit.
+- [x] Add a failing test that a view with a stub family module registered in the table renders that module's summary, instrument text, and detail panel, so the protocol (not the GB/NES branches) is what is exercised. Keep every existing GBS/NSF/VGM view assertion unchanged.
+- [x] Rename `gb_envelope_panel` to `gb_detail_panel`, add `gb_detail?` (always true, as `envelope?` assumes today), and replace each `gb_kind?`/`nes_kind?` chain with the table lookup. Comment the naming convention where the dispatch happens, since the protocol's method names are built from the family prefix.
+- [x] Run the three view test files, the full suite, and RuboCop. Commit.
 
 ### Task 7: Live page, controls, and documentation
 

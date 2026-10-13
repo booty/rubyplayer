@@ -6,6 +6,7 @@ require_relative '../vgm/envelope'
 require_relative '../vgm/note_log'
 require_relative '../vgm/pitch'
 require_relative 'live_glyphs'
+require_relative 'chip_sample_panels'
 require_relative 'envelope_chart'
 require_relative 'gb_live_panels'
 require_relative 'live_panel_renderer'
@@ -27,6 +28,7 @@ module RubyPlayer
       include LiveGlyphs
       include LivePanelRenderer
       include EnvelopeChart
+      include ChipSamplePanels
       include GbLivePanels
       include NesLivePanels
 

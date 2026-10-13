@@ -10,7 +10,6 @@ module RubyPlayer
       GB_KINDS = %i[gb_pulse gb_wave gb_noise].freeze
       # Duty cycles as one 8-step period of the square wave.
       DUTY_WAVES = { 12.5 => '▔▁▁▁▁▁▁▁', 25 => '▔▔▁▁▁▁▁▁', 50 => '▔▔▔▔▁▁▁▁', 75 => '▔▔▔▔▔▔▁▁' }.freeze
-      MAX_GRAPH_ROWS = 8
       # Length counters tick at 256 Hz.
       LENGTH_TICK_HZ = 256.0
 
@@ -33,7 +32,8 @@ module RubyPlayer
           ["#{duty} · #{envelope_text(details)}#{" · #{sweep}" if sweep}", "#{duty} · #{envelope_text(details)}",
            "#{duty} · #{env_short(details)}", "#{duty_text(details)} #{env_short(details)}"]
         when :gb_wave
-          ["wave #{wave_sparkline(details)} · output #{details[:level]}%", "#{wave_sparkline(details)} #{details[:level]}%"]
+          ["wave #{sample_sparkline(details[:samples], 15)} · output #{details[:level]}%",
+           "#{sample_sparkline(details[:samples], 15)} #{details[:level]}%"]
         else
           noise = "#{details[:width]}-bit noise"
           ["#{noise} · #{format_hz(details[:lfsr_hz])} · #{envelope_text(details)}", "#{noise} · #{env_short(details)}",
@@ -46,10 +46,7 @@ module RubyPlayer
         return Vgm::Envelope::MAX_ATTENUATION_STEPS unless channel.state == :enabled
 
         details = channel.details
-        amplitude = channel.kind == :gb_wave ? details[:level] / 100.0 : details[:volume] / 15.0
-        return Vgm::Envelope::MAX_ATTENUATION_STEPS unless amplitude.positive?
-
-        (-20 * Math.log10(amplitude) / Vgm::Envelope::DB_PER_STEP).round
+        amplitude_attenuation(channel.kind == :gb_wave ? details[:level] / 100.0 : details[:volume] / 15.0)
       end
 
       def gb_voice_lines(row, width)
@@ -96,9 +93,7 @@ module RubyPlayer
 
       def wave_panel(details, width, rows)
         samples = details[:samples]
-        columns = [width / samples.size, 1].max
-        lines = [title('Wave RAM · 32 × 4-bit'),
-                 *graph(samples.flat_map { |sample| Array.new(columns, sample) }, 15, (rows - 2).clamp(1, MAX_GRAPH_ROWS))]
+        lines = [title('Wave RAM · 32 × 4-bit'), *sample_graph(samples, 15, width, rows - 2)]
         lines << line(samples.each_slice(2).map { |high, low| format('%X%X', high, low) }.join(' ')[0, width],
                       color: :text_muted)
       end
@@ -165,12 +160,6 @@ module RubyPlayer
       end
 
       def duty_text(details) = "#{details[:duty].to_s.delete_suffix('.0')}%"
-
-      # The 32-sample wave as 16 bar glyphs (pairs averaged); silence is the
-      # lowest bar, not a gap, so the shape reads as one line.
-      def wave_sparkline(details)
-        details[:samples].each_slice(2).map { |pair| LiveGlyphs::LEVEL_GLYPHS[1 + (pair.sum * 7 / 30)] }.join
-      end
     end
   end
 end
