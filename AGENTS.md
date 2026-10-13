@@ -28,6 +28,12 @@ Ruby comes from mise. Plain `bundle exec` may select wrong Ruby.
 
 - Idle (no music playing) CPU usage should be near-zero
 
+## Code Style
+
+- Always include units in identifier names. Standard SI base unit abbreviations and prefixes (m, km, kg, s, etc) are okay.
+  - BAD: `READ_SIZE`, `LENGTH`
+  - GOOD: `READ_SIZE_BYTES`, `LENGTH_M`
+
 ## Workflow
 
 - TDD: failing test first, minimal green change, full suite before commit.
