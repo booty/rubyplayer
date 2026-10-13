@@ -128,4 +128,9 @@ the authority for workflow and invariants.
   write's effect at the next hook. Record `dac` only in direct-DAC mode:
   elsewhere it is the running output, which muted seek skips leave stale.
   libgme's HES driver hook fires only near 60 Hz, so cap pending writes by
-  age (1/240 s) or timer drivers never publish.
+  age (1/240 s) or timer drivers never publish. The shared Tracker page
+  labels unpitched starts from the note event (`NoteLog#on unpitched:`), not
+  the voice's current kind: Multi voices switch between DDA, noise, and wave.
+  Native trackers count output frames since launch; the Tracker latches
+  `position − now_sample` once per generation, so ms rounding cannot move
+  notes between its 50 ms rows.

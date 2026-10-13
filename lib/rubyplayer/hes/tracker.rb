@@ -23,8 +23,10 @@ module RubyPlayer
       # libgme steps the noise LFSR every (32 - rate) * 64 clocks.
       NOISE_STEPS = 32
       KINDS = { wave: :huc_wave, noise: :huc_noise, dda: :huc_dda }.freeze
+      # Note history's name for each unpitched mode's sound.
+      UNPITCHED = { noise: :noise, dda: :dac }.freeze
       private_constant :KEY_ON, :DIRECT_DAC, :NOISE_ON, :VOLUME_MASK, :NOISE_RATE_MASK, :NOISE_VOICES,
-                       :CLOCKS_PER_WAVE_PERIOD, :NOISE_STEPS, :KINDS
+                       :CLOCKS_PER_WAVE_PERIOD, :NOISE_STEPS, :KINDS, :UNPITCHED
 
       private
 
@@ -34,7 +36,8 @@ module RubyPlayer
 
       def ingest(native_snapshot, sample)
         VOICES.times do |voice|
-          record_note(@notes, voice, voice, native_snapshot, sample, midi_for(native_snapshot, voice))
+          record_note(@notes, voice, voice, native_snapshot, sample, midi_for(native_snapshot, voice),
+                      unpitched: UNPITCHED[mode(native_snapshot, voice)])
         end
       end
 

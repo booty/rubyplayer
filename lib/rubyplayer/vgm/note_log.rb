@@ -15,22 +15,31 @@ module RubyPlayer
     # one-second checkpoint carries a copy.
     class NoteLog
       KINDS = %i[on off note].freeze
-      # channel, kind index, MIDI note (-1 for none), source sample
+      # channel, kind index, MIDI note (negative: an unpitched sound code),
+      # source sample
       FORMAT = 'CCcL<'
       EVENT_BYTES = 7
       HISTORY_SAMPLES = 20 * SAMPLE_RATE
       MAX_EVENTS = 4_096
       PRUNE_SLACK = 256
       NO_NOTE = -1
-      private_constant :EVENT_BYTES, :PRUNE_SLACK, :NO_NOTE
+      # What a start without a pitch plays, when its recorder knows: a voice
+      # can change modes later (HES Multi voices), so it is kept per event.
+      UNPITCHED_CODES = { noise: -2, dac: -3 }.freeze
+      UNPITCHED_SOUNDS = UNPITCHED_CODES.invert.freeze
+      private_constant :EVENT_BYTES, :PRUNE_SLACK, :NO_NOTE, :UNPITCHED_CODES, :UNPITCHED_SOUNDS
 
-      Event = Data.define(:channel, :kind, :midi, :sample)
+      # `unpitched` is :noise, :dac, or nil (pitched, or not known).
+      Event = Data.define(:channel, :kind, :midi, :sample, :unpitched) do
+        def initialize(unpitched: nil, **) = super
+      end
 
       def self.decode(packed)
         return [] if packed.nil? || packed.empty?
 
-        packed.unpack(FORMAT * (packed.bytesize / EVENT_BYTES)).each_slice(4).map do |channel, kind, midi, sample|
-          Event.new(channel: channel, kind: KINDS.fetch(kind), midi: midi == NO_NOTE ? nil : midi, sample: sample)
+        packed.unpack(FORMAT * (packed.bytesize / EVENT_BYTES)).each_slice(4).map do |channel, kind, code, sample|
+          Event.new(channel: channel, kind: KINDS.fetch(kind), midi: code.negative? ? nil : code, sample: sample,
+                    unpitched: UNPITCHED_SOUNDS[code])
         end
       end
 
@@ -39,9 +48,9 @@ module RubyPlayer
         @last_midi = {}
       end
 
-      def on(channel, sample, midi)
+      def on(channel, sample, midi, unpitched: nil)
         @last_midi[channel] = midi
-        append(channel, 0, midi, sample)
+        append(channel, 0, midi || UNPITCHED_CODES.fetch(unpitched, NO_NOTE), sample)
       end
 
       def off(channel, sample)
@@ -72,8 +81,8 @@ module RubyPlayer
       # Keeps events in sample order: pruning and the history lanes depend
       # on it, and a DAC burst's end is logged late, at its last write, after
       # other channels may have logged later events.
-      def append(channel, kind, midi, sample)
-        event = [channel, kind, midi || NO_NOTE, sample].pack(FORMAT)
+      def append(channel, kind, code, sample)
+        event = [channel, kind, code || NO_NOTE, sample].pack(FORMAT)
         index = @buffer.bytesize / EVENT_BYTES
         index -= 1 while index.positive? && sample_at(index - 1) > sample
         @buffer.insert(index * EVENT_BYTES, event)
@@ -97,17 +106,17 @@ module RubyPlayer
 
       # A note held across the cut would lose its only start event and
       # vanish from the history, so each still-held channel restarts at the
-      # boundary with the pitch it had there.
+      # boundary with the pitch (or unpitched sound) it had there.
       def held_at_cut(drop, boundary)
         held = {}
         self.class.decode(@buffer.byteslice(0, drop * EVENT_BYTES)).each do |event|
           case event.kind
-          when :on then held[event.channel] = event.midi
+          when :on then held[event.channel] = event.midi || UNPITCHED_CODES.fetch(event.unpitched, NO_NOTE)
           when :off then held.delete(event.channel)
           when :note then held[event.channel] = event.midi if held.key?(event.channel)
           end
         end
-        held.map { |channel, midi| [channel, 0, midi || NO_NOTE, boundary].pack(FORMAT) }.join.b
+        held.map { |channel, code| [channel, 0, code, boundary].pack(FORMAT) }.join.b
       end
 
       def sample_at(index) = @buffer.unpack1('L<', offset: (index * EVENT_BYTES) + 3)

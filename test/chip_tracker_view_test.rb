@@ -25,7 +25,7 @@ class ChipTrackerViewTest < Minitest::Test
     fm.note(1, 5_000, 62)
     fm.note(1, 7_000, 64)
     psg = Vgm::NoteLog.new
-    psg.on(0, 0, nil)
+    psg.on(0, 0, nil, unpitched: :noise)
     @view.update(snapshot(chips: [chip('ym2612:0', 'YM2612', %w[FM1 FM2], fm),
                                   chip('sn76489:0', 'SN76489', ['Noise'], psg)], sample: 8_820))
 
@@ -140,16 +140,30 @@ class ChipTrackerViewTest < Minitest::Test
     assert_includes render(width: 60, height: 8).join("\n"), 'VGM TRACKER'
   end
 
-  # HuC6280 noise and direct-DAC voices have no pitch; their starts are
-  # labeled by channel kind.
-  def test_unpitched_starts_are_labeled_by_channel_kind
+  # Starts without a pitch are labeled by the sound each event recorded,
+  # not the voice's current mode: an HES Multi voice switches between wave,
+  # noise, and direct DAC.
+  def test_unpitched_starts_are_labeled_by_their_recorded_sound
     notes = Vgm::NoteLog.new
-    notes.on(0, 0, nil)
-    notes.on(1, 0, nil)
-    @view.update(snapshot(chips: [chip('huc6280:0', 'HuC6280 PSG', %w[Multi1 Multi2], notes,
-                                       kinds: %i[huc_noise huc_dda])]))
+    notes.on(0, 0, nil, unpitched: :noise)
+    notes.on(1, 0, nil, unpitched: :dac)
+    notes.on(2, 0, nil)
+    @view.update(snapshot(chips: [chip('huc6280:0', 'HuC6280 PSG', %w[Multi1 Multi2 Other], notes,
+                                       kinds: %i[huc_wave huc_wave huc_wave])]))
 
-    assert_match(/0:00\.00 +NOI +DAC/, render(width: 40, height: 8).join("\n"))
+    assert_match(/0:00\.00 +NOI +DAC +PCM/, render(width: 50, height: 8).join("\n"))
+  end
+
+  # A chip's name heads its first visible column and may span its others,
+  # but never runs into the next chip's.
+  def test_chip_names_head_each_chip_once
+    notes = Vgm::NoteLog.new
+    @view.update(snapshot(chips: [chip('huc6280:0', 'HuC6280 PSG', %w[W1 W2], notes),
+                                  chip('sn76489:0', 'SN76489 PSG LONG NAME', ['T1'], notes)]))
+    header = render(width: 60, height: 8)[1]
+
+    assert_equal 1, header.scan('HuC6280 PSG').size
+    assert_match(/SN76489 PS HuC6280 PSG/, header)
   end
 
   # Native chip trackers count now_sample from player launch; the time

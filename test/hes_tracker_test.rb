@@ -76,7 +76,10 @@ class HesTrackerTest < Minitest::Test
                                                  noise.details[:noise_rate_code]]
     assert_in_delta PSG_CLOCK_HZ / 64.0, noise.details[:noise_lfsr_hz], 0.01
     assert_equal :huc_wave, channel(5).kind
-    assert_equal [nil, nil, 69], NoteLog.decode(chip.details[:events]).map(&:midi)
+    events = NoteLog.decode(chip.details[:events])
+
+    assert_equal [nil, nil, 69], events.map(&:midi)
+    assert_equal [:dac, :noise, nil], events.map(&:unpitched)
   end
 
   def test_unkeyed_and_silent_voices_are_off

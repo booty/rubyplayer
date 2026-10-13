@@ -66,13 +66,14 @@ module RubyPlayer
 
     # Records `voice`'s transition into `native_snapshot` as history channel
     # `index` of `notes`: newly sounding or retriggered starts a note, still
-    # sounding follows its pitch, and falling silent ends it.
-    def record_note(notes, index, voice, native_snapshot, sample, midi)
+    # sounding follows its pitch, and falling silent ends it. `unpitched`
+    # names a start's sound when it has no pitch (NoteLog#on).
+    def record_note(notes, index, voice, native_snapshot, sample, midi, unpitched: nil)
       was = @playing[voice] == 1
       now = native_snapshot.playing[voice] == 1
       if now && (native_snapshot.triggers[voice] == 1 || !was)
         @trigger_samples[voice] = sample
-        notes.on(index, sample, midi)
+        notes.on(index, sample, midi, unpitched: unpitched)
       elsif now
         notes.note(index, sample, midi)
       elsif was

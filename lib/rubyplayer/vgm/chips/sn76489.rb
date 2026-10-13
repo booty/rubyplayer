@@ -151,7 +151,7 @@ module RubyPlayer
             now = channel_enabled?(channel)
             if now && !before[channel]
               @last_trigger_samples[channel] = sample
-              @notes.on(channel, sample, midi_for(channel))
+              @notes.on(channel, sample, midi_for(channel), unpitched: (:noise if channel == 3))
             elsif before[channel] && !now
               @release_samples[channel] = sample
               @notes.off(channel, sample)

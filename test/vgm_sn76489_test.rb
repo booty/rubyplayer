@@ -85,6 +85,14 @@ class VgmSn76489Test < Minitest::Test
     assert_equal 300, snapshot.channels.first.details.fetch(:release_sample)
   end
 
+  def test_noise_starts_are_marked_as_noise
+    @chip.write(port: 0, register: :data, value: 0xe0 | 0x04, sample: 0)
+    @chip.write(port: 0, register: :data, value: 0xf0 | 0x02, sample: 100)
+    events = RubyPlayer::Vgm::NoteLog.decode(@chip.snapshot(sample: 100).details.fetch(:events))
+
+    assert_equal([[3, :on, nil, :noise]], events.map { [it.channel, it.kind, it.midi, it.unpitched] })
+  end
+
   private
 
   def write(value, register: :data)

@@ -194,7 +194,8 @@ history. Noise and DAC voices show no note. Levels are libgme's gain, not the
 sound, so they are labeled estimates; the PSG has no envelopes, and libgme
 plays neither its LFO nor the CD-ROM ADPCM voice. Each voice mutes and solos
 as its own libgme voice. A second `O` opens the same **Tracker** page as VGM
-for the six voices.
+for the six voices; noise and direct-DAC starts show as `NOI` and `DAC`, by the
+mode each note began in, since Multi voices switch modes mid-song.
 `.hes` plays through libgme's own HES emulator
 (`ext/rp_hes`), verified sample-for-sample against Homebrew libgme;
 `config.backends[".hes"] = :gme` switches back, and the app does so

@@ -14,8 +14,9 @@ module RubyPlayer
       HEADER_ROWS = 3
       GUTTER_WIDTH_CELLS = 8
       COLUMN_WIDTH_CELLS = 11
-      # Starts without a pitch, by channel kind; other kinds stream samples.
-      UNPITCHED_LABELS = { noise: 'NOI', huc_noise: 'NOI', huc_dda: 'DAC' }.freeze
+      # Starts without a pitch, by the sound their event recorded. Others
+      # show PCM: the YM2612 DAC, and OPLL rhythm until it records a sound.
+      UNPITCHED_LABELS = { noise: 'NOI', dac: 'DAC' }.freeze
       Channel = Data.define(:chip_id, :chip_name, :voice_index, :label, :kind)
       private_constant :ROW_SAMPLES, :HEADER_ROWS, :GUTTER_WIDTH_CELLS, :COLUMN_WIDTH_CELLS,
                        :UNPITCHED_LABELS, :Channel
@@ -136,7 +137,7 @@ module RubyPlayer
           # newer start replaces both, since the earlier note has ended.
           case event.kind
           when :on
-            cell[:start] = event.midi ? pitch_label(event.midi) : unpitched_label(chip, event.channel)
+            cell[:start] = event.midi ? pitch_label(event.midi) : UNPITCHED_LABELS.fetch(event.unpitched, 'PCM')
             cell[:glide] = nil
             cell[:released] = false
           when :note
@@ -154,10 +155,6 @@ module RubyPlayer
         name.sub(/\A([A-G])(?=-?\d)/, '\\1-')
       end
 
-      def unpitched_label(chip, voice_index)
-        UNPITCHED_LABELS.fetch(chip.channels[voice_index]&.kind, 'PCM')
-      end
-
       def adjust_window(visible_count)
         return if visible_count.zero?
 
@@ -169,12 +166,26 @@ module RubyPlayer
       def draw_headers(screen, x, y, width, height, theme, visible_count)
         put(screen, x, y, width, height, 1, 0, 'Chip', fg: theme[:text_muted])
         put(screen, x, y, width, height, 2, 0, 'Time', fg: theme[:text_muted])
-        @channels[@window_index, visible_count].each_with_index do |channel, offset|
+        visible = @channels[@window_index, visible_count]
+        visible.each_with_index do |channel, offset|
           column = GUTTER_WIDTH_CELLS + (offset * COLUMN_WIDTH_CELLS)
           selected = @window_index + offset == @selected_index
           color = selected ? theme[:accent] : theme[:text_muted]
-          put(screen, x, y, width, height, 1, column, channel.chip_name, fg: color, bold: selected)
           put(screen, x, y, width, height, 2, column, channel.label, fg: color, bold: selected)
+        end
+        draw_chip_names(screen, x, y, width, height, theme, visible)
+      end
+
+      # A chip's name heads its first visible column and spans the rest, one
+      # cell short of the next chip's ("HuC6280 PSG" fills a whole column).
+      def draw_chip_names(screen, x, y, width, height, theme, visible)
+        offset = 0
+        visible.chunk_while { |left, right| left.chip_id == right.chip_id }.each do |group|
+          span = (group.size * COLUMN_WIDTH_CELLS) - 1
+          selected = group.any? { |channel| channel.equal?(@channels[@selected_index]) }
+          put(screen, x, y, width, height, 1, GUTTER_WIDTH_CELLS + (offset * COLUMN_WIDTH_CELLS),
+              group.first.chip_name[0, span], fg: selected ? theme[:accent] : theme[:text_muted], bold: selected)
+          offset += group.size
         end
       end
 

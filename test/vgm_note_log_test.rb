@@ -54,6 +54,21 @@ class VgmNoteLogTest < Minitest::Test
                  events.map { |event| [event.channel, event.kind, event.midi, event.sample] })
   end
 
+  # A start without a pitch may say what sounds instead (noise, DAC
+  # samples), since a voice can change modes after the event.
+  def test_unpitched_starts_keep_their_sound_across_the_cut
+    @log.on(0, 0, nil, unpitched: :noise)
+    @log.on(1, 10, nil, unpitched: :dac)
+    @log.on(2, 20, nil)
+    @log.on(3, 30, 60)
+
+    assert_equal([:noise, :dac, nil, nil], NoteLog.decode(@log.packed).map(&:unpitched))
+    assert_equal([nil, nil, nil, 60], NoteLog.decode(@log.packed).map(&:midi))
+    @log.on(4, NoteLog::HISTORY_SAMPLES + (2 * RubyPlayer::Vgm::SAMPLE_RATE), 64)
+
+    assert_equal([:noise, :dac, nil, nil, nil], NoteLog.decode(@log.packed).map(&:unpitched))
+  end
+
   def test_late_events_are_kept_in_sample_order
     @log.on(0, 100, 60)
     @log.on(1, 300, 61)
