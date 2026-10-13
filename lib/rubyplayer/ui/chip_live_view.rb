@@ -136,7 +136,6 @@ module RubyPlayer
         @rows = build_rows(snapshot)
         return self unless snapshot
 
-        decode_history(snapshot)
         track_dac_rates(snapshot)
         selected = @rows.index { |row| row.channel.id == previous_id }
         @selected_index = selected || 0
@@ -188,6 +187,9 @@ module RubyPlayer
                  position_ms: nil)
         return if width <= 0 || height <= 0
 
+        # Decoded here, not in update: App feeds both VGM pages every
+        # snapshot, and only the page on screen needs its note history.
+        decode_history(@snapshot) if @snapshot
         @screen = screen
         @left = x
         @top = y

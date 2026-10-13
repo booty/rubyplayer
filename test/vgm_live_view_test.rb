@@ -2,6 +2,7 @@
 
 require 'test_helper'
 require 'stringio'
+require 'minitest/mock'
 require 'rubyplayer/ui/screen'
 require 'rubyplayer/ui/chip_live_view'
 require 'rubyplayer/vgm/reader'
@@ -253,6 +254,28 @@ class VgmLiveViewTest < Minitest::Test
                                    message: nil, loop_count: 0, chips: [], warnings: ["Bad\e[2Jchip"]))
 
     assert_includes render(cols: 80, rows: 10).join, 'Bad [2Jchip'
+  end
+
+  # Both VGM pages receive every snapshot; only the page on screen should
+  # pay to decode note history.
+  def test_note_history_decodes_on_render_not_update
+    decodes = 0
+    decode = Vgm::NoteLog.method(:decode)
+    Vgm::NoteLog.stub(:decode, lambda { |packed|
+      decodes += 1
+      decode.call(packed)
+    }) do
+      3.times { @view.update(fixture_snapshot) }
+
+      assert_equal 0, decodes
+      render(cols: 160, rows: 48)
+      chips_with_events = fixture_snapshot.chips.count { |chip| chip.details[:events] }
+
+      assert_equal chips_with_events, decodes
+      render(cols: 160, rows: 48)
+
+      assert_equal chips_with_events, decodes
+    end
   end
 
   private

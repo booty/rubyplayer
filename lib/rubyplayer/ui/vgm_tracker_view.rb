@@ -37,7 +37,6 @@ module RubyPlayer
                         label: channel.label, kind: channel.kind)
           end
         end
-        snapshot.chips.each { |chip| decode_events(chip) }
         self
       end
 
@@ -60,6 +59,9 @@ module RubyPlayer
       def render(screen, x:, y:, width:, height:, theme:, track_title:, now_sample:)
         return if width <= 0 || height <= 0
 
+        # Decoded here, not in update: App feeds both VGM pages every
+        # snapshot, and only the page on screen needs its note history.
+        @snapshot&.chips&.each { |chip| decode_events(chip) }
         visible_count = if @channels.empty?
                           0
                         else

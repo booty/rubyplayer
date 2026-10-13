@@ -2,6 +2,7 @@
 
 require 'test_helper'
 require 'stringio'
+require 'minitest/mock'
 require 'rubyplayer/ui/screen'
 require 'rubyplayer/vgm/note_log'
 require 'rubyplayer/vgm/snapshot'
@@ -102,6 +103,32 @@ class VgmTrackerViewTest < Minitest::Test
           assert_equal ' ', cell.ch
         end
       end
+    end
+  end
+
+  # Both VGM pages receive every snapshot; only the page on screen should
+  # pay to decode note history.
+  def test_note_history_decodes_on_render_not_update
+    notes = Vgm::NoteLog.new
+    decodes = 0
+    decode = Vgm::NoteLog.method(:decode)
+    Vgm::NoteLog.stub(:decode, lambda { |packed|
+      decodes += 1
+      decode.call(packed)
+    }) do
+      3.times do |index|
+        notes.on(0, index * 2_205, 60 + index)
+        @view.update(snapshot(chips: [chip('ym2612:0', 'YM2612', ['FM1'], notes)], sample: index * 2_205))
+      end
+
+      assert_equal 0, decodes
+      text = render(width: 40, height: 10, now_sample: 4_410).join("\n")
+
+      assert_equal 1, decodes
+      assert_includes text, 'D-4'
+      render(width: 40, height: 10, now_sample: 4_410)
+
+      assert_equal 1, decodes
     end
   end
 
