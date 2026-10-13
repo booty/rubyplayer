@@ -65,6 +65,12 @@ module RubyPlayer
 
       def handle_action(action)
         case action
+        when :select_all_tracks
+          return false if @items.empty?
+
+          @anchor = @items.size > 1 ? @items.first : nil
+          @selection = @items.size - 1
+          return true
         when :extend_selection_up, :extend_selection_down
           anchor = @anchor || selected_track
           move_selection(action == :extend_selection_up ? -1 : 1)

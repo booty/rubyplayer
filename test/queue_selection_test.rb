@@ -100,6 +100,24 @@ class QueueSelectionTest < Minitest::Test
     assert_equal [@tracks[1]], @selection.selected_tracks
   end
 
+  def test_select_all_tracks_selects_every_queue_position
+    copy = @tracks[0].dup
+    items = @tracks + [copy]
+    @selection.replace(items)
+
+    assert @selection.handle_action(:select_all_tracks)
+    assert_equal items, @selection.selected_tracks
+    assert_same copy, @selection.selected_tracks.last
+    assert_equal 0..4, @selection.selected_range
+  end
+
+  def test_select_all_tracks_is_a_no_op_for_an_empty_queue
+    @selection.replace([])
+
+    refute @selection.handle_action(:select_all_tracks)
+    assert_empty @selection.selected_tracks
+  end
+
   def test_duplicate_tracks_select_by_item_identity
     copy = @tracks[0].dup
     @selection.replace([@tracks[0], @tracks[1], copy])

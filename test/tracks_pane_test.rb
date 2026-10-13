@@ -800,6 +800,16 @@ class TracksPaneTest < Minitest::Test
     assert(@pane.selected_tracks.all?(RubyPlayer::Track))
   end
 
+  def test_select_all_tracks_selects_filtered_tracks_across_group_headers
+    @pane.show(@folder_row)
+    @pane.handle_action(:toggle_group)
+    @pane.filter = 'x'
+
+    assert @pane.handle_action(:select_all_tracks)
+    assert_equal @pane.visible_tracks.map(&:id), @pane.selected_tracks.map(&:id)
+    assert_equal "Tracks · 2 of 3 (Filter: 'x') · 2 selected", @pane.title
+  end
+
   def test_range_rows_are_drawn_marked
     @pane.show(@folder_row)
     @pane.handle_action(:extend_selection_down)

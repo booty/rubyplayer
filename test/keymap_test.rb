@@ -46,10 +46,12 @@ class KeymapTest < Minitest::Test
     %i[tracks queued].each do |pane|
       assert_equal :extend_selection_up, k.action_for('shift_up', pane: pane)
       assert_equal :extend_selection_down, k.action_for('shift_down', pane: pane)
+      assert_equal :select_all_tracks, k.action_for('ctrl_a', pane: pane)
       assert_equal :clear_selection, k.action_for('escape', pane: pane)
     end
     assert_nil k.action_for('shift_up', pane: :library)
     assert_nil k.action_for('shift_down', pane: :library)
+    assert_nil k.action_for('ctrl_a', pane: :library)
   end
 
   def test_sort_number_and_sort_artist_avoid_colliding_with_global_letters

@@ -159,12 +159,18 @@ module RubyPlayer
           return [:disabled, 'Playlist order is fixed — ctrl+arrows move tracks']
         end
 
-        if @mode == :queue && (EXTEND_ACTIONS.key?(action) || action == :clear_selection)
+        if @mode == :queue && (EXTEND_ACTIONS.key?(action) ||
+                               %i[clear_selection select_all_tracks].include?(action))
           handled = @queue_selection.handle_action(action)
           sync_queue_cursor
           return handled
         end
         return extend_selection(EXTEND_ACTIONS[action]) if EXTEND_ACTIONS.key?(action)
+
+        if action == :select_all_tracks
+          select_all_tracks
+          return true
+        end
 
         # Escape, and any other movement, sort, or grouping, ends a range.
         had_range = !@anchor_occurrence.nil?
@@ -361,6 +367,18 @@ module RubyPlayer
         move_selection(nav_action == :nav_up ? -1 : 1)
         @anchor_occurrence = anchor
         true
+      end
+
+      # Select the track rows currently shown, preserving grouped headers as
+      # decoration inside the range rather than treating them as selections.
+      def select_all_tracks
+        rows = display_rows
+        first = rows.index { |row| row[:type] == :track }
+        return unless first
+
+        last = rows.rindex { |row| row[:type] == :track }
+        @anchor_occurrence = first == last ? nil : track_occurrence(first)
+        @selection = last
       end
 
       # Track rows in the range: grouped views put album headers inside it.

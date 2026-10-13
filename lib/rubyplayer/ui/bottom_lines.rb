@@ -55,7 +55,8 @@ module RubyPlayer
         show_now_playing: 'now playing',
         add_to_playlist: 'playlist+', duplicate_playlist: 'dup playlist',
         rename_playlist: 'rename', move_entry_up: nil, move_entry_down: nil,
-        extend_selection_up: 'select up', extend_selection_down: 'select down', clear_selection: 'clear selection'
+        extend_selection_up: 'select up', extend_selection_down: 'select down',
+        clear_selection: 'clear selection', select_all_tracks: 'select all'
       }.freeze
 
       ROWS = 3
@@ -65,8 +66,8 @@ module RubyPlayer
       QUEUE_GROUPS = [%i[play_now enqueue_front enqueue_end select_queue],
                       %i[remove_from_queue undo redo add_to_playlist]].freeze
       VIEW_GROUPS = [%i[cycle_pane filter_tracks toggle_group],
-                     %i[sort_title sort_number sort_artist sort_year show_track_info]].freeze
-      COMPACT_VIEW_GROUPS = [%i[cycle_pane filter_tracks toggle_group show_track_info]].freeze
+                     %i[sort_title sort_number sort_artist sort_year show_track_info select_all_tracks]].freeze
+      COMPACT_VIEW_GROUPS = [%i[cycle_pane filter_tracks select_all_tracks toggle_group show_track_info]].freeze
       LIBRARY_GROUPS = [%i[cycle_pane filter_tracks], %i[add_path remove_library_item],
                         %i[duplicate_playlist rename_playlist]].freeze
       # The Now Playing pane has no list: 0-6 rate the playing track there.

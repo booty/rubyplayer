@@ -44,6 +44,7 @@ class BottomLinesTest < Minitest::Test
     assert_match(/^VIEW /, view)
     assert_includes view, 'G:group'
     assert_includes view, 'E:year'
+    assert_includes view, '^A:select all'
     assert view.end_with?('?:help')
   end
 
