@@ -206,7 +206,7 @@ class AppPlaybackQueueTest < Minitest::Test
     @app.handle_key('n')
     @app.refresh_panes
     use_screen(cols: 140)
-    3.times { @app.handle_key('tab') } # Tracks, Now Playing, Queued
+    2.times { @app.handle_key('tab') } # Tracks, then Queued
 
     selected = @app.engine.upcoming_items[1]
     @app.handle_key('down')
@@ -223,7 +223,7 @@ class AppPlaybackQueueTest < Minitest::Test
     @app.handle_key('n')
     @app.refresh_panes
     use_screen(cols: 140)
-    3.times { @app.handle_key('tab') } # Tracks, Now Playing, Queued
+    2.times { @app.handle_key('tab') } # Tracks, then Queued
     @app.handle_key('down')
     selected = @app.queued_pane.selected_track
     calls = []

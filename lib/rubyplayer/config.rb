@@ -61,7 +61,11 @@ module RubyPlayer
       # shipped default because rendering requires iTerm2; the V hotkey
       # cycles modes and persists the choice here.
       'art_mode' => 'off',
+      # Retired with the Now Playing pane (the bar holds the art now); still
+      # accepted so older configs load.
       'art_pane_width' => 30,
+      # Inner rows of the Now Playing bar on terminals 30+ rows tall.
+      'player_bar_rows' => 4,
       # Longest side of the emitted image copy, in pixels. Caps the escape
       # payload so re-emission is always cheap regardless of source size.
       'art_display_max_px' => 480,

@@ -266,15 +266,14 @@ class AppTest < Minitest::Test
                     'Select a track to view info'
   end
 
-  # The Library pane has no track to rate; at 110 columns the Now Playing
-  # pane is hidden (the Playback Queue view leaves room for it otherwise).
+  # The Library pane has no track to rate.
   def test_rating_in_the_library_pane_explains_where_to_rate
     select_library_kind(:folder)
     @app.handle_key('1')
     @app.render
 
     assert_includes @app.instance_variable_get(:@io_out).string,
-                    'Select a track in Tracks to rate'
+                    'Tab to Now Playing to rate the playing track'
   end
 
   def test_disabled_queue_sort_explains_why

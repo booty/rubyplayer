@@ -96,7 +96,7 @@ module RubyPlayer
           }
         )
         @queued_pane_enabled = @config['ui', 'queued_pane']
-        @playback_line = PlaybackLine.new(glyphs: glyphs)
+        @player_bar = PlayerBar.new(glyphs: glyphs, rows: @config['ui', 'player_bar_rows'])
         @status_line = StatusLine.new(seconds: @config['ui', 'status_message_seconds'])
         @hotkey_line = HotkeyLine.new(keymap: @keymap)
         rows, cols = TTY::Screen.size
@@ -1091,7 +1091,7 @@ module RubyPlayer
 
         tracks.each { |track| @library.set_rating(track.id, rating) }
         playing_id = @engine.state[:track]&.id
-        @now_playing_rating = [playing_id, rating] if tracks.any? { |track| track.id == playing_id }
+        @player_bar_details = nil if tracks.any? { |track| track.id == playing_id }
         suffix = tracks.size == 1 ? '' : " (#{tracks.size} tracks)"
         @status_line.set_message("#{rating ? "Rated #{rating}/6" : 'Rating cleared'}#{suffix}")
         @tracks_pane.reload!
@@ -1105,13 +1105,7 @@ module RubyPlayer
         when :now_playing then [[@engine.state[:track]].compact, 'Play a library track before rating']
         when :tracks then [@tracks_pane.selected_tracks, 'Select a track to rate']
         when :queued then [@queued_pane.selected_tracks, 'Select a track to rate']
-        else
-          hint = if focusable_panes.include?(:now_playing)
-                   'Tab to Now Playing to rate the playing track'
-                 else
-                   'Select a track in Tracks to rate'
-                 end
-          [[], hint]
+        else [[], 'Tab to Now Playing to rate the playing track']
         end
       end
 
@@ -1246,6 +1240,7 @@ module RubyPlayer
         @frame_interval = 1.0 / @config['ui', 'frame_fps']
         @idle_poll = @config['ui', 'idle_poll_seconds']
         @vgm_telemetry.reconfigure(max_bytes: @config['ui', 'vgm_telemetry_max_bytes'])
+        @player_bar.rows = @config['ui', 'player_bar_rows']
         @vgm_telemetry_controller.configure(
           refresh_hz: [@config['ui', 'vgm_telemetry_fps'], @config['ui', 'frame_fps']].min
         )
@@ -1314,26 +1309,28 @@ module RubyPlayer
         @screen.clear_back
         rows = @screen.rows
         cols = @screen.cols
-        content_h = rows - HotkeyLine::ROWS - 2 # playback + status + command rows
+        bar_h = @player_bar.height(rows)
+        content_h = rows - bar_h - 1 - HotkeyLine::ROWS # player bar, status, and command rows below
         render_panes(cols, content_h)
         playback_state = @engine.state
-        @playback_line.render(@screen, row: content_h, w: cols,
-                                       state: playback_state, levels: @engine.levels, theme: @theme)
+        render_player_bar(content_h, cols, bar_h, playback_state)
+        render_art_placeholder
+        status_row = content_h + bar_h
         if @filter_buffer
-          @screen.put(content_h + 1, 0, "Filter: #{@filter_buffer}_"[0, cols], fg: @theme[:accent])
+          @screen.put(status_row, 0, "Filter: #{@filter_buffer}_"[0, cols], fg: @theme[:accent])
         elsif @input_buffer
-          @screen.put(content_h + 1, 0, "Add path: #{@input_buffer}_"[0, cols], fg: @theme[:accent])
+          @screen.put(status_row, 0, "Add path: #{@input_buffer}_"[0, cols], fg: @theme[:accent])
         else
           # Cached because render runs at 30fps and the counts only change
           # when the library does — without this, the idle status line costs
           # two SQLite COUNT(*) queries per frame. Invalidated wherever panes
           # rebuild after a library change (refresh_panes, delete/purge).
           @folder_stats ||= @library.folder_stats
-          @status_line.render(@screen, row: content_h + 1, w: cols,
+          @status_line.render(@screen, row: status_row, w: cols,
                                        default: "#{@folder_stats[:tracks]} tracks in #{@folder_stats[:folders]} folders",
                                        theme: @theme)
         end
-        @hotkey_line.render(@screen, row: content_h + 2, w: cols, pane: @active_pane, theme: @theme,
+        @hotkey_line.render(@screen, row: status_row + 1, w: cols, pane: @active_pane, theme: @theme,
                                      toggle_states: { toggle_skip_disliked: playback_state[:skip_disliked],
                                                       toggle_group: @tracks_pane.grouped? })
         render_now_playing_modal if @show_now_playing
@@ -1372,9 +1369,7 @@ module RubyPlayer
         end
 
         queued_cols = queued_pane_cols(cols)
-        without_queued = cols - queued_cols
-        now_playing_cols = now_playing_pane_cols(without_queued)
-        usable = without_queued - now_playing_cols
+        usable = cols - queued_cols
         lib_w = usable * @config['ui', 'library_pane_percent'] / 100
         tracks_w = usable - lib_w
         inset_h = @art_mode == :inset ? art_inset_rows(lib_w, content_h) : 0
@@ -1388,19 +1383,17 @@ module RubyPlayer
         if inset_h.positive?
           @art_region = { x: 1, y: content_h - 1 - inset_h, w: lib_w - 2, h: inset_h }
         elsif @art_mode == :corner
-          place_art_corner(without_queued, content_h)
+          place_art_corner(usable, content_h)
         end
-        render_now_playing_pane(usable, now_playing_cols, content_h) if now_playing_cols.positive?
-        if queued_cols.positive?
-          queued_x = cols - queued_cols
-          queued_active = @active_pane == :queued
-          draw_box(queued_x, 0, queued_cols, content_h, active: queued_active, title: 'Queued')
-          @queued_pane.render(
-            @screen, x: queued_x + 1, y: 1,
-                     w: queued_cols - 2, h: content_h - 2, active: queued_active, theme: @theme
-          )
-        end
-        render_art_placeholder
+        return unless queued_cols.positive?
+
+        queued_x = cols - queued_cols
+        queued_active = @active_pane == :queued
+        draw_box(queued_x, 0, queued_cols, content_h, active: queued_active, title: 'Queued')
+        @queued_pane.render(
+          @screen, x: queued_x + 1, y: 1,
+                   w: queued_cols - 2, h: content_h - 2, active: queued_active, theme: @theme
+        )
       end
 
       # Cells are roughly twice as tall as wide, so a visually square image
@@ -1410,14 +1403,6 @@ module RubyPlayer
         rows = [(lib_w - 2) / 2, @config['ui', 'art_inset_max_rows'],
                 (content_h - 2) / 2].min # leave at least half the pane for the list
         rows >= @config['ui', 'art_min_rows'] ? rows : 0
-      end
-
-      # The Now Playing pane shows whenever the width left after Queued still
-      # holds two usable panes; it carries the art in pane mode. 0 otherwise,
-      # rather than crushing the lists.
-      def now_playing_pane_cols(cols)
-        width = @config['ui', 'art_pane_width']
-        cols - width > SINGLE_PANE_MAX_WIDTH ? width : 0
       end
 
       def queued_pane_cols(cols)
@@ -1430,20 +1415,18 @@ module RubyPlayer
         cols - width > SINGLE_PANE_MAX_WIDTH ? width : 0
       end
 
+      # The Now Playing bar is always shown, so it is always a Tab stop.
       def focusable_panes
         panes = %i[library tracks]
-        queued_cols = queued_pane_cols(@screen.cols)
-        panes << :now_playing if @screen.cols > SINGLE_PANE_MAX_WIDTH &&
-                                 now_playing_pane_cols(@screen.cols - queued_cols).positive?
-        panes << :queued if queued_cols.positive?
-        panes
+        panes << :queued if queued_pane_cols(@screen.cols).positive?
+        panes << :now_playing
       end
 
       def normalize_active_pane!
         panes = focusable_panes
         return if panes.include?(@active_pane)
 
-        order = %i[library tracks now_playing queued]
+        order = %i[library tracks queued now_playing]
         current = order.index(@active_pane) || -1
         @active_pane = panes.find { |pane| order.index(pane) > current } || panes.first
       end
@@ -1455,36 +1438,30 @@ module RubyPlayer
         @active_pane = panes[(index + 1) % panes.size]
       end
 
-      def render_now_playing_pane(x, w, content_h)
-        draw_box(x, 0, w, content_h, active: @active_pane == :now_playing, title: 'Now Playing')
-        if @art_mode == :pane
-          img_h = [(w - 2) / 2, content_h - 7].min # keep room for metadata and rating lines
-          @art_region = { x: x + 1, y: 1, w: w - 2, h: img_h } if img_h >= @config['ui', 'art_min_rows']
-        end
-        meta_y = (@art_region ? @art_region[:h] + 2 : 1)
-        track = @engine.state[:track]
-        lines = if track
-                  [[track.title, :primary], [track.album, :text_muted], [track.artist, :text_muted],
-                   now_playing_rating_line(track)]
-                else
-                  [['Nothing playing', :text_muted]]
-                end
-        lines.each do |text, color|
-          next if text.to_s.empty?
-          break if meta_y >= content_h - 1
+      # The Now Playing bar under the panes: bordered on tall terminals, one
+      # line on short ones. In pane art mode it holds the art, once there is
+      # art to show (an empty square would only repeat its spectrum).
+      def render_player_bar(row, cols, height, state)
+        track = state[:track]
+        options = { state: state, levels: @engine.levels, theme: @theme, details: track && player_bar_details(track) }
+        active = @active_pane == :now_playing
+        return @player_bar.render(@screen, x: 0, y: row, w: cols, h: 1, active: active, **options) if height == 1
 
-          @screen.put(meta_y, x + 2, text[0, w - 4], fg: @theme[color], bold: color == :primary)
-          meta_y += 1
-        end
+        draw_box(0, row, cols, height, active: active, title: 'Now Playing')
+        art = @art_mode == :pane && @art_bytes && @art_supported && height - 2 >= @config['ui', 'art_min_rows']
+        region = @player_bar.render(@screen, x: 1, y: row + 1, w: cols - 2, h: height - 2, art: art, **options)
+        @art_region = region if region
       end
 
-      # The playing track's rating, read once per track (the queued Track
-      # copy predates ratings given since it was enqueued) and kept current
-      # by rate_track.
-      def now_playing_rating_line(track)
-        @now_playing_rating = [track.id, @library.rating_of(track.id)] unless @now_playing_rating&.first == track.id
-        rating = @now_playing_rating.last
-        rating ? [@config['glyphs', 'star'] * rating, :accent] : ['Unrated', :text_muted]
+      # The bar's slower facts, read once per track and again after it is
+      # rated (the queued Track copy predates later ratings).
+      def player_bar_details(track)
+        return @player_bar_details.last if @player_bar_details&.first == track.id
+
+        details = PlayerBar::Details.for(track, extras: @library.track_metadata_for(track.id),
+                                                rating: @library.rating_of(track.id))
+        @player_bar_details = [track.id, details]
+        details
       end
 
       def place_art_corner(cols, content_h)

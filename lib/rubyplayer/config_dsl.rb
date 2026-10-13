@@ -163,7 +163,7 @@ module RubyPlayer
 
     def validate_positive_values!(data)
       positive = %w[
-        ui.frame_fps ui.status_message_seconds ui.seek_seconds ui.queued_pane_width
+        ui.frame_fps ui.status_message_seconds ui.seek_seconds ui.queued_pane_width ui.player_bar_rows
         ui.vgm_telemetry_max_bytes
         audio.ring_buffer_ms audio.decode_chunk_frames
         library.backup_retention library.history_limit

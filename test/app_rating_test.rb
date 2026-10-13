@@ -4,13 +4,13 @@ require 'test_helper'
 require_relative 'support/app_test_support'
 
 # 0-6 rate the highlighted track in Tracks or Queued; the playing track is
-# rated from the Now Playing pane, which shows its rating.
+# rated from the Now Playing bar, which shows its rating.
 class AppRatingTest < Minitest::Test
   include TestSupport::AppTestSupport
 
   def setup
     super
-    # Wide enough for Library, Tracks, Now Playing, and Queued.
+    # Wide enough for Queued, and tall enough for the full Now Playing bar.
     use_screen(rows: 30, cols: 160)
   end
 
@@ -46,17 +46,17 @@ class AppRatingTest < Minitest::Test
     playing = @app.engine.state[:track]
     @app.render
 
-    assert_includes pane_text, 'Unrated'
+    assert_includes bar_text, 'unrated'
     @app.handle_key('5')
     @app.render
 
     assert_equal 5, library.rating_of(playing.id)
-    assert_includes pane_text, star * 5
+    assert_includes bar_text, star * 5
     @app.handle_key('0')
     @app.render
 
     assert_nil library.rating_of(playing.id)
-    assert_includes pane_text, 'Unrated'
+    assert_includes bar_text, 'unrated'
   end
 
   def test_library_pane_rates_nothing_and_says_where_to_rate
@@ -77,9 +77,9 @@ class AppRatingTest < Minitest::Test
     assert_includes @app.instance_variable_get(:@io_out).string, 'Play a library track before rating'
   end
 
-  # The pane no longer depends on art mode, and Tab visits it between
-  # Tracks and Queued; navigation keys there leave the other panes alone.
-  def test_now_playing_pane_shows_without_art_and_joins_tab_order
+  # The bar is the last Tab stop; navigation keys there leave the lists
+  # alone.
+  def test_now_playing_bar_is_the_last_tab_stop
     start_normal_playback
     @app.instance_variable_set(:@active_pane, :library)
     visited = Array.new(4) do
@@ -87,28 +87,28 @@ class AppRatingTest < Minitest::Test
       @app.active_pane
     end
 
-    assert_equal :off, @app.art_mode
-    assert_equal %i[tracks now_playing queued library], visited
+    assert_equal %i[tracks queued now_playing library], visited
     focus_pane(:now_playing)
     before = @app.tracks_pane.selection
     @app.handle_key('down')
     @app.render
 
     assert_equal before, @app.tracks_pane.selection
-    title_row = back_buffer_lines.first
-
-    assert_operator title_row.index('Tracks'), :<, title_row.index('Now Playing')
-    assert_includes pane_text, @app.engine.state[:track].title[0, 20]
+    refute_includes back_buffer_lines.first, 'Now Playing', 'no Now Playing column beside the lists'
+    assert_includes bar_text, @app.engine.state[:track].title[0, 20]
   end
 
-  # Queued keeps its column first (the Playback Queue view hides it).
-  def test_narrow_terminals_leave_the_now_playing_pane_out
-    select_library_kind(:folder)
-    use_screen(rows: 30, cols: 110)
+  # Short terminals get a one-line bar; it is still where the playing track
+  # is rated.
+  def test_short_terminals_rate_from_a_one_line_bar
+    start_normal_playback
+    use_screen(rows: 24, cols: 160)
+    focus_pane(:now_playing)
+    @app.handle_key('2')
     @app.render
 
-    refute_includes back_buffer_lines.first, 'Now Playing'
-    refute_includes @app.send(:focusable_panes), :now_playing
+    assert_equal 2, library.rating_of(@app.engine.state[:track].id)
+    assert_includes back_buffer_lines[24 - 3 - 1 - 1], star * 2
   end
 
   private
@@ -131,11 +131,6 @@ class AppRatingTest < Minitest::Test
     @app.instance_variable_get(:@screen).instance_variable_get(:@back).map { |row| row.map(&:ch).join }
   end
 
-  # The Now Playing pane's columns: between Tracks' and Queued's borders.
-  def pane_text
-    lines = back_buffer_lines
-    left = lines.first.index('Now Playing') - 2
-    right = lines.first.index('Queued') - 2
-    lines.map { |line| line[left...right] }.join("\n")
-  end
+  # The 6-row Now Playing bar above the status and hotkey rows.
+  def bar_text = back_buffer_lines[-10, 6].join("\n")
 end

@@ -77,32 +77,6 @@ class AppRenderingThemeConfigTest < Minitest::Test
     assert @app.instance_variable_get(:@queued_pane_enabled)
   end
 
-  def test_queued_is_rightmost_after_dedicated_artwork_when_both_fit
-    select_library_kind(:folder)
-    @app.instance_variable_set(:@art_mode, :pane)
-    use_screen(cols: 138)
-
-    @app.render
-
-    title_row = @app.instance_variable_get(:@screen).instance_variable_get(:@back)[0].map(&:ch).join
-
-    assert_operator title_row.index('Tracks'), :<, title_row.index('Now Playing')
-    assert_operator title_row.index('Now Playing'), :<, title_row.index('Queued')
-  end
-
-  def test_queued_has_priority_when_dedicated_artwork_does_not_fit
-    select_library_kind(:folder)
-    @app.instance_variable_set(:@art_mode, :pane)
-    use_screen(cols: 108)
-
-    @app.render
-
-    title_row = @app.instance_variable_get(:@screen).instance_variable_get(:@back)[0].map(&:ch).join
-
-    assert_includes title_row, 'Queued'
-    refute_includes title_row, 'Now Playing'
-  end
-
   def test_corner_art_stays_out_of_queued_column
     select_library_kind(:folder)
     @app.instance_variable_set(:@art_mode, :corner)
@@ -203,10 +177,10 @@ class AppRenderingThemeConfigTest < Minitest::Test
     assert_equal :tracks, @app.active_pane
     @app.handle_key('tab')
 
-    assert_equal :now_playing, @app.active_pane
+    assert_equal :queued, @app.active_pane
     @app.handle_key('tab')
 
-    assert_equal :queued, @app.active_pane
+    assert_equal :now_playing, @app.active_pane
     @app.handle_key('tab')
 
     assert_equal :library, @app.active_pane
@@ -227,7 +201,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
   def test_active_queued_border_uses_focus_style
     select_library_kind(:folder)
     use_screen(cols: 140)
-    3.times { @app.handle_key('tab') }
+    2.times { @app.handle_key('tab') }
     @app.render
 
     screen = @app.instance_variable_get(:@screen)
@@ -240,7 +214,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
   def test_hiding_active_queued_moves_to_another_eligible_pane
     select_library_kind(:folder)
     use_screen(cols: 140)
-    3.times { @app.handle_key('tab') }
+    2.times { @app.handle_key('tab') }
 
     assert_equal :queued, @app.active_pane
 
@@ -254,7 +228,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
   def test_resizing_hides_active_queued_and_moves_focus
     select_library_kind(:folder)
     use_screen(cols: 140)
-    3.times { @app.handle_key('tab') }
+    2.times { @app.handle_key('tab') }
 
     assert_equal :queued, @app.active_pane
 
@@ -268,7 +242,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
   def test_help_scope_includes_queued_navigation_when_queued_is_active
     select_library_kind(:folder)
     use_screen(cols: 140)
-    3.times { @app.handle_key('tab') }
+    2.times { @app.handle_key('tab') }
     @app.handle_key('?')
     @app.render
 
@@ -282,7 +256,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
     cells = @app.instance_variable_get(:@screen).instance_variable_get(:@back)
     rows = cells.map { |row| row.map(&:ch).join.rstrip }
 
-    assert_includes rows[-5], 'stopped'
+    assert_includes rows[-5], 'Nothing playing'
     assert_match(/tracks in .* folders/, rows[-4])
     assert_match(/^PLAY /, rows[-3])
     assert_match(/^QUEUE /, rows[-2])
@@ -543,20 +517,17 @@ class AppRenderingThemeConfigTest < Minitest::Test
     assert_equal content_h - 1 - region[:h], region[:y] # docked at pane bottom
   end
 
-  def test_pane_mode_reserves_right_hand_column
+  # Pane mode puts the art in the Now Playing bar: a square at its left,
+  # inside the border, on terminals tall enough for the full bar.
+  def test_pane_mode_puts_art_in_the_now_playing_bar
     play_with_cover_art
     2.times { @app.handle_key('v') } # -> pane
-    use_screen(cols: 138)
+    use_screen(rows: 40, cols: 138)
     @app.render
 
-    region = art_region
+    bar_top = 40 - 3 - 1 - 6 # hotkey rows, status row, then the 6-row bar
 
-    refute_nil region
-    art_w = 30 # ui.art_pane_width default
-    queued_w = 36 # ui.queued_pane_width default
-
-    assert_equal 138 - queued_w - art_w + 1, region[:x]
-    assert_equal 1, region[:y]
+    assert_equal({ x: 2, y: bar_top + 1, w: 8, h: 4 }, art_region)
   end
 
   def test_corner_mode_overlays_bottom_right

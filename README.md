@@ -68,17 +68,18 @@ Select **Focus** in the Library pane, then choose a noise recipe in Tracks and p
 - Pane-edge scrollbar appears only when rows overflow viewport.
 - Terminals narrower than 72 columns show one full-width pane; Tab switches panes. Wider terminals retain two-pane layout.
 - Wide terminals show a **Queued** pane with upcoming tracks and the three latest playback-history entries. Tab selects it while visible; upcoming rows support the same queue actions as the top-level **Playback Queue** view, while history rows are informational. Press `B` to toggle it. It hides when the terminal cannot retain 72 columns for Library + Tracks and while the top-level **Playback Queue** view is selected; hidden Queued is excluded from Tab traversal.
-- A **Now Playing** pane between Tracks and Queued shows the playing track's title, album, artist, and rating (album art too in `pane` art mode). It shows whenever the terminal keeps 72 columns for Library + Tracks after Queued; Tab selects it while visible.
-- Keys `1`–`6` rate a track and `0` clears its rating: the highlighted track in Tracks or Queued, or the playing track from the Now Playing pane. The Library pane rates nothing.
+- The **Now Playing** bar under the panes shows the playing track's title, rating, and state; its artist, album, year, track number, and composer; its file type and hardware or codec facts; and a progress bar, beside a spectrum as tall as the bar (album art too in `pane` art mode). It is the last Tab stop. Terminals under 30 rows show it as one line (title, rating, time, and a small spectrum).
+- Keys `1`–`6` rate a track and `0` clears its rating: the highlighted track in Tracks or Queued, or the playing track from the Now Playing bar. The Library pane rates nothing.
 - In Tracks and Queued, Shift+↑/↓ selects a range of tracks (the Tracks title counts them). Enter puts the whole range at the head of the queue and plays its first track; `Q`/`N` queue it, `1`–`6`/`0` rate it, `L` adds it to a playlist, and `X` removes it from a playlist or, in the Playback Queue view or Queued, from the queue as one undoable edit (a playing track in the range is skipped). Any other movement, sorting, filtering, or Escape ends the range. Playlist entries move one at a time.
 - Fixed smart views expose **Recently Added**, **Unrated**, **Missing**, **Failed to Scan**, and **Most Played** track lists.
 - In **Missing**, press `Ctrl+X` to permanently purge currently filtered/visible tracks and their playback history after confirmation.
-- Playback footer shows current track timing and queued next track. During Focus playback it identifies active recipe, infinite duration, paused queue, and next queued track.
+- During Focus playback the Now Playing bar names the active recipe, shows ∞ for its duration, and notes the paused queue.
 
 ### Album artwork
 
-Inline artwork requires iTerm2. Press `V` to cycle placement through off, inset,
-pane, and corner; the choice persists in configuration. Press `O` to open the
+Inline artwork requires iTerm2. Press `V` to cycle placement through off, inset
+(bottom of the Library pane), pane (left of the Now Playing bar), and corner; the
+choice persists in configuration. Press `O` to open the
 now-playing view. Other terminals show an artwork placeholder while track
 information remains available.
 
@@ -337,7 +338,8 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | `queued_pane.rb` | `QueuedPane`: snapshot-backed upcoming/history overview with selectable upcoming tracks, queue actions routed through App, cumulative duration, and overflow allocation. History rows are informational. |
 | `queue_selection.rb` | `QueueSelection`: shared identity-preserving selection and scrolling for the Playback Queue view and Queued pane. |
 | `iterm_image.rb` | `ItermImage`: detects iTerm2 and emits inline-image escape sequences at terminal cell coordinates. |
-| `bottom_lines.rb` | Three bottom renderers: `PlaybackLine` (normal/Focus context, next queue item, EQ bars), `StatusLine` (transient feedback), and `HotkeyLine` (context-sensitive bindings). |
+| `player_bar.rb` | `PlayerBar`: the Now Playing bar (title, rating, state, credits, file facts, and progress beside a full-height spectrum, or one line on short terminals) and `PlayerBar::Details`, its per-track facts built from stored metadata. |
+| `bottom_lines.rb` | Two bottom renderers: `StatusLine` (transient feedback) and `HotkeyLine` (context-sensitive bindings). |
 | `key_decoder.rb` | `KeyDecoder`: turns raw bytes read from a raw-mode terminal into the normalized key-name strings `Keymap` understands (arrow-key escape sequences, Enter, Tab, Ctrl-combinations, etc). |
 
 ### Native audio (`ext/rp_audio/`)
@@ -456,7 +458,8 @@ restart.
 | `config.ui.queued_pane_width` | `36` | Queued pane width; positive integer columns. |
 | `config.ui.theme` | `"default"` | Id from `Theme::ALL_IDS`. |
 | `config.ui.art_mode` | `"off"` | Album-art placement: off, inset, pane, or corner. |
-| `config.ui.art_pane_width` | `30` | Now Playing pane width (it holds the album art in `pane` mode). |
+| `config.ui.player_bar_rows` | `4` | Inner rows of the Now Playing bar on terminals at least 30 rows tall; positive integer. |
+| `config.ui.art_pane_width` | `30` | Retired (the Now Playing bar holds `pane` art); accepted so older configs load. |
 | `config.ui.art_display_max_px` | `480` | Longest emitted album-art side in pixels. |
 | `config.ui.art_corner_rows` | `8` | Album-art corner height in rows. |
 | `config.ui.art_min_rows` | `3` | Minimum usable album-art height in rows. |
