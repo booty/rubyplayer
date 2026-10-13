@@ -12,16 +12,22 @@ module RubyPlayer
       MULTITRACK_EXTS = %w[.nsf .nsfe .gbs .hes .sap .ay .kss].freeze
       # Archive containers whose entries are extracted and scanned as tracks.
       ARCHIVE_EXTS = %w[.zip .7z .rar].freeze
+      # Native players that record live chip state: backend name => the file
+      # defining it and its class. libgme still scans these formats, and
+      # plays them itself when a player's dylib is missing.
+      NATIVE_BACKENDS = {
+        snes_spc: %w[snes_spc SnesSpc],
+        gbs_native: %w[gbs_native GbsNative],
+        nsf_native: %w[nsf_native NsfNative]
+      }.freeze
 
       def initialize(overrides = {})
         @map = {}
         GME_EXTS.each { |e| @map[e] = :gme }
         OPENMPT_EXTS.each { |e| @map[e] = :openmpt }
         FFMPEG_EXTS.each { |e| @map[e] = :ffmpeg }
-        # libgme still scans .spc; playback moves to the native SPC player,
-        # which falls back to libgme itself when its dylib is missing.
+        # Playback of these moves to native players (NATIVE_BACKENDS).
         @map['.spc'] = :snes_spc
-        # Likewise .gbs and .nsf/.nsfe move to native players (live chip state).
         @map['.gbs'] = :gbs_native
         @map['.nsf'] = @map['.nsfe'] = :nsf_native
         (overrides || {}).each do |ext, name|
@@ -40,11 +46,10 @@ module RubyPlayer
       def backend_name_for(path) = @map[ext_of(path)]
 
       def backend_for(path)
-        case backend_name_for(path)
+        name = backend_name_for(path)
+        case name
         when :gme then gme_backend
-        when :snes_spc then snes_spc_backend
-        when :gbs_native then gbs_native_backend
-        when :nsf_native then nsf_native_backend
+        when *NATIVE_BACKENDS.keys then native_backend(name)
         when :openmpt
           @instances[:openmpt] ||= begin
             require_relative 'openmpt'
@@ -70,25 +75,13 @@ module RubyPlayer
         end
       end
 
-      def snes_spc_backend
-        require_relative 'snes_spc'
-        return gme_backend unless SnesSpc.available?
+      def native_backend(name)
+        file, class_name = NATIVE_BACKENDS.fetch(name)
+        require_relative file
+        backend = Backends.const_get(class_name)
+        return gme_backend unless backend.available?
 
-        @instances[:snes_spc] ||= SnesSpc.new(gme: gme_backend)
-      end
-
-      def gbs_native_backend
-        require_relative 'gbs_native'
-        return gme_backend unless GbsNative.available?
-
-        @instances[:gbs_native] ||= GbsNative.new(gme: gme_backend)
-      end
-
-      def nsf_native_backend
-        require_relative 'nsf_native'
-        return gme_backend unless NsfNative.available?
-
-        @instances[:nsf_native] ||= NsfNative.new(gme: gme_backend)
+        @instances[name] ||= backend.new(gme: gme_backend)
       end
 
       def ext_of(path) = File.extname(path).downcase

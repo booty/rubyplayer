@@ -1,4 +1,5 @@
 require 'test_helper'
+require 'minitest/mock'
 
 class RegistryTest < Minitest::Test
   def setup
@@ -46,6 +47,25 @@ class RegistryTest < Minitest::Test
 
     assert_equal :openmpt, reg.backend_name_for('/x/a.vgm')
     assert_equal :gme, reg.backend_name_for('/x/a.weird')
+  end
+
+  def test_native_players_fall_back_to_shared_libgme_when_unavailable
+    require 'rubyplayer/backends/snes_spc'
+    require 'rubyplayer/backends/gbs_native'
+    require 'rubyplayer/backends/nsf_native'
+    gme = @reg.backend_for('/x/a.vgm')
+    { '/x/a.spc' => RubyPlayer::Backends::SnesSpc, '/x/a.gbs' => RubyPlayer::Backends::GbsNative,
+      '/x/a.nsf' => RubyPlayer::Backends::NsfNative }.each do |path, backend|
+      backend.stub(:available?, false) { assert_same gme, @reg.backend_for(path), path }
+    end
+  end
+
+  def test_native_players_are_memoized_when_available
+    %w[/x/a.spc /x/a.gbs /x/a.nsf].each do |path|
+      backend = @reg.backend_for(path)
+
+      assert_same backend, @reg.backend_for(path), path
+    end
   end
 
   def test_backend_for_returns_memoized_instance

@@ -286,13 +286,13 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 
 | File | Purpose |
 |---|---|
-| `registry.rb` | `Backends::Registry`: maps file extensions to GME, OpenMPT, or FFmpeg and lazily instantiates/caches backend objects. Also classifies archive containers (`.zip`/`.7z`/`.rar`), which are "supported" but have no backend of their own — the `ExtractorPool` unpacks them and dispatches each entry to its real backend. |
+| `registry.rb` | `Backends::Registry`: maps file extensions to GME, OpenMPT, FFmpeg, or a native chip player (`NATIVE_BACKENDS`, falling back to GME when its dylib is missing) and lazily instantiates/caches backend objects. Also classifies archive containers (`.zip`/`.7z`/`.rar`), which are "supported" but have no backend of their own — the `ExtractorPool` unpacks them and dispatches each entry to its real backend. |
 | `metadata_helper.rb` | Shared backend metadata helpers for presence checks and normalized file extensions. |
 | `gme.rb` | `Backends::Gme`: FFI bindings to libgme, plus `Handle` (an open, playable track) and metadata extraction for chiptune formats. Converts libgme's 16-bit PCM output to the app's canonical float32 format. |
 | `openmpt.rb` | `Backends::Openmpt`: FFI bindings to libopenmpt, plus `Handle` and metadata extraction for tracker module formats. libopenmpt renders float natively, so no format conversion is needed. |
 | `snes_spc.rb`, `snes_spc_lib.rb` | `Backends::SnesSpc`: plays `.spc` through `librp_spc` (handles also expose DSP snapshots, RAM, and voice muting); scanning and metadata stay on libgme. Requiring `snes_spc_lib.rb` loads the dylib and doubles as the availability check. |
 | `native_gme.rb`, `gzip_content.rb` | `Backends::NativeGme`: the shared backend and handle for native libgme players (snapshots, voice muting, a sibling `.m3u` as libgme loads it); scanning and metadata stay on libgme. `GzipContent` inflates gzip content (with a size limit) as libgme's file loader does. |
-| `gbs_native.rb`, `gbs_native_lib.rb`, `nsf_native.rb`, `nsf_native_lib.rb` | `Backends::GbsNative` and `NsfNative`: `.gbs` through `librp_gbs`, `.nsf`/`.nsfe` through `librp_nsf`. Requiring a `*_lib.rb` binding doubles as the availability check. |
+| `gbs_native.rb`, `gbs_native_lib.rb`, `nsf_native.rb`, `nsf_native_lib.rb` | `Backends::GbsNative` and `NsfNative`: `.gbs` through `librp_gbs`, `.nsf`/`.nsfe` through `librp_nsf`. Requiring a `*_lib.rb` binding doubles as the availability check; each attaches the shared player API through `native_gme_lib.rb`. |
 | `ffmpeg.rb` | `Backends::Ffmpeg`: probes ordinary audio files with ffprobe and decodes through an FFmpeg subprocess to float32 stereo PCM; supports seeking by restarting decoding at the requested offset. |
 
 ### Terminal UI (`lib/rubyplayer/ui/`)

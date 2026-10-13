@@ -74,9 +74,9 @@ The native API uses the same signatures as `rp_gbs_*` for `open`, `close`, `load
 
 **Interfaces:** `NativeGmeLib.attach_player_api(lib, prefix)` attaches the 15 standard functions to an `FFI::Library` module that has already called `ffi_lib`, with `blocking: true` on `start_track`, `play`, and `seek`. `Registry#native_backend(name)` requires the backend's file, returns `gme_backend` when its class reports `available?` false, and memoizes the instance.
 
-- [ ] Write a failing seam test: a fake module that records `attach_function` calls receives all 15 `<prefix>_*` names with the expected argument/return types and blocking flags. Add a registry test that a native backend whose class is unavailable falls back to the shared `Gme` instance, for each of `.spc`, `.gbs`, `.nsf`.
-- [ ] Run `mise exec -- bundle exec ruby -Itest test/native_gme_lib_test.rb` and `test/registry_test.rb`; confirm the new tests fail.
-- [ ] Implement the helper and switch both lib files to it; replace the per-backend registry methods with the table. Run the GBS/NSF backend, parity, snapshot, and registry tests, then the full suite and RuboCop. Commit.
+- [x] Write a failing seam test: a fake module that records `attach_function` calls receives all 15 `<prefix>_*` names with the expected argument/return types and blocking flags. Add a registry test that a native backend whose class is unavailable falls back to the shared `Gme` instance, for each of `.spc`, `.gbs`, `.nsf`.
+- [x] Run `mise exec -- bundle exec ruby -Itest test/native_gme_lib_test.rb` and `test/registry_test.rb`; confirm the new tests fail.
+- [x] Implement the helper and switch both lib files to it; replace the per-backend registry methods with the table. Run the GBS/NSF backend, parity, snapshot, and registry tests, then the full suite and RuboCop. Commit.
 
 ### Task 2: Vendored HES player with bit-exact audio
 
