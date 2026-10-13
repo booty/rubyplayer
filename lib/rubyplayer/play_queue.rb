@@ -50,6 +50,16 @@ module RubyPlayer
       removed
     end
 
+    # Removes the items at `indexes` as one undoable edit (a selected range).
+    def remove_indexes(indexes)
+      indexes = indexes.grep(0...@items.size).uniq
+      return if indexes.empty?
+
+      snapshot!
+      indexes.sort.reverse_each { |index| @items.delete_at(index) }
+      changed!
+    end
+
     # Removes every item whose track id is in `ids` (used to cascade a
     # library deletion into the live queue, which holds Track objects rather
     # than DB rows). Snapshot is skipped when nothing actually matches, so a

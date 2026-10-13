@@ -77,4 +77,48 @@ class QueueSelectionTest < Minitest::Test
     assert_equal @tracks[1, 2], visible
     assert_equal 1, hidden
   end
+
+  # Shift+arrows extend a range from the item they began on; its tracks come
+  # back in queue order, by item identity (a queue can hold one track twice).
+  def test_extending_selects_a_range_in_queue_order
+    @selection.replace(@tracks)
+    2.times { @selection.handle_action(:nav_down) }
+    2.times { @selection.handle_action(:extend_selection_up) }
+
+    assert_equal @tracks.first(3), @selection.selected_tracks
+    @selection.handle_action(:nav_down)
+
+    assert_equal [@tracks[1]], @selection.selected_tracks
+  end
+
+  def test_clear_selection_reports_whether_a_range_ended
+    @selection.replace(@tracks)
+    @selection.handle_action(:extend_selection_down)
+
+    assert @selection.handle_action(:clear_selection)
+    refute @selection.handle_action(:clear_selection)
+    assert_equal [@tracks[1]], @selection.selected_tracks
+  end
+
+  def test_duplicate_tracks_select_by_item_identity
+    copy = @tracks[0].dup
+    @selection.replace([@tracks[0], @tracks[1], copy])
+    @selection.handle_action(:nav_down)
+    @selection.handle_action(:extend_selection_down)
+
+    assert_equal [1, 2], @selection.selected_indexes
+    assert_same copy, @selection.selected_tracks.last
+  end
+
+  # A queue change keeps the range while its anchor is still queued.
+  def test_replace_keeps_the_range_until_its_anchor_leaves
+    @selection.replace(@tracks)
+    @selection.handle_action(:extend_selection_down)
+    @selection.replace(@tracks + [track(9)])
+
+    assert_equal @tracks.first(2), @selection.selected_tracks
+    @selection.replace(@tracks.drop(1))
+
+    assert_equal 1, @selection.selected_tracks.size
+  end
 end

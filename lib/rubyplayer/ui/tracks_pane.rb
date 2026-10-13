@@ -158,6 +158,11 @@ module RubyPlayer
           return [:disabled, 'Playlist order is fixed — ctrl+arrows move tracks']
         end
 
+        if @mode == :queue && (EXTEND_ACTIONS.key?(action) || action == :clear_selection)
+          handled = @queue_selection.handle_action(action)
+          sync_queue_cursor
+          return handled
+        end
         return extend_selection(EXTEND_ACTIONS[action]) if EXTEND_ACTIONS.key?(action)
 
         # Escape, and any other movement, sort, or grouping, ends a range.
@@ -222,6 +227,8 @@ module RubyPlayer
       # The tracks an action applies to: the range's, in list order, or the
       # cursor's track alone.
       def selected_tracks
+        return @queue_selection.selected_tracks if @mode == :queue
+
         indexes = range_row_indexes
         return [selected_track].compact unless indexes
 
@@ -234,6 +241,8 @@ module RubyPlayer
       # Track positions (headers skipped) of selected_tracks: the range's,
       # or the cursor's alone.
       def selected_track_indexes
+        return @queue_selection.selected_indexes if @mode == :queue
+
         indexes = range_row_indexes
         return [selected_track_index].compact unless indexes
 
@@ -324,10 +333,10 @@ module RubyPlayer
 
       private
 
-      # Only track lists take ranges: the queue view keeps one selection, and
-      # Focus and Playlists rows are not tracks.
+      # Focus and Playlists rows are not tracks, so they take no ranges (the
+      # queue view's live in its QueueSelection).
       def extend_selection(nav_action)
-        return handle_action(nav_action) if %i[queue focus playlists].include?(@mode) || !selected_track
+        return handle_action(nav_action) if %i[focus playlists].include?(@mode) || !selected_track
 
         anchor = @anchor_track_id || selected_track.id
         move_selection(nav_action == :nav_up ? -1 : 1)
@@ -339,6 +348,11 @@ module RubyPlayer
       # range (or once the anchor's track has left the view). Cached per
       # row list, since render and title ask every frame.
       def range_row_indexes
+        if @mode == :queue
+          # Queue rows are flat, so item indexes are row indexes.
+          indexes = @queue_selection.selected_indexes
+          return @queue_selection.range? ? (indexes.first..indexes.last) : nil
+        end
         return unless @anchor_track_id
 
         rows = display_rows

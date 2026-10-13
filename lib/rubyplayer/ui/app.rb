@@ -494,16 +494,18 @@ module RubyPlayer
       # panes resolve the selected Track by identity so filtering or snapshot
       # refreshes cannot make the action target a different row.
       def remove_from_queue
-        selected = active_queue_track
-        # Filtering changes display positions. Resolve selected object against
-        # live queue identity so removing visible row cannot delete hidden row.
-        index = @engine.queue_items.index { |track| track.equal?(selected) }
-        if index.nil?
+        # Filtering changes display positions. Resolve selected objects against
+        # live queue identity so removing visible rows cannot delete hidden rows.
+        items = @engine.queue_items
+        indexes = active_queue_tracks.filter_map do |selected|
+          items.index { |track| track.equal?(selected) }
+        end
+        if indexes.empty?
           @status_line.set_message('Select a track in the Playback Queue to remove')
           return
         end
-        @engine.remove_at(index)
-        @status_line.set_message('Removed from queue (u:undo)')
+        @engine.remove_indexes(indexes)
+        @status_line.set_message("Removed #{track_count_text(indexes)} from queue (u:undo)")
       end
 
       # Only :folder rows are removable -- fixed smart/source rows are computed views, not library
@@ -1044,10 +1046,12 @@ module RubyPlayer
         @active_pane == :tracks && @tracks_pane.selected_focus_sound
       end
 
-      def active_queue_track
+      # The queue items a removal applies to (a range, or the cursor's).
+      def active_queue_tracks
         case @active_pane
-        when :queued then @queued_pane.selected_track
-        when :tracks then @tracks_pane.selected_queue_track
+        when :queued then @queued_pane.selected_tracks
+        when :tracks then @tracks_pane.selected_queue_track ? @tracks_pane.selected_tracks : []
+        else []
         end
       end
 
@@ -1055,7 +1059,7 @@ module RubyPlayer
         return [] if @active_pane == :now_playing
 
         if @active_pane == :queued
-          [@queued_pane.selected_track].compact
+          @queued_pane.selected_tracks
         elsif @active_pane == :tracks
           # Track is a Struct, and Kernel#Array(struct) would splat it into its
           # field VALUES ([id, folder_id, ...]) rather than wrap it — which would
@@ -1100,7 +1104,7 @@ module RubyPlayer
         case @active_pane
         when :now_playing then [[@engine.state[:track]].compact, 'Play a library track before rating']
         when :tracks then [@tracks_pane.selected_tracks, 'Select a track to rate']
-        when :queued then [[@queued_pane.selected_track].compact, 'Select a track to rate']
+        when :queued then [@queued_pane.selected_tracks, 'Select a track to rate']
         else
           hint = if focusable_panes.include?(:now_playing)
                    'Tab to Now Playing to rate the playing track'

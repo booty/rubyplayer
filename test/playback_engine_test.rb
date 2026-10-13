@@ -508,6 +508,23 @@ class PlaybackEngineTest < Minitest::Test
     refute_includes @engine.queue_items.map(&:id), t1.id
   end
 
+  # A range removal that includes the playing head skips it; the rest go in
+  # one undoable edit.
+  def test_remove_indexes_skips_the_playing_head_and_removes_the_rest
+    t1 = make_track('shantae.gbs', subtune: 9, duration_ms: 60_000)
+    t2 = make_track('shantae.gbs', subtune: 10)
+    t3 = make_track('shantae.gbs', subtune: 11)
+    @engine.enqueue_now([t1, t2, t3])
+    wait_for_event(:track_started)
+
+    @engine.remove_indexes([0, 1])
+
+    ev = wait_for_event(:track_started)
+
+    assert_equal t3.id, ev[1][:track].id
+    assert_equal [t3.id], @engine.queue_items.map(&:id)
+  end
+
   def test_decoder_survives_mid_decode_read_failure
     boom_path = File.join(@tmp, 'boom.gbs')
     FileUtils.cp(File.join(FIXTURES, 'shantae.gbs'), boom_path)

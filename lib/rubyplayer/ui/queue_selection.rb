@@ -14,6 +14,9 @@ module RubyPlayer
         @items = []
         @selection = 0
         @scroll = 0
+        # Range selection: the queue item Shift+arrows began on. Held by
+        # object identity, since a queue can hold the same track twice.
+        @anchor = nil
         @page_size = ScrollableList::PAGE_SIZE_FALLBACK
       end
 
@@ -21,6 +24,7 @@ module RubyPlayer
         previous = selected_track
         @items = Array(items).dup
         @selection = matching_index(previous) || @selection.clamp(0, [@items.size - 1, 0].max)
+        @anchor = nil unless anchor_index
         clamp_selection
         @scroll = @scroll.clamp(0, [@items.size - @page_size, 0].max)
         self
@@ -28,6 +32,7 @@ module RubyPlayer
 
       def restore(identity:, fallback: 0, scroll: 0)
         @selection = @items.index { |item| item.id == identity } || fallback
+        @anchor = nil unless anchor_index
         @scroll = scroll
         clamp_selection
         @scroll = @scroll.clamp(0, [@items.size - @page_size, 0].max)
@@ -42,7 +47,33 @@ module RubyPlayer
         selected_track ? @selection : nil
       end
 
-      def handle_action(action) # rubocop:disable Naming/PredicateMethod
+      # Item indexes an action applies to: the range's, in queue order, or
+      # the cursor's alone.
+      def selected_indexes
+        anchor = anchor_index
+        return [selected_index].compact unless anchor
+
+        anchor < @selection ? (anchor..@selection).to_a : (@selection..anchor).to_a
+      end
+
+      def selected_tracks = selected_indexes.map { |index| @items[index] }
+
+      def range? = !anchor_index.nil?
+
+      def handle_action(action)
+        case action
+        when :extend_selection_up, :extend_selection_down
+          anchor = @anchor || selected_track
+          move_selection(action == :extend_selection_up ? -1 : 1)
+          @anchor = anchor
+          return true
+        when :clear_selection
+          had_range = range?
+          @anchor = nil
+          return had_range
+        end
+        # Any other movement ends a range.
+        @anchor = nil
         case action
         when :nav_up then move_selection(-1)
         when :nav_down then move_selection(1)
@@ -79,6 +110,8 @@ module RubyPlayer
       end
 
       private
+
+      def anchor_index = @anchor && @items.index { |item| item.equal?(@anchor) }
 
       def matching_index(previous)
         return nil unless previous

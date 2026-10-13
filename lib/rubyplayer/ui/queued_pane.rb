@@ -29,6 +29,8 @@ module RubyPlayer
         @selection.selected_track
       end
 
+      def selected_tracks = @selection.selected_tracks
+
       def selected_track_index
         @selection.selected_index
       end
@@ -80,6 +82,7 @@ module RubyPlayer
       end
 
       def render(screen, x:, y:, w:, h:, theme:, active: false) # rubocop:disable Naming/MethodParameterName
+        ranged = @selection.range? ? @selection.selected_tracks : []
         display_rows(h).each_with_index do |row, index|
           case row[:type]
           when :header
@@ -89,9 +92,12 @@ module RubyPlayer
             screen.put(y + index, x, row[:text][0, w], fg: theme[:text_muted])
           else
             selected = active && row[:track].equal?(selected_track)
+            # Rows of a Shift+arrow range are shaded behind the cursor.
+            bg = theme[:surface_alt] if !selected && ranged.any? { |track| track.equal?(row[:track]) }
+            screen.put(y + index, x, ' ' * w, bg: bg) if bg
             ListRowRenderer.render_track(
               screen, row, x: x, y: y + index, w: w,
-                           selected:, bg: nil, theme: theme
+                           selected:, bg: bg, theme: theme
             )
           end
         end

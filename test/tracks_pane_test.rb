@@ -800,12 +800,17 @@ class TracksPaneTest < Minitest::Test
                  backgrounds
   end
 
-  # The Playback Queue view keeps single selection.
-  def test_queue_view_extends_like_plain_navigation
+  # The Playback Queue view ranges over queue positions.
+  def test_queue_view_extends_a_range_of_queue_positions
     @queue = @lib.tracks_under(@folder)
     @pane.show(RubyPlayer::UI::LibraryPane::Row.new(kind: :queue, depth: 0))
     @pane.handle_action(:extend_selection_down)
 
-    assert_equal [@queue[1].id], @pane.selected_tracks.map(&:id)
+    assert_equal @queue.first(2).map(&:id), @pane.selected_tracks.map(&:id)
+    assert_equal [0, 1], @pane.selected_track_indexes
+    assert_equal 'Playback Queue · 3 · 2 selected', @pane.title
+    @pane.handle_action(:nav_down)
+
+    assert_equal [@queue[2].id], @pane.selected_tracks.map(&:id)
   end
 end

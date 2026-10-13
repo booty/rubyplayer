@@ -39,7 +39,7 @@ module RubyPlayer
       # Page navigation gets several spellings per direction: pgup/pgdn for
       # full-size keyboards (Fn+arrows on Mac laptops), Option+arrows as in
       # macOS lists, and ctrl_u/ctrl_d and ctrl_b/ctrl_f for vim habits.
-      # Shift+arrows extend a selection in Tracks (below).
+      # Shift+arrows extend a selection in Tracks and Queued (below).
       'library' => {
         'up' => 'nav_up', 'down' => 'nav_down',
         'pgup' => 'nav_page_up', 'pgdn' => 'nav_page_down',
@@ -87,7 +87,9 @@ module RubyPlayer
         'pgup' => 'nav_page_up', 'pgdn' => 'nav_page_down',
         'alt_up' => 'nav_page_up', 'alt_down' => 'nav_page_down',
         'ctrl_u' => 'nav_page_up', 'ctrl_d' => 'nav_page_down',
-        'ctrl_b' => 'nav_page_up', 'ctrl_f' => 'nav_page_down'
+        'ctrl_b' => 'nav_page_up', 'ctrl_f' => 'nav_page_down',
+        'shift_up' => 'extend_selection_up', 'shift_down' => 'extend_selection_down',
+        'escape' => 'clear_selection'
       }
     }.freeze
 

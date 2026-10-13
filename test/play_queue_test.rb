@@ -129,4 +129,15 @@ class PlayQueueTest < Minitest::Test
 
     assert_equal [a, b], @q.items
   end
+
+  # A multi-track removal is one undo step.
+  def test_remove_indexes_removes_several_as_one_undo_step
+    @q.enqueue_end(%w[a b c d])
+    @q.remove_indexes([3, 1])
+
+    assert_equal %w[a c], @q.items
+    @q.undo
+
+    assert_equal %w[a b c d], @q.items
+  end
 end

@@ -134,6 +134,17 @@ module RubyPlayer
       end
     end
 
+    # Removes queue items by index in one undoable edit. The playing head
+    # cannot be pulled from under its open handle, so, as in #remove_at, it
+    # leaves through :skip.
+    def remove_indexes(indexes)
+      @mutex.synchronize do
+        skip_head = @playing && indexes.include?(0)
+        @queue.remove_indexes(skip_head ? indexes - [0] : indexes)
+        @commands << :skip if skip_head
+      end
+    end
+
     # Cascades a library deletion into the queue. If the currently-playing
     # track is among `ids`, its removal must go through :skip (like
     # #remove_at's index-0 case) so the decoder thread's finish_and_advance
