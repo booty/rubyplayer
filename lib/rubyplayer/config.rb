@@ -68,6 +68,9 @@ module RubyPlayer
       # regardless of the source image dimensions.
       'art_display_max_px' => 480,
       'art_corner_rows' => 8,
+      # Cell height / width, used to keep album art undistorted only when the
+      # terminal doesn't report its pixel size (Kitty and iTerm2 both do).
+      'art_cell_aspect' => 2.0,
       # Below this height the image is an unreadable smear; the region is
       # dropped instead.
       'art_min_rows' => 3,

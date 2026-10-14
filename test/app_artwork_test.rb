@@ -158,6 +158,22 @@ class AppArtworkTest < Minitest::Test
     assert_graphics_count(out, 'a=p,', 3)
   end
 
+  def test_art_placement_keeps_cover_aspect_using_configured_cell_shape
+    play_with_cover_art
+    @app.instance_variable_set(:@art_mode, :corner)
+    out = use_screen(rows: 40, cols: 138)
+
+    RubyPlayer::UI::KittyImage.stub(:tty_cell_size, nil) { @app.render_if_needed }
+
+    cols, rows = out.string[/\e_Ga=p,[^\e]*/].match(/c=(\d+),r=(\d+)/).captures.map(&:to_i)
+    region = art_region
+
+    # warrior.jpg is 4:3 and default cells are twice as tall as wide, so
+    # the 16x8 corner (square in pixels) letterboxes to 16x6.
+    assert_equal [16, 8], region.values_at(:w, :h)
+    assert_equal [16, 6], [cols, rows]
+  end
+
   private
 
   def start_paused_gbs_with_art

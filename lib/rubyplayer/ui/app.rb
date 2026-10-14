@@ -125,7 +125,7 @@ module RubyPlayer
         set_theme!(@config['ui', 'theme'])
         @artwork = Artwork.new(names: @config['ui', 'art_filenames'], archive_cache: @archive_cache)
         @art_supported = KittyImage.supported?(env)
-        @kitty_image = KittyImage.new(output: -> { @io_out })
+        @kitty_image = KittyImage.new(output: -> { @io_out }, cell_size: -> { art_cell_size })
         @art_mode = normalize_art_mode(@config['ui', 'art_mode'])
         @art_bytes = nil
         @art_region = nil
@@ -819,6 +819,12 @@ module RubyPlayer
         @art_dirty = false
         @kitty_image.render(@art_bytes, row: region[:y], col: region[:x],
                                         width: region[:w], height: region[:h], force: true)
+      end
+
+      # Read per placement rather than cached: a font-size change alters
+      # cell pixels and arrives only as a SIGWINCH-driven repaint.
+      def art_cell_size
+        KittyImage.tty_cell_size || [1, @config['ui', 'art_cell_aspect']]
       end
 
       def art_should_show?

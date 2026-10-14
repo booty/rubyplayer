@@ -124,4 +124,64 @@ class KittyImageTest < Minitest::Test
 
     refute_empty out.string
   end
+
+  def test_fits_wide_region_to_image_aspect_and_centers_horizontally
+    out = StringIO.new
+    image = Kitty.new(output: out, cell_size: -> { [10, 20] })
+
+    image.render(png_sized(480, 480), row: 2, col: 3, width: 40, height: 10)
+
+    # 400x200px region holds a 200x200px square: 20 cols x 10 rows.
+    assert_match(/a=p,i=\d+,p=\d+,c=20,r=10,C=1,q=2/, out.string)
+    assert_match(/\e\[3;14H/, out.string)
+  end
+
+  def test_fits_tall_region_to_image_aspect_and_centers_vertically
+    out = StringIO.new
+    image = Kitty.new(output: out, cell_size: -> { [10, 20] })
+
+    image.render(png_sized(480, 480), row: 0, col: 0, width: 10, height: 20)
+
+    assert_match(/c=10,r=5,/, out.string)
+    assert_match(/\e\[8;1H/, out.string)
+  end
+
+  def test_crops_source_to_rounded_cell_box_so_pixels_never_stretch
+    out = StringIO.new
+    image = Kitty.new(output: out, cell_size: -> { [10, 20] })
+
+    # 150x150px fits as 15 cols x 7.5 rows; 8 rows is a 150x160px box, so
+    # the source loses 30px of width instead of the image stretching 7%.
+    image.render(png_sized(480, 480), row: 0, col: 0, width: 15, height: 10)
+
+    assert_match(/a=p,i=\d+,p=\d+,x=15,y=0,w=450,h=480,c=15,r=8,C=1,q=2/, out.string)
+  end
+
+  def test_refits_when_cell_size_changes_at_same_region
+    cells = [10, 20]
+    out = StringIO.new
+    image = Kitty.new(output: out, cell_size: -> { cells })
+    png = png_sized(480, 480)
+    image.render(png, row: 0, col: 0, width: 40, height: 10)
+    cells = [20, 20]
+
+    image.render(png, row: 0, col: 0, width: 40, height: 10)
+
+    assert_match(/c=10,r=10,/, out.string)
+  end
+
+  def test_unknown_cell_size_fills_region
+    out = StringIO.new
+    image = Kitty.new(output: out, cell_size: -> {})
+
+    image.render(png_sized(480, 480), row: 0, col: 0, width: 40, height: 10)
+
+    assert_match(/c=40,r=10,/, out.string)
+  end
+
+  private
+
+  def png_sized(width, height)
+    ["\x89PNG\r\n\x1a\n".b, [13].pack('N'), 'IHDR', [width, height].pack('NN'), 'x' * 32].join.b
+  end
 end

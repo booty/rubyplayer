@@ -83,7 +83,8 @@ newer. Detection is automatic; older iTerm2 releases, multiplexers, and other
 terminals show an artwork placeholder while track information remains
 available. Press `V` to cycle placement through off, inset (bottom of the
 Library pane), pane (left of the Now Playing bar), and corner; the choice
-persists in configuration. Press `O` to open the now-playing view.
+persists in configuration. Press `O` to open the now-playing view. Artwork
+keeps its aspect ratio, centered within whatever space the placement leaves.
 
 Now Playing separates artist and album information from technical file details.
 Playback keys keep working while it is open, on any page: Space plays or
@@ -464,6 +465,7 @@ restart.
 | `config.ui.art_pane_width` | `30` | Retired (the Now Playing bar holds `pane` art); accepted so older configs load. |
 | `config.ui.art_display_max_px` | `480` | Longest emitted album-art side in pixels. |
 | `config.ui.art_corner_rows` | `8` | Album-art corner height in rows. |
+| `config.ui.art_cell_aspect` | `2.0` | Cell height/width ratio for undistorted art when the terminal doesn't report pixel sizes. |
 | `config.ui.art_min_rows` | `3` | Minimum usable album-art height in rows. |
 | `config.ui.art_inset_max_rows` | `12` | Maximum inset album-art height in rows. |
 | `config.ui.art_filenames` | `Artwork::DEFAULT_NAMES` | Folder-art basenames tried before image fallback. |
