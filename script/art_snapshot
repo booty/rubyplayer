@@ -1,0 +1,26 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Captures album art as a real terminal draws it and prints measurements.
+#
+#   script/art_snapshot kitty|iterm [--size 160x50] [--mode inset] [--cover 400x300] [--out tmp/visual]
+
+require 'json'
+require 'optparse'
+require_relative 'visual/snapshot'
+
+options = { size: [160, 50], mode: 'inset', cover: [400, 300], out: File.expand_path('../tmp/visual', __dir__) }
+OptionParser.new do |parser|
+  parser.banner = 'Usage: script/art_snapshot kitty|iterm [options]'
+  parser.on('--size COLSxROWS') { |value| options[:size] = value.split('x').map(&:to_i) }
+  parser.on('--mode MODE', 'inset, pane, or corner') { |value| options[:mode] = value }
+  parser.on('--cover WxH', 'synthetic cover pixel size') { |value| options[:cover] = value.split('x').map(&:to_i) }
+  parser.on('--out DIR') { |value| options[:out] = value }
+end.parse!
+abort 'Usage: script/art_snapshot kitty|iterm [options]' unless ARGV.size == 1
+
+cols, rows = options[:size]
+snapshot = Visual::Snapshot.new(terminal: ARGV.first, cols: cols, rows: rows, mode: options[:mode],
+                                cover: options[:cover], out_dir: options[:out]).run
+puts JSON.pretty_generate(png: snapshot.png_path, status: snapshot.status, measurement: snapshot.measurement,
+                          harness_log: snapshot.log.lines.map(&:chomp))

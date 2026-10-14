@@ -224,6 +224,20 @@ processing run in a background thread and notify the UI through EventBus.
 mise exec -- bundle exec rake test
 ```
 
+Album-art rendering is also checked in real terminals (macOS, with Kitty and
+iTerm2 installed and Screen Recording allowed for the calling terminal):
+
+```sh
+mise exec -- bundle exec rake visual                       # capture matrix, checks aspect and gaps
+script/art_snapshot kitty --size 160x50 --mode inset       # one capture, JSON measurements
+```
+
+Each capture runs the real app against a throwaway library with a synthetic
+magenta cover holding a cyan square; the square must stay square, and inset
+art must sit evenly between the pane borders. Captures land in `tmp/visual/`.
+Kitty windows open in the background; iTerm2 windows briefly take focus and
+ignore anything typed meanwhile.
+
 ## Architecture
 
 Visual walkthroughs (current implementation, with links to source):

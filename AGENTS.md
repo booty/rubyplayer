@@ -20,6 +20,7 @@ Work on git branch `main`
 mise exec -- bundle exec rake test                    # full suite
 mise exec -- bundle exec ruby -Itest test/foo_test.rb # one test file
 mise exec -- bundle exec rake compile                 # native audio shim + SPC, GBS, NSF, and HES players (C++)
+mise exec -- bundle exec rake visual                  # album art in real Kitty/iTerm2 windows; read tmp/visual/*.png
 ```
 
 Ruby comes from mise. Plain `bundle exec` may select wrong Ruby.

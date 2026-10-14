@@ -76,3 +76,10 @@ task compile: [NATIVE_DYLIB, SPC_DYLIB, GBS_DYLIB, NSF_DYLIB, HES_DYLIB]
 task test: :compile
 
 task default: :test
+
+desc 'Capture album art in real Kitty and iTerm2 windows and check aspect and gaps (macOS, opens windows)'
+task :visual do
+  require_relative 'script/visual/suite'
+  out_dir = File.expand_path('tmp/visual', __dir__)
+  abort "visual checks failed; captures in #{out_dir}" unless Visual::Suite.new(out_dir: out_dir).passed?
+end
