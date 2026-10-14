@@ -71,12 +71,16 @@ module RubyPlayer
       # Cell height / width, used to keep album art undistorted only when the
       # terminal doesn't report its pixel size (Kitty and iTerm2 both do).
       'art_cell_aspect' => 2.0,
+      # Target visual gap between album art and the pane border, in cell
+      # widths. Placement moves in whole cells, so each side gets the
+      # nearest achievable gap, with the sides matched to the bottom.
+      'art_gap_cells' => 1.0,
       # Below this height the image is an unreadable smear; the region is
       # dropped instead.
       'art_min_rows' => 3,
-      # Caps the inset height so a tall terminal doesn't let the art squeeze
-      # the library list into a sliver.
-      'art_inset_max_rows' => 12,
+      # Optional cap on inset height; 0 lets the art fill the Library pane's
+      # width. The list always keeps at least half the pane regardless.
+      'art_inset_max_rows' => 0,
       # Folder-art basenames tried in order (case-insensitive) before
       # falling back to any image in the track's folder.
       'art_filenames' => Artwork::DEFAULT_NAMES,

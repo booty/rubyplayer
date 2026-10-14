@@ -170,13 +170,74 @@ class KittyImageTest < Minitest::Test
     assert_match(/c=10,r=10,/, out.string)
   end
 
-  def test_unknown_cell_size_fills_region
+  def test_unknown_cell_size_fits_with_configured_aspect_in_whole_cells
     out = StringIO.new
-    image = Kitty.new(output: out, cell_size: -> {})
+    image = Kitty.new(output: out, cell_size: -> {}, cell_aspect: -> { 2.0 })
 
-    image.render(png_sized(480, 480), row: 0, col: 0, width: 40, height: 10)
+    image.render(png_sized(320, 240), row: 0, col: 0, width: 16, height: 8, gap: 1.0)
 
-    assert_match(/c=40,r=10,/, out.string)
+    # Guessed cell pixels can't drive sub-cell offsets, so the gap snaps to
+    # whole cells: one column each side, centered in the leftover rows.
+    assert_match(/c=14,r=5,/, out.string)
+    assert_match(/\e\[2;2H/, out.string)
+    refute_match(/[XY]=/, out.string)
+  end
+
+  def test_gap_matches_sides_to_the_bottom_in_whole_cells
+    out = StringIO.new
+    image = Kitty.new(output: out, cell_size: -> { [10, 23] })
+
+    # A one-cell-width gap is 10px. Below, the border's half row already
+    # leaves 11.5px, so no padding row; beside it a padding column makes
+    # 15px, nearer 11.5 than the 5px without one.
+    image.render(png_sized(480, 480), row: 0, col: 1, width: 47, height: 20, gap: 1.0, align: :bottom)
+
+    assert_match(/a=p,i=\d+,p=\d+,[^c]*c=45,r=20,C=1,q=2/, out.string)
+    assert_match(/\e\[1;3H/, out.string)
+    refute_match(/[XY]=/, out.string)
+  end
+
+  def test_bottom_alignment_puts_spare_rows_above_the_art_without_sub_cell_offsets
+    out = StringIO.new
+    image = Kitty.new(output: out, cell_size: -> { [10, 20] })
+
+    # Below, the border's half row is already the 10px gap; beside it, a
+    # padding column each side is the nearest match. 44 cols x 22 rows of
+    # a square leaves two spare rows, both above the art.
+    image.render(png_sized(480, 480), row: 3, col: 1, width: 46, height: 24, gap: 1.0, align: :bottom)
+
+    assert_match(/a=p,i=\d+,p=\d+,c=44,r=22,C=1,q=2/, out.string)
+    assert_match(/\e\[6;3H/, out.string)
+    refute_match(/[XY]=/, out.string)
+  end
+
+  def test_height_limited_art_keeps_spare_columns_even_so_sides_match
+    out = StringIO.new
+    image = Kitty.new(output: out, cell_size: -> { [7, 13] })
+
+    # 19 rows of 4:3 is 47.05 cols, leaving 3 spare: one side would get a
+    # whole extra cell. 48 cols splits the spare evenly; the crop absorbs it.
+    image.render(png_sized(400, 300), row: 20, col: 1, width: 50, height: 19, gap: 1.0, align: :bottom)
+
+    assert_match(/c=48,r=19,/, out.string)
+    assert_match(/\e\[21;3H/, out.string)
+  end
+
+  def test_rows_to_fill_sizes_a_region_the_art_spans_edge_to_edge
+    whole_cells = Kitty.new(output: StringIO.new, cell_size: -> { [10, 23] })
+    even = Kitty.new(output: StringIO.new, cell_size: -> { [10, 20] })
+    png = png_sized(480, 480)
+
+    assert_equal 20, whole_cells.rows_to_fill(png, width: 47, gap: 1.0)
+    assert_equal 22, even.rows_to_fill(png, width: 46, gap: 1.0)
+    assert_nil whole_cells.rows_to_fill("\x89PNG\r\n\x1a\nshort".b, width: 47, gap: 1.0)
+  end
+
+  def test_exposes_png_size_and_cell_size_for_layout
+    assert_equal [320, 240], Kitty.png_size(png_sized(320, 240))
+    assert_nil Kitty.png_size("\x89PNG\r\n\x1a\nshort".b)
+    assert_equal [10, 20], Kitty.new(output: StringIO.new, cell_size: -> { [10, 20] }).cell_size
+    assert_equal [1, 2.5], Kitty.new(output: StringIO.new, cell_size: -> {}, cell_aspect: -> { 2.5 }).cell_size
   end
 
   private

@@ -92,7 +92,9 @@ module RubyPlayer
         @extras = metadata[:extra] if metadata.key?(:extra)
       end
 
-      def render(screen, theme:, frame:, min_art_rows:)
+      # art: whether a cover is loaded; without one the art column is
+      # dropped rather than left as an empty square.
+      def render(screen, theme:, frame:, min_art_rows:, art: true)
         return if screen.rows < 5 || screen.cols < 8
         return render_spc_live(screen, theme: theme, frame: frame) if @page == :live && @live_kind == :spc
         return render_tracker_live(screen, theme: theme, frame: frame) if @page == :tracker
@@ -109,7 +111,7 @@ module RubyPlayer
         # One third of the modal width, at two terminal columns per art row.
         art_height = [width / 6, max_height - tech.size - frame_rows].min
         art_width = 0
-        if width >= ART_MIN_WIDTH && art_height >= min_art_rows
+        if art && width >= ART_MIN_WIDTH && art_height >= min_art_rows
           top_height = [top_height, art_height].max
           art_width = [top_height * 2, width / 3].min
         end

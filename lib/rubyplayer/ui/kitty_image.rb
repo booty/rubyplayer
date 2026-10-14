@@ -15,10 +15,7 @@ module RubyPlayer
         def supported?(env = ENV)
           return false if env['TMUX'] || env['STY']
 
-          kitty_window = !env['KITTY_WINDOW_ID'].to_s.empty?
-          return true if env['TERM'] == 'xterm-kitty' || env['TERM_PROGRAM'] == 'kitty' || kitty_window
-
-          iterm_supported?(env)
+          kitty?(env) || iterm_supported?(env)
         end
 
         # [width, height] of one cell in pixels, from the terminal's own
@@ -36,7 +33,19 @@ module RubyPlayer
           nil
         end
 
+        # Width and height from the PNG IHDR chunk, which always comes first.
+        def png_size(bytes)
+          return nil unless bytes.is_a?(String) && bytes.bytesize >= 24 && bytes.byteslice(12, 4) == 'IHDR'
+
+          dims = bytes.byteslice(16, 8).unpack('NN')
+          dims.all?(&:positive?) ? dims : nil
+        end
+
         private
+
+        def kitty?(env)
+          env['TERM'] == 'xterm-kitty' || env['TERM_PROGRAM'] == 'kitty' || !env['KITTY_WINDOW_ID'].to_s.empty?
+        end
 
         def iterm_supported?(env)
           version = if env['TERM_PROGRAM'] == 'iTerm.app'
@@ -58,26 +67,51 @@ module RubyPlayer
         end
       end
 
-      # cell_size returns [width, height] in pixels, or nil when unknown; the
-      # image then fills its whole region as before.
-      def initialize(output:, cell_size: -> {})
+      # cell_size returns the terminal's measured [width, height] in pixels,
+      # or nil when unknown. cell_aspect (height / width) is the guess used
+      # then; with neither, the image fills its whole region.
+      def initialize(output:, cell_size: -> {}, cell_aspect: -> {})
         @output = output
-        @cell_size = cell_size
+        @measured_cell_size = cell_size
+        @cell_aspect = cell_aspect
         @image_id = nil
         @placement_id = nil
         @bytes = nil
         @placement = nil
       end
 
-      # row and col are 0-based terminal cells. A bad region must not leave an
-      # old placement visible elsewhere on the screen.
-      def render(bytes, row:, col:, width:, height:, force: false)
+      # [width, height] of a cell in pixels, measured or guessed; nil when
+      # neither is available. Callers size regions to the art with it.
+      def cell_size
+        measured = @measured_cell_size.call
+        return measured if measured
+
+        aspect = @cell_aspect.call
+        [1, aspect] if aspect.is_a?(Numeric) && aspect.positive?
+      end
+
+      # Region rows that let bytes span width columns edge to edge (gap
+      # aside), or nil when the image or cell size is unknown.
+      def rows_to_fill(bytes, width:, gap:)
+        image = self.class.png_size(bytes)
+        cell = cell_size
+        return nil unless image && cell
+
+        _pad_cols, pad_rows, room_cols, = room(width, Float::INFINITY, gap, cell)
+        rows_for(room_cols, image, cell) + (2 * pad_rows)
+      end
+
+      # row and col are 0-based terminal cells. gap is the visual distance,
+      # in cell widths, between the art and a border line drawn through the
+      # neighboring cells; align :bottom puts spare rows above the art. A
+      # bad region must not leave an old placement visible elsewhere.
+      def render(bytes, row:, col:, width:, height:, gap: 0, align: :center, force: false)
         unless valid_region?(bytes, row, col, width, height)
           hide
           return nil
         end
 
-        placement = [row, col, width, height, @cell_size.call]
+        placement = [row, col, width, height, gap, align, cell_size]
         return nil if !force && bytes == @bytes && placement == @placement
 
         if bytes != @bytes
@@ -134,33 +168,75 @@ module RubyPlayer
 
       def place(placement)
         @placement = placement
-        row, col, width, height, cell = placement
-        fit = fit_box(width, height, cell)
-        if fit
-          cols, rows, source = fit
-          row += (height - rows) / 2
-          col += (width - cols) / 2
-          width = cols
-          height = rows
-        end
-        keys = "a=p,i=#{@image_id},p=#{@placement_id},#{source}c=#{width},r=#{height},C=1,q=2"
-        write("\e[s\e[#{row + 1};#{col + 1}H\e_G#{keys}\e\\\e[u")
+        row, col, width, height, gap, align, cell = placement
+        fit = fit_box(width, height, gap, align, cell)
+        keys = if fit
+                 cols, rows, row_shift, col_shift, source = fit
+                 row += row_shift
+                 col += col_shift
+                 "#{source}c=#{cols},r=#{rows}"
+               else
+                 "c=#{width},r=#{height}"
+               end
+        command = "\e_Ga=p,i=#{@image_id},p=#{@placement_id},#{keys},C=1,q=2\e\\"
+        write("\e[s\e[#{row + 1};#{col + 1}H#{command}\e[u")
       end
 
       # Kitty's c/r keys stretch the image over exactly that cell box in
       # iTerm2 and older Kitty, so the box itself must carry the aspect
       # ratio. Whole cells can't match it exactly; a source crop absorbs the
       # rounding (under half a cell) rather than distorting the picture.
-      def fit_box(width, height, cell)
-        image = image_size
+      # X/Y sub-cell offsets are deliberately unused: iTerm2 ignores them
+      # and Kitty shrinks the image by the offset instead of moving it.
+      def fit_box(width, height, gap, align, cell)
+        image = self.class.png_size(@bytes)
         return nil unless image && cell
 
         image_w, image_h = image
         cell_w, cell_h = cell
-        scale = [(width * cell_w).fdiv(image_w), (height * cell_h).fdiv(image_h)].min
-        cols = (image_w * scale / cell_w).round.clamp(1, width)
-        rows = (image_h * scale / cell_h).round.clamp(1, height)
-        [cols, rows, source_crop(image_w, image_h, (cols * cell_w).fdiv(rows * cell_h))]
+        _pad_cols, pad_rows, room_cols, room_rows = room(width, height, gap, cell)
+        cols = room_cols
+        rows = rows_for(cols, image, cell)
+        if rows > room_rows
+          rows = room_rows
+          cols = even_spare_cols((rows * cell_h * image_w).fdiv(image_h * cell_w), width, room_cols)
+        end
+        crop = source_crop(image_w, image_h, (cols * cell_w).fdiv(rows * cell_h))
+        row_shift = align == :bottom ? height - rows - pad_rows : (height - rows) / 2
+        [cols, rows, row_shift, (width - cols) / 2, crop]
+      end
+
+      # Padding per side in whole cells, plus the cells left inside it.
+      # Border lines run through the middle of their cells, so half a cell
+      # of gap already exists and only the remainder needs padding. Rows
+      # are the coarser step, so the bottom takes the nearest row count and
+      # the sides then take the column count that best matches it.
+      def room(width, height, gap, cell)
+        cell_w, cell_h = cell
+        target = gap * cell_w
+        if target.positive?
+          pad_rows = ([target - (cell_h / 2.0), 0].max / cell_h).round
+          bottom_gap = (pad_rows * cell_h) + (cell_h / 2.0)
+          pad_cols = ([bottom_gap - (cell_w / 2.0), 0].max / cell_w).round
+        else
+          pad_rows = pad_cols = 0
+        end
+        # Padding that would leave less than a cell is dropped, not honored.
+        pad_cols = 0 if width - (2 * pad_cols) < 1
+        pad_rows = 0 if height - (2 * pad_rows) < 1
+        [pad_cols, pad_rows, width - (2 * pad_cols), height - (2 * pad_rows)]
+      end
+
+      # Column count nearest ideal whose leftover splits evenly, so the
+      # side gaps match; an odd leftover puts a whole extra cell on one side.
+      def even_spare_cols(ideal, width, limit)
+        (1..limit).select { |cols| (width - cols).even? }.min_by { |cols| (cols - ideal).abs } ||
+          ideal.round.clamp(1, limit)
+      end
+
+      def rows_for(cols, image, cell)
+        image_w, image_h = image
+        (cols * cell[0] * image_h).fdiv(image_w * cell[1]).round.clamp(1, nil)
       end
 
       def source_crop(image_w, image_h, box_aspect)
@@ -169,14 +245,6 @@ module RubyPlayer
         return '' if crop_w == image_w && crop_h == image_h
 
         "x=#{(image_w - crop_w) / 2},y=#{(image_h - crop_h) / 2},w=#{crop_w},h=#{crop_h},"
-      end
-
-      # Width and height from the PNG IHDR chunk, which always comes first.
-      def image_size
-        return nil unless @bytes.bytesize >= 24 && @bytes.byteslice(12, 4) == 'IHDR'
-
-        dims = @bytes.byteslice(16, 8).unpack('NN')
-        dims.all?(&:positive?) ? dims : nil
       end
 
       def delete_placement

@@ -125,7 +125,10 @@ module RubyPlayer
         set_theme!(@config['ui', 'theme'])
         @artwork = Artwork.new(names: @config['ui', 'art_filenames'], archive_cache: @archive_cache)
         @art_supported = KittyImage.supported?(env)
-        @kitty_image = KittyImage.new(output: -> { @io_out }, cell_size: -> { art_cell_size })
+        # Cell pixels are read per placement rather than cached: a font-size
+        # change alters them and arrives only as a SIGWINCH-driven repaint.
+        @kitty_image = KittyImage.new(output: -> { @io_out }, cell_size: -> { KittyImage.tty_cell_size },
+                                      cell_aspect: -> { @config['ui', 'art_cell_aspect'] })
         @art_mode = normalize_art_mode(@config['ui', 'art_mode'])
         @art_bytes = nil
         @art_region = nil
@@ -817,14 +820,9 @@ module RubyPlayer
         end
 
         @art_dirty = false
-        @kitty_image.render(@art_bytes, row: region[:y], col: region[:x],
-                                        width: region[:w], height: region[:h], force: true)
-      end
-
-      # Read per placement rather than cached: a font-size change alters
-      # cell pixels and arrives only as a SIGWINCH-driven repaint.
-      def art_cell_size
-        KittyImage.tty_cell_size || [1, @config['ui', 'art_cell_aspect']]
+        @kitty_image.render(@art_bytes, row: region[:y], col: region[:x], width: region[:w],
+                                        height: region[:h], gap: @config['ui', 'art_gap_cells'],
+                                        align: region.fetch(:align, :center), force: true)
       end
 
       def art_should_show?
@@ -1444,9 +1442,13 @@ module RubyPlayer
         @tracks_pane.render(@screen, x: lib_w + 1, y: 1, w: tracks_w - 2,
                                      h: tracks_h - 2, active: @active_pane == :tracks, theme: @theme)
         if inset_h.positive?
-          @art_region = { x: 1, y: content_h - 1 - inset_h, w: lib_w - 2, h: inset_h }
+          # Bottom-aligned: the gap to the pane border below matches the
+          # sides, and any spare row sits between the list and the art.
+          @art_region = { x: 1, y: content_h - 1 - inset_h, w: lib_w - 2, h: inset_h, align: :bottom }
         elsif @art_mode == :corner
-          place_art_corner(usable, tracks_h)
+          # Unlike the inset, the corner has no spectrum fallback: without a
+          # cover it would only be an empty rectangle over the track list.
+          place_art_corner(usable, tracks_h) if art_loaded?
         end
         if placement == :column
           render_queued_pane(usable, 0, queued_cols, content_h)
@@ -1471,8 +1473,13 @@ module RubyPlayer
       # spans about half as many rows as columns — that ratio drives every
       # region height below.
       def art_inset_rows(lib_w, content_h)
-        rows = [(lib_w - 2) / 2, @config['ui', 'art_inset_max_rows'],
-                (content_h - 2) / 2].min # leave at least half the pane for the list
+        limit = (content_h - 2) / 2 # leave at least half the pane for the list
+        cap = @config['ui', 'art_inset_max_rows']
+        limit = [limit, cap].min if cap.positive?
+        # Before art arrives (rows_to_fill is nil) a square cover is
+        # assumed; the arrival repaints and resizes the inset.
+        fill = @kitty_image.rows_to_fill(@art_bytes, width: lib_w - 2, gap: @config['ui', 'art_gap_cells'])
+        rows = [fill || ((lib_w - 2) / 2), limit].min
         rows >= @config['ui', 'art_min_rows'] ? rows : 0
       end
 
@@ -1584,7 +1591,8 @@ module RubyPlayer
         when *@chip_pages.keys then update_chip_live(@now_playing_modal.live_kind)
         end
         @art_region = @now_playing_modal.render(@screen, theme: @theme, frame: method(:render_modal),
-                                                         min_art_rows: @config['ui', 'art_min_rows'])
+                                                         min_art_rows: @config['ui', 'art_min_rows'],
+                                                         art: art_loaded?)
         render_art_placeholder
       end
 
@@ -1603,27 +1611,19 @@ module RubyPlayer
                                        position_ms: @engine.state[:position_ms])
       end
 
-      # Fills the art region when there's no image to show. While audio is
-      # animating, that's a braille spectrum (pure cells — works in any
-      # terminal, so it's also the whole art experience outside iTerm2);
-      # otherwise a static placeholder line. Either way the region stays
-      # reserved so the layout doesn't jump between tracks with and without
-      # art.
+      # The inset is the one art region kept without a cover: while audio is
+      # animating it holds a braille spectrum (pure cells, so it works in any
+      # terminal); idle, it stays blank. Corner and modal regions only exist
+      # once art has loaded.
       def render_art_placeholder
         region = @art_region
-        return unless region
-        return if @art_bytes && @art_supported
+        return unless region && !art_loaded? && animating?
 
-        if animating?
-          BrailleMeter.render(@screen, @engine.levels, x: region[:x], y: region[:y],
-                                                       w: region[:w], h: region[:h], fg: @theme[:success])
-        else
-          text = @art_supported ? 'no artwork' : 'art requires Kitty or iTerm2 3.5.4'
-          row = region[:y] + (region[:h] / 2)
-          col = region[:x] + [(region[:w] - text.size) / 2, 0].max
-          @screen.put(row, col, text[0, region[:w]], fg: @theme[:text_muted])
-        end
+        BrailleMeter.render(@screen, @engine.levels, x: region[:x], y: region[:y],
+                                                     w: region[:w], h: region[:h], fg: @theme[:success])
       end
+
+      def art_loaded? = !!(@art_bytes && @art_supported)
 
       def show_selected_tracks
         row = @library_pane.selected

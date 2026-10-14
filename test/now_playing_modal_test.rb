@@ -177,6 +177,18 @@ class NowPlayingModalTest < Minitest::Test
     assert_nil art
   end
 
+  def test_no_art_column_without_art
+    modal = RubyPlayer::UI::NowPlayingModal.new(track, extras: {})
+    screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 24, cols: 100)
+    frame = ->(**_options, &draw) { draw.call(1, 1) }
+
+    art = modal.render(screen, theme: RubyPlayer::Theme::DEFAULT, frame: frame, min_art_rows: 3, art: false)
+    lines = screen.instance_variable_get(:@back).map { |row| row.map(&:ch).join }
+
+    assert_nil art
+    assert(lines.any? { |line| line[3..].start_with?('Artist: Artist') }, 'track text starts at the left edge')
+  end
+
   def test_small_terminals_keep_both_sections_inside_the_modal
     modal = RubyPlayer::UI::NowPlayingModal.new(track, extras: {
                                                   'track_total' => '12', 'codec' => 'mp3', 'bit_rate' => '128000',

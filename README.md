@@ -80,11 +80,14 @@ Select **Focus** in the Library pane, then choose a noise recipe in Tracks and p
 
 Inline artwork uses the Kitty graphics protocol in Kitty and iTerm2 3.5.4 or
 newer. Detection is automatic; older iTerm2 releases, multiplexers, and other
-terminals show an artwork placeholder while track information remains
-available. Press `V` to cycle placement through off, inset (bottom of the
-Library pane), pane (left of the Now Playing bar), and corner; the choice
-persists in configuration. Press `O` to open the now-playing view. Artwork
-keeps its aspect ratio, centered within whatever space the placement leaves.
+terminals show no images while track information remains available. Press `V`
+to cycle placement through off, inset (bottom of the Library pane), pane (left
+of the Now Playing bar), and corner; the choice persists in configuration.
+Press `O` to open the now-playing view. Artwork keeps its aspect ratio,
+centered within whatever space the placement leaves; the inset grows with the
+Library pane so the cover spans its width. Without a cover, only the inset
+keeps its space, filled with a braille spectrum while audio plays; the corner
+and the now-playing view's art column disappear.
 
 Now Playing separates artist and album information from technical file details.
 Playback keys keep working while it is open, on any page: Space plays or
@@ -465,9 +468,10 @@ restart.
 | `config.ui.art_pane_width` | `30` | Retired (the Now Playing bar holds `pane` art); accepted so older configs load. |
 | `config.ui.art_display_max_px` | `480` | Longest emitted album-art side in pixels. |
 | `config.ui.art_corner_rows` | `8` | Album-art corner height in rows. |
+| `config.ui.art_gap_cells` | `1.0` | Target visual gap between album art and the pane border, in cell widths; whole-cell placement gets each side as close as it can. |
 | `config.ui.art_cell_aspect` | `2.0` | Cell height/width ratio for undistorted art when the terminal doesn't report pixel sizes. |
 | `config.ui.art_min_rows` | `3` | Minimum usable album-art height in rows. |
-| `config.ui.art_inset_max_rows` | `12` | Maximum inset album-art height in rows. |
+| `config.ui.art_inset_max_rows` | `0` | Maximum inset album-art height in rows; `0` sizes the inset to fill the Library pane's width (the list keeps at least half the pane). |
 | `config.ui.art_filenames` | `Artwork::DEFAULT_NAMES` | Folder-art basenames tried before image fallback. |
 | `config.ui.art_accent` | `true` | Tint accent color toward current cover art. |
 | `config.ui.playlist_recent_count` | `3` | Recent playlists shown in add-to-playlist modal. |

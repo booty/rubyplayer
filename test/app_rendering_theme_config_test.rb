@@ -122,6 +122,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
   def test_corner_art_stays_out_of_queued_column
     select_library_kind(:folder)
     @app.instance_variable_set(:@art_mode, :corner)
+    @app.instance_variable_set(:@art_bytes, "\x89PNG\r\n\x1a\nart".b) # corner exists only with art
     use_screen(cols: 120)
 
     @app.render
@@ -661,6 +662,25 @@ class AppRenderingThemeConfigTest < Minitest::Test
     refute_includes back_buffer_text, 'no artwork'
     assert(back_buffer_text.each_char.any? { |c| (0x2800..0x28FF).cover?(c.ord) },
            'expected braille meter cells in the art region')
+  end
+
+  def test_idle_inset_without_art_stays_blank
+    @app.handle_key('v') # -> inset, nothing playing
+    use_screen
+    @app.render
+
+    refute_nil art_region
+    refute_includes back_buffer_text, 'no artwork'
+    refute_includes back_buffer_text, 'art requires'
+  end
+
+  def test_corner_without_art_reserves_nothing
+    start_normal_playback # @music has no cover image
+    @app.instance_variable_set(:@art_mode, :corner)
+    use_screen(rows: 40, cols: 138)
+    @app.render
+
+    assert_nil art_region
   end
 
   def test_album_art_tints_the_accent_color

@@ -169,9 +169,28 @@ class AppArtworkTest < Minitest::Test
     region = art_region
 
     # warrior.jpg is 4:3 and default cells are twice as tall as wide, so
-    # the 16x8 corner (square in pixels) letterboxes to 16x6.
+    # the 16x8 corner (square in pixels) less a column each side fits 14x5.
     assert_equal [16, 8], region.values_at(:w, :h)
-    assert_equal [16, 6], [cols, rows]
+    assert_equal [14, 5], [cols, rows]
+  end
+
+  def test_inset_grows_with_library_width_to_fill_it
+    play_with_cover_art
+    @app.instance_variable_set(:@art_mode, :inset)
+    out = use_screen(rows: 80, cols: 200)
+
+    RubyPlayer::UI::KittyImage.stub(:tty_cell_size, [10, 20]) { @app.render_if_needed }
+
+    cols, rows = out.string[/\e_Ga=p,[^\e]*/].match(/c=(\d+),r=(\d+)/).captures.map(&:to_i)
+    region = art_region
+
+    # No sub-cell offsets outside Kitty: one padding column each side,
+    # none below (the border's half row is the gap), and 4:3 at 10x20px
+    # cells needs 0.375 rows per column.
+    assert_equal region[:w] - 2, cols
+    assert_equal ((region[:w] - 2) * 0.375).round, rows
+    assert_equal rows, region[:h]
+    assert_operator region[:h], :>, 12, 'no longer held to the old 12-row cap'
   end
 
   private
