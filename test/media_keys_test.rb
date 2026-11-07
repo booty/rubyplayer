@@ -82,6 +82,28 @@ class MediaKeysTest < Minitest::Test
     assert_equal [1.0, 30.0, 30.1], pipe.lines.map { |line| JSON.parse(line)['position_s'] }
   end
 
+  def test_helper_commands_are_published_by_name
+    bus = RubyPlayer::EventBus.new
+    pipe = RecordingPipe.new(incoming: %W[next_track\n unknown\n pause\n])
+    media_keys = RubyPlayer::MediaKeys.new(event_bus: bus, helper_launcher: -> { pipe })
+    media_keys.start
+    media_keys.stop
+
+    assert_equal [[:media_command, { action: :next_track }], [:media_command, { action: :pause }]], bus.drain
+  end
+
+  def test_playback_state_is_sent_by_name
+    pipe = RecordingPipe.new
+    media_keys = RubyPlayer::MediaKeys.new(event_bus: RubyPlayer::EventBus.new, helper_launcher: -> { pipe })
+    media_keys.start
+
+    media_keys.update(playing_state)
+    media_keys.update(playing_state.merge(paused: true))
+    media_keys.update(playing_state.merge(playing: false))
+
+    assert_equal %w[playing paused stopped], pipe.lines.map { |line| JSON.parse(line)['state'] }
+  end
+
   private
 
   def playing_state(title: 'Test track', position_ms: 1_000)
@@ -93,11 +115,12 @@ class MediaKeysTest < Minitest::Test
   class RecordingPipe
     attr_reader :lines
 
-    def initialize
+    def initialize(incoming: [])
       @lines = []
+      @incoming = incoming
     end
 
-    def each_line = nil
+    def each_line(&) = @incoming.each(&)
     def puts(line) = @lines << line
     def flush = nil
     def close_write = nil

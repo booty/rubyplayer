@@ -7,8 +7,13 @@ module RubyPlayer
   # commands enter EventBus so only the UI thread dispatches playback actions.
   class MediaKeys
     HELPER_PATH = File.expand_path('native/RubyPlayerMedia.app/Contents/MacOS/RubyPlayerMedia', __dir__)
-    COMMANDS = { 1 => :toggle_play, 2 => :next_track, 3 => :previous_track,
-                 4 => :play, 5 => :pause }.freeze
+    # Line protocol, both directions by name so neither side depends on the
+    # other's ordering. The helper writes one command name per line
+    # (ext/rp_media_keys/rp_media_keys.m); unknown names are ignored.
+    COMMANDS = %i[toggle_play next_track previous_track play pause].to_h { |action| [action.to_s, action] }.freeze
+    PLAYING = 'playing'
+    PAUSED = 'paused'
+    STOPPED = 'stopped'
     # The helper is optional: losing its pipe must never take the player down.
     HELPER_GONE_ERRORS = [Errno::EPIPE, IOError].freeze
     # macOS advances elapsed time itself from the playback rate, so position
@@ -28,7 +33,7 @@ module RubyPlayer
       io = @io = @helper_launcher.call
       @reader_thread = Thread.new do
         io.each_line do |line|
-          action = COMMANDS[line.to_i]
+          action = COMMANDS[line.strip]
           @event_bus.publish(:media_command, action: action) if action
         end
       rescue *HELPER_GONE_ERRORS
@@ -41,11 +46,11 @@ module RubyPlayer
 
       track = state[:track]
       playback_state = if state[:playing] && !state[:paused]
-                         1
+                         PLAYING
                        elsif state[:paused]
-                         2
+                         PAUSED
                        else
-                         0
+                         STOPPED
                        end
       facts = { title: utf8(track&.title), artist: utf8(track&.artist), album: utf8(track&.album),
                 duration_s: (track&.display_duration_ms || 0) / MILLISECONDS_PER_SECOND, state: playback_state }
@@ -83,7 +88,7 @@ module RubyPlayer
     # Where macOS now shows the playhead: the last sent position, advanced
     # in real time only while the helper was told playback is running.
     def expected_position_s
-      return @sent_position_s unless @sent_facts[:state] == 1
+      return @sent_position_s unless @sent_facts[:state] == PLAYING
 
       @sent_position_s + (@clock.call - @sent_at_s)
     end
