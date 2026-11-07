@@ -55,7 +55,7 @@ To run directly from the checkout:
 mise exec -- bundle exec ruby --yjit bin/rubyplayer [path ...]
 ```
 
-`mise exec -- bundle exec rake compile` builds the native audio shim (`lib/rubyplayer/native/librp_audio.dylib`), the SPC player (`lib/rubyplayer/native/librp_spc.dylib`), and the GBS, NSF, and HES players (`lib/rubyplayer/native/librp_gbs.dylib`, `librp_nsf.dylib`, `librp_hes.dylib`; all C++, needing `clang++`). `mise exec -- bundle exec rake test` also builds them as a prerequisite. You can build them manually, but a fresh checkout will build them on first launch.
+`mise exec -- bundle exec rake compile` builds the native audio shim (`lib/rubyplayer/native/librp_audio.dylib`), the macOS Now Playing helper app (`lib/rubyplayer/native/RubyPlayerMedia.app`), the SPC player (`lib/rubyplayer/native/librp_spc.dylib`), and the GBS, NSF, and HES players (`lib/rubyplayer/native/librp_gbs.dylib`, `librp_nsf.dylib`, `librp_hes.dylib`; all C++, needing `clang++`). `mise exec -- bundle exec rake test` also builds them as a prerequisite. You can build them manually, but a fresh checkout will build them on first launch.
 
 Startup checks every supported runtime dependency before taking over the terminal. Missing Homebrew packages are reported together with one `brew install ...` command. If a bundled library is missing or cannot be loaded, RubyPlayer builds the affected library once and checks it again. This may delay that launch; normal launches do not run Rake or a compiler. If the build fails, its output and a manual retry command are shown. After changing native C/C++ sources, run `mise exec -- bundle exec rake compile` yourself; startup checks whether binaries load, not whether sources are newer.
 

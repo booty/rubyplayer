@@ -1,4 +1,5 @@
 .DS_Store
 lib/rubyplayer/native/*.dylib
+lib/rubyplayer/native/*.app/
 tmp/
 .worktrees/

@@ -82,6 +82,22 @@ class RuntimeDependenciesTest < Minitest::Test
     assert checker.verify!
   end
 
+  def test_media_helper_is_checked_as_an_executable
+    helper_path = File.expand_path('../lib/rubyplayer/native/RubyPlayerMedia.app/Contents/MacOS/' \
+                                   'RubyPlayerMedia', __dir__)
+    checker = RubyPlayer::RuntimeDependencies.new(
+      executable_probe: ->(_) { true },
+      library_probe: lambda { |paths|
+        raise 'helper cannot be dlopened' if paths == [helper_path]
+
+        true
+      },
+      file_probe: ->(_) { true }
+    )
+
+    assert checker.verify!
+  end
+
   def test_another_launch_can_finish_building_before_this_one_takes_the_build_lock
     audio_path = File.expand_path('../lib/rubyplayer/native/librp_audio.dylib', __dir__)
     audio_probes = 0

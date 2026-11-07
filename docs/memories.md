@@ -147,10 +147,12 @@ the authority for workflow and invariants.
   Native trackers count output frames since launch; the Tracker latches
   `position − now_sample` once per generation, so ms rounding cannot move
   notes between its 50 ms rows.
-- macOS media controls use `MPRemoteCommandCenter` in a small Objective-C
-  dylib. Native callbacks publish to `EventBus`; `App#handle_events` dispatches
-  them on the UI thread. Publish `MPNowPlayingInfoCenter.playbackState` whenever
-  playback changes, or macOS may stop delivering remote commands. The regular
+- macOS media controls use `MPRemoteCommandCenter` in a small bundled accessory
+  app. The Ruby CLI has no bundle identifier and could not become Now Playing;
+  the helper owns that identity and exchanges state and commands over pipes.
+  Commands enter `EventBus` for UI-thread dispatch. Publish
+  `MPNowPlayingInfoCenter.playbackState` whenever playback changes, or macOS
+  may stop delivering remote commands. The regular
   `mise exec -- bundle exec ...` can select `/usr/bin/bundle` when mise's
   managed bin directory follows `/usr/bin` in PATH. For a reliable test run
   in that environment, invoke `mise exec -- "$(mise which bundle)" exec

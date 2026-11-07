@@ -1,53 +1,69 @@
-#import <Foundation/Foundation.h>
+#import <AppKit/AppKit.h>
 #import <MediaPlayer/MediaPlayer.h>
 
-typedef void (*rp_media_command_callback)(int command);
-static rp_media_command_callback callback;
-static NSMutableArray *command_targets;
-
-void rp_media_keys_start(rp_media_command_callback handler) {
-    callback = handler;
-    MPRemoteCommandCenter *center = [MPRemoteCommandCenter sharedCommandCenter];
-    command_targets = [NSMutableArray new];
-    NSArray *commands = @[center.togglePlayPauseCommand, center.nextTrackCommand,
-                          center.previousTrackCommand, center.playCommand, center.pauseCommand];
-    for (NSUInteger index = 0; index < commands.count; index++) {
-        MPRemoteCommand *command = commands[index];
-        int command_id = (int)index + 1;
-        id target = [command addTargetWithHandler:^MPRemoteCommandHandlerStatus(MPRemoteCommandEvent *event) {
-            if (!callback) return MPRemoteCommandHandlerStatusCommandFailed;
-            callback(command_id);
-            return MPRemoteCommandHandlerStatusSuccess;
-        }];
-        [command_targets addObject:@[command, target]];
-        command.enabled = YES;
-    }
+static void publish_command(int command_id) {
+    printf("%d\n", command_id);
+    fflush(stdout);
 }
 
-void rp_media_keys_update(const char *title, const char *artist, const char *album,
-                          double duration_s, double position_s, int state) {
+static void update_playback(NSDictionary *state) {
     MPNowPlayingInfoCenter *center = [MPNowPlayingInfoCenter defaultCenter];
-    if (!title || state == 0) {
+    NSString *title = state[@"title"];
+    NSInteger playback_state = [state[@"state"] integerValue];
+    if (![title isKindOfClass:[NSString class]] || playback_state == 0) {
         center.nowPlayingInfo = nil;
         center.playbackState = MPNowPlayingPlaybackStateStopped;
         return;
     }
+
     NSMutableDictionary *info = [NSMutableDictionary dictionary];
-    info[MPMediaItemPropertyTitle] = [NSString stringWithUTF8String:title];
-    if (artist) info[MPMediaItemPropertyArtist] = [NSString stringWithUTF8String:artist];
-    if (album) info[MPMediaItemPropertyAlbumTitle] = [NSString stringWithUTF8String:album];
+    info[MPMediaItemPropertyTitle] = title;
+    if ([state[@"artist"] isKindOfClass:[NSString class]])
+        info[MPMediaItemPropertyArtist] = state[@"artist"];
+    if ([state[@"album"] isKindOfClass:[NSString class]])
+        info[MPMediaItemPropertyAlbumTitle] = state[@"album"];
+    double duration_s = [state[@"duration_s"] doubleValue];
     if (duration_s > 0) info[MPMediaItemPropertyPlaybackDuration] = @(duration_s);
-    info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = @(position_s);
-    info[MPNowPlayingInfoPropertyPlaybackRate] = @(state == 1 ? 1.0 : 0.0);
+    info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = state[@"position_s"] ?: @0;
+    info[MPNowPlayingInfoPropertyPlaybackRate] = @(playback_state == 1 ? 1.0 : 0.0);
     center.nowPlayingInfo = info;
-    center.playbackState = state == 1 ? MPNowPlayingPlaybackStatePlaying : MPNowPlayingPlaybackStatePaused;
+    center.playbackState = playback_state == 1 ? MPNowPlayingPlaybackStatePlaying : MPNowPlayingPlaybackStatePaused;
 }
 
-void rp_media_keys_stop(void) {
-    callback = NULL;
-    for (NSArray *pair in command_targets) [pair[0] removeTarget:pair[1]];
-    command_targets = nil;
-    MPNowPlayingInfoCenter *center = [MPNowPlayingInfoCenter defaultCenter];
-    center.nowPlayingInfo = nil;
-    center.playbackState = MPNowPlayingPlaybackStateStopped;
+int main(int argc, const char *argv[]) {
+    @autoreleasepool {
+        if (argc > 1 && strcmp(argv[1], "--probe") == 0) {
+            puts([NSBundle mainBundle].bundleIdentifier.UTF8String ?: "");
+            return 0;
+        }
+
+        [NSApplication sharedApplication];
+        [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+        MPRemoteCommandCenter *center = [MPRemoteCommandCenter sharedCommandCenter];
+        NSArray *commands = @[center.togglePlayPauseCommand, center.nextTrackCommand,
+                              center.previousTrackCommand, center.playCommand, center.pauseCommand];
+        for (NSUInteger index = 0; index < commands.count; index++) {
+            MPRemoteCommand *command = commands[index];
+            int command_id = (int)index + 1;
+            [command addTargetWithHandler:^MPRemoteCommandHandlerStatus(MPRemoteCommandEvent *event) {
+                publish_command(command_id);
+                return MPRemoteCommandHandlerStatusSuccess;
+            }];
+            command.enabled = YES;
+        }
+
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            char line[65536];
+            while (fgets(line, sizeof(line), stdin)) {
+                NSData *data = [[NSString stringWithUTF8String:line] dataUsingEncoding:NSUTF8StringEncoding];
+                NSDictionary *state = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+                if ([state isKindOfClass:[NSDictionary class]]) {
+                    dispatch_async(dispatch_get_main_queue(), ^{ update_playback(state); });
+                }
+            }
+            dispatch_async(dispatch_get_main_queue(), ^{ [NSApp terminate:nil]; });
+        });
+        [NSApp run];
+    }
+    return 0;
 }

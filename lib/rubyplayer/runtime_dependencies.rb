@@ -23,6 +23,8 @@ module RubyPlayer
       def path
         File.join(PROJECT_ROOT, target)
       end
+
+      def executable? = target.end_with?('/RubyPlayerMedia')
     end
 
     LIBRARIES = [
@@ -37,7 +39,7 @@ module RubyPlayer
     ].freeze
     NATIVE_LIBRARIES = [
       NativeLibrary.new('native audio shim', 'lib/rubyplayer/native/librp_audio.dylib'),
-      NativeLibrary.new('native media keys', 'lib/rubyplayer/native/librp_media_keys.dylib'),
+      NativeLibrary.new('native media keys', 'lib/rubyplayer/native/RubyPlayerMedia.app/Contents/MacOS/RubyPlayerMedia'),
       NativeLibrary.new('native SPC player', 'lib/rubyplayer/native/librp_spc.dylib'),
       NativeLibrary.new('native GBS player', 'lib/rubyplayer/native/librp_gbs.dylib'),
       NativeLibrary.new('native NSF player', 'lib/rubyplayer/native/librp_nsf.dylib'),
@@ -98,12 +100,16 @@ module RubyPlayer
 
     def missing_native_libraries
       NATIVE_LIBRARIES.reject do |spec|
-        available? { @file_probe.call(spec.path) && @library_probe.call([spec.path]) }
+        available? do
+          @file_probe.call(spec.path) &&
+            (spec.executable? ? @executable_probe.call(spec.path) : @library_probe.call([spec.path]))
+        end
       end
     end
 
     def build_native_libraries(targets)
-      system(RbConfig.ruby, '-S', 'bundle', 'exec', 'rake', '-B', *targets, chdir: PROJECT_ROOT)
+      bundle_bin = File.join(File.dirname(RbConfig.ruby), 'bundle')
+      system(RbConfig.ruby, bundle_bin, 'exec', RbConfig.ruby, '-S', 'rake', '-B', *targets, chdir: PROJECT_ROOT)
     end
 
     # Probe exceptions mean runtime cannot prove dependency usable. Treat them
@@ -115,6 +121,8 @@ module RubyPlayer
     end
 
     def executable_on_path?(name, path)
+      return File.file?(name) && File.executable?(name) if name.start_with?('/')
+
       path.split(File::PATH_SEPARATOR).any? do |directory|
         directory = '.' if directory.empty?
         candidate = File.join(directory, name)

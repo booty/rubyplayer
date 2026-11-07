@@ -1,35 +1,27 @@
 # frozen_string_literal: true
 
-require 'ffi'
+require 'json'
 
 module RubyPlayer
-  # Remote commands arrive on a native callback thread. The EventBus moves
-  # them to the UI thread, where the same dispatch path handles keyboard input.
+  # The bundled macOS helper owns the Now Playing app identity. Its stdout
+  # commands enter EventBus so only the UI thread dispatches playback actions.
   class MediaKeys
-    # C entry points for macOS's MediaPlayer remote command center.
-    module Native
-      extend FFI::Library
-
-      ffi_lib File.expand_path('native/librp_media_keys.dylib', __dir__)
-      callback :command_callback, [:int], :void
-      attach_function :rp_media_keys_start, [:command_callback], :void
-      attach_function :rp_media_keys_update, %i[string string string double double int], :void
-      attach_function :rp_media_keys_stop, [], :void
-    end
-
+    HELPER_PATH = File.expand_path('native/RubyPlayerMedia.app/Contents/MacOS/RubyPlayerMedia', __dir__)
     COMMANDS = { 1 => :toggle_play, 2 => :next_track, 3 => :previous_track,
                  4 => :play, 5 => :pause }.freeze
 
     def initialize(event_bus:)
       @event_bus = event_bus
-      @callback = proc do |command|
-        action = COMMANDS[command]
-        @event_bus.publish(:media_command, action: action) if action
-      end
     end
 
     def start
-      Native.rp_media_keys_start(@callback)
+      @io = IO.popen([HELPER_PATH], 'r+')
+      @reader_thread = Thread.new do
+        @io.each_line do |line|
+          action = COMMANDS[line.to_i]
+          @event_bus.publish(:media_command, action: action) if action
+        end
+      end
     end
 
     def update(state)
@@ -41,13 +33,23 @@ module RubyPlayer
                        else
                          0
                        end
-      Native.rp_media_keys_update(track&.title, track&.artist, track&.album,
-                                  (track&.display_duration_ms || 0) / 1000.0,
-                                  state[:position_ms] / 1000.0, playback_state)
+      payload = { title: track&.title, artist: track&.artist, album: track&.album,
+                  duration_s: (track&.display_duration_ms || 0) / 1000.0,
+                  position_s: state[:position_ms] / 1000.0, state: playback_state }
+      return if payload == @last_payload
+
+      @io.puts(JSON.generate(payload))
+      @io.flush
+      @last_payload = payload
     end
 
     def stop
-      Native.rp_media_keys_stop
+      return unless @io
+
+      @io.close_write
+      @reader_thread.join(2)
+      Process.kill('TERM', @io.pid) if @reader_thread.alive?
+      @io.close
     end
   end
 end

@@ -9,11 +9,13 @@ end
 
 NATIVE_DYLIB = 'lib/rubyplayer/native/librp_audio.dylib'
 
-MEDIA_KEYS_DYLIB = 'lib/rubyplayer/native/librp_media_keys.dylib'
-file MEDIA_KEYS_DYLIB => ['ext/rp_media_keys/rp_media_keys.m'] do
-  mkdir_p 'lib/rubyplayer/native'
-  sh "clang -O2 -fobjc-arc -dynamiclib -o #{MEDIA_KEYS_DYLIB} ext/rp_media_keys/rp_media_keys.m " \
-     '-framework Foundation -framework MediaPlayer'
+MEDIA_KEYS_APP_DIR = 'lib/rubyplayer/native/RubyPlayerMedia.app/Contents'
+MEDIA_KEYS_APP = "#{MEDIA_KEYS_APP_DIR}/MacOS/RubyPlayerMedia".freeze
+file MEDIA_KEYS_APP => ['ext/rp_media_keys/rp_media_keys.m', 'ext/rp_media_keys/Info.plist'] do
+  mkdir_p "#{MEDIA_KEYS_APP_DIR}/MacOS"
+  cp 'ext/rp_media_keys/Info.plist', "#{MEDIA_KEYS_APP_DIR}/Info.plist"
+  sh "clang -O2 -fobjc-arc -o #{MEDIA_KEYS_APP} ext/rp_media_keys/rp_media_keys.m " \
+     '-framework AppKit -framework Foundation -framework MediaPlayer'
 end
 
 file NATIVE_DYLIB => %w[ext/rp_audio/rp_audio.c ext/rp_audio/effects.c ext/rp_audio/effects.h
@@ -79,7 +81,7 @@ gme_player HES_DYLIB, hooks: 'ext/rp_hes/rp_hes_hooks.h', types: %w[HES],
                                 *%w[Hes_Apu Hes_Apu_Adpcm Hes_Cpu Hes_Emu].map { |name| "ext/gme/#{name}.cpp" }]
 
 desc 'Build the native audio shim and the SPC, GBS, NSF, and HES players'
-task compile: [NATIVE_DYLIB, MEDIA_KEYS_DYLIB, SPC_DYLIB, GBS_DYLIB, NSF_DYLIB, HES_DYLIB]
+task compile: [NATIVE_DYLIB, MEDIA_KEYS_APP, SPC_DYLIB, GBS_DYLIB, NSF_DYLIB, HES_DYLIB]
 
 task test: :compile
 
