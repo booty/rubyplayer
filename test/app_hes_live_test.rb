@@ -26,7 +26,7 @@ class AppHesLiveTest < Minitest::Test
   def test_hes_opens_on_a_full_width_live_page
     @app.handle_key('o')
 
-    assert_equal :live, @app.instance_variable_get(:@now_playing_page)
+    assert_equal :live, @app.now_playing_page
     text = wait_for_rows
 
     assert_includes text, 'HES LIVE'
@@ -39,15 +39,15 @@ class AppHesLiveTest < Minitest::Test
     wait_for_rows
     @app.handle_key('tab')
 
-    assert_equal :info, @app.instance_variable_get(:@now_playing_page)
+    assert_equal :info, @app.now_playing_page
     assert_includes rendered_text, 'Technical'
     @app.handle_key('tab')
 
     assert_includes wait_for_rows, 'HES LIVE'
     @app.handle_key('o')
 
-    assert_equal :tracker, @app.instance_variable_get(:@now_playing_page)
-    assert @app.show_now_playing
+    assert_equal :tracker, @app.now_playing_page
+    assert_predicate @app, :show_now_playing?
   end
 
   # Each PSG voice is its own libgme voice; a solo mutes the other five.
@@ -71,7 +71,7 @@ class AppHesLiveTest < Minitest::Test
   # A seek starts a new history generation: notes from before it go.
   def test_seeking_clears_old_history
     @app.handle_key('o')
-    tracker = @app.instance_variable_get(:@chip_pages).fetch(:hes).tracker
+    tracker = @app.now_playing.chip_pages.fetch(:hes).tracker
     wait_until(timeout: 3, interval: 0.01, failure_message: 'no HES notes recorded') do
       rendered_text
       note_samples(tracker).any?
@@ -96,7 +96,7 @@ class AppHesLiveTest < Minitest::Test
     wait_for_rows
     @app.handle_key('o')
 
-    assert_equal :tracker, @app.instance_variable_get(:@now_playing_page)
+    assert_equal :tracker, @app.now_playing_page
     text = nil
     wait_until(timeout: 3, interval: 0.01, failure_message: 'no HES tracker notes') do
       text = rendered_text
@@ -110,7 +110,7 @@ class AppHesLiveTest < Minitest::Test
     assert_in_delta @app.engine.state[:position_ms] / 1000.0, (minutes * 60) + seconds, 0.5
     @app.handle_key('o')
 
-    refute @app.show_now_playing
+    refute_predicate @app, :show_now_playing?
   end
 
   def test_hes_live_page_does_not_start_vgm_telemetry

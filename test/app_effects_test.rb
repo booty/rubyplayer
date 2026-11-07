@@ -98,7 +98,7 @@ class AppEffectsTest < Minitest::Test
     wait_until { @app.engine.state[:paused] }
     @app.handle_key('escape')
 
-    assert @app.show_now_playing
+    assert_predicate @app, :show_now_playing?
   end
 
   def test_panel_honors_remapped_playback_key

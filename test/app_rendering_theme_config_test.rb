@@ -609,7 +609,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
   def test_now_playing_needs_a_current_track
     @app.handle_key('o')
 
-    refute @app.show_now_playing
+    refute_predicate @app, :show_now_playing?
   end
 
   def test_now_playing_modal_shows_art_and_metadata
@@ -617,7 +617,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
     @app.handle_key('o')
     # Art is on the Info page; GBS tracks open on Live, which drops the art
     # until Info fetches it again.
-    if @app.instance_variable_get(:@now_playing_page) == :live
+    if @app.now_playing_page == :live
       @app.handle_key('tab')
       wait_until(timeout: 2, interval: 0.01, failure_message: 'art did not reload') do
         @app.handle_events
@@ -625,7 +625,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
       end
     end
 
-    assert @app.show_now_playing
+    assert_predicate @app, :show_now_playing?
 
     out = use_screen
     @app.render_if_needed
@@ -637,7 +637,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
 
     @app.handle_key('escape')
 
-    refute @app.show_now_playing
+    refute_predicate @app, :show_now_playing?
   end
 
   def test_now_playing_modal_captures_keys
@@ -649,7 +649,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
     assert_equal before, @app.active_pane
     @app.handle_key('o') # o toggles closed
 
-    refute @app.show_now_playing
+    refute_predicate @app, :show_now_playing?
   end
 
   def test_art_region_shows_spectrum_while_playing_without_art

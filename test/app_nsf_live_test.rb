@@ -22,7 +22,7 @@ class AppNsfLiveTest < Minitest::Test
   def test_nsf_opens_on_a_full_width_live_page
     @app.handle_key('o')
 
-    assert_equal :live, @app.instance_variable_get(:@now_playing_page)
+    assert_equal :live, @app.now_playing_page
     text = wait_for_rows
 
     assert_includes text, 'NSF LIVE'
@@ -34,7 +34,7 @@ class AppNsfLiveTest < Minitest::Test
     @app.handle_key('o')
     @app.handle_key('o')
 
-    refute @app.show_now_playing
+    refute_predicate @app, :show_now_playing?
   end
 
   # Channels mute by libgme voice: the VRC6 saw is voice 5 though listed last.

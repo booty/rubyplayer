@@ -22,7 +22,7 @@ class AppSpcLiveTest < Minitest::Test
   def test_spc_opens_on_a_full_width_live_page
     @app.handle_key('o')
 
-    assert_equal :live, @app.instance_variable_get(:@now_playing_page)
+    assert_equal :live, @app.now_playing_page
     text = rendered_text
 
     assert_includes text, 'S-DSP LIVE'
@@ -36,20 +36,20 @@ class AppSpcLiveTest < Minitest::Test
     @app.handle_key('o')
     @app.handle_key('o')
 
-    refute @app.show_now_playing
+    refute_predicate @app, :show_now_playing?
   end
 
   def test_tab_switches_between_info_and_live
     @app.handle_key('o')
     @app.handle_key('tab')
 
-    assert_equal :info, @app.instance_variable_get(:@now_playing_page)
+    assert_equal :info, @app.now_playing_page
     refute_includes rendered_text, 'S-DSP LIVE'
     assert_includes rendered_text, 'Technical'
 
     @app.handle_key('tab')
 
-    assert_equal :live, @app.instance_variable_get(:@now_playing_page)
+    assert_equal :live, @app.now_playing_page
     assert_includes rendered_text, 'S-DSP LIVE'
   end
 

@@ -12,13 +12,8 @@ require_relative '../media_keys'
 require_relative '../playback_engine'
 require_relative '../playback_state'
 require_relative '../vgm/telemetry'
-require_relative 'chip_live_view'
-require_relative 'spc_live_view'
-require_relative 'chip_tracker_view'
-require_relative '../gbs/tracker'
-require_relative '../nsf/tracker'
-require_relative '../hes/tracker'
 require_relative 'vgm_telemetry_controller'
+require_relative 'now_playing_controller'
 require_relative 'effects_modal'
 
 module RubyPlayer
@@ -39,22 +34,12 @@ module RubyPlayer
       # within a second without a stat on every loop pass.
       CONFIG_CHECK_INTERVAL_SECONDS = 1.0
       private_constant :SCAN_REFRESH_INTERVAL_SECONDS, :CONFIG_CHECK_INTERVAL_SECONDS
-      # One chip format's Now Playing pages, fed by native chip snapshots
-      # (GBS, NSF, HES): the Live page view, the format's ChipTracker that
-      # turns snapshots into their model, and the Tracker page view (shown
-      # where LIVE_PAGES lists it). One per format for the app's lifetime.
-      ChipPages = Data.define(:live_view, :tracker, :tracker_view) do
-        def self.for(source, tracker)
-          new(live_view: ChipLiveView.new(source: source), tracker: tracker,
-              tracker_view: ChipTrackerView.new(source: source))
-        end
-      end
 
       attr_reader :engine, :library_pane, :tracks_pane, :queued_pane, :active_pane, :input_buffer,
                   :pending_delete, :info_track, :show_help, :theme_id, :theme_picker,
                   :focus_player, :filter_buffer, :pending_missing_purge, :config_error,
-                  :art_mode, :show_now_playing, :playlist_modal, :name_prompt,
-                  :pending_playlist_delete
+                  :art_mode, :playlist_modal, :name_prompt,
+                  :pending_playlist_delete, :now_playing
 
       def initialize(argv: [], config_path: nil, data_path: nil, null_audio: false,
                      io_out: $stdout, focus_player: nil, media_keys: nil, env: ENV)
@@ -88,17 +73,14 @@ module RubyPlayer
         @vgm_telemetry = Vgm::Telemetry.new(
           event_bus: @bus, max_bytes: @config['ui', 'vgm_telemetry_max_bytes']
         )
-        @vgm_live_view = ChipLiveView.new
-        @vgm_tracker_view = ChipTrackerView.new
-        @spc_live_view = SpcLiveView.new
-        # GBS, NSF, and HES reuse the VGM page; their rows come from chip
-        # snapshots, each kind through its own tracker.
-        @chip_pages = { gbs: ChipPages.for('GBS', Gbs::Tracker.new), nsf: ChipPages.for('NSF', Nsf::Tracker.new),
-                        hes: ChipPages.for('HES', Hes::Tracker.new) }
         @vgm_telemetry_controller = VgmTelemetryController.new(
           engine: @engine, telemetry: @vgm_telemetry,
           refresh_hz: [@config['ui', 'vgm_telemetry_fps'], @config['ui', 'frame_fps']].min,
           clock: -> { monotonic_time }
+        )
+        @now_playing = NowPlayingController.new(
+          engine: @engine, library: @library, registry: @registry, archive_cache: @archive_cache,
+          event_bus: @bus, telemetry_controller: @vgm_telemetry_controller
         )
         @scanner = Scanner.new(library: @library, registry: @registry)
         @pool = ExtractorPool.new(library: @library, registry: @registry,
@@ -165,6 +147,8 @@ module RubyPlayer
       end
 
       def quit? = @quit
+      def show_now_playing? = @now_playing.shown?
+      def now_playing_page = @now_playing.page
 
       # Scans paths on a background thread; wait: true blocks (tests, startup
       # ordering). Progress arrives via the EventBus either way.
@@ -234,7 +218,7 @@ module RubyPlayer
         return handle_help_key(key) if @show_help
         return handle_info_key(key) if @info_track
         return handle_effects_key(key) if @effects_modal
-        return handle_now_playing_key(key) if @show_now_playing
+        return handle_now_playing_key(key) if @now_playing.shown?
         return handle_missing_purge_key(key) if @pending_missing_purge
         return handle_confirm_key(key) if @pending_delete
         # Before the Paste check: a paste mid-modal must not fall through to
@@ -322,12 +306,12 @@ module RubyPlayer
         elsif %w[escape enter].include?(key)
           close_now_playing
         elsif key == 'tab'
-          toggle_now_playing_info if @now_playing_modal&.live_pages&.any?
-        elsif @now_playing_modal&.live_page?
-          return invalidate_screen! if @now_playing_page == :live && handle_mute_key(key)
+          toggle_now_playing_info if @now_playing.live_pages?
+        elsif @now_playing.live_page?
+          return invalidate_screen! if @now_playing.page == :live && @now_playing.handle_mute_key(key)
 
           mapped_key = { 'pgup' => 'pageup', 'pgdn' => 'pagedown' }.fetch(key, key)
-          invalidate_screen! if @now_playing_modal&.handle_live_key(mapped_key)
+          invalidate_screen! if @now_playing.modal.handle_live_key(mapped_key)
         end
       end
 
@@ -342,55 +326,6 @@ module RubyPlayer
           invalidate_screen!
         end
       end
-
-      # Returns whether the key was consumed.
-      def handle_mute_key(key)
-        case @now_playing_modal&.live_kind
-        when :spc then handle_spc_mute_key(key)
-        when :vgm then handle_channel_mute_key(key, @vgm_live_view)
-        when *@chip_pages.keys then handle_channel_mute_key(key, @chip_pages.fetch(@now_playing_modal.live_kind).live_view)
-        else false
-        end
-      end
-
-      # Digits toggle S-DSP voices 0-7 (as numbered in the table); S solos the
-      # selected voice, or unmutes everything if it is already soloed.
-      # rubocop:disable Naming/PredicateMethod
-      def handle_spc_mute_key(key)
-        live = @engine.spc_live
-        return false unless live
-
-        mask = live.mute_mask
-        case key.to_s.downcase
-        when /\A[0-7]\z/ then @engine.mute_voices(mask ^ (1 << key.to_i))
-        when 's'
-          solo_mute_mask = 0xff & ~(1 << @spc_live_view.selected_voice)
-          @engine.mute_voices(mask == solo_mute_mask ? 0 : solo_mute_mask)
-        else return false
-        end
-        true
-      end
-
-      # M mutes or unmutes the selected channel's libgme voice (some VGM
-      # channels share one); S solos it, or unmutes everything if it is
-      # already soloed.
-      def handle_channel_mute_key(key, view)
-        mask = @engine.voice_mute_mask
-        selected_voice_bits = view.selected_mute_bits
-        return false unless mask && %w[m s].include?(key.to_s.downcase)
-        return true if selected_voice_bits.zero?
-
-        if key.to_s.casecmp?('m')
-          muted = mask.allbits?(selected_voice_bits)
-          @engine.mute_voices(muted ? mask & ~selected_voice_bits : mask | selected_voice_bits)
-        else
-          # Soloing mutes every other voice.
-          solo_mute_mask = view.all_mute_bits & ~selected_voice_bits
-          @engine.mute_voices(mask == solo_mute_mask ? 0 : solo_mute_mask)
-        end
-        true
-      end
-      # rubocop:enable Naming/PredicateMethod
 
       def handle_missing_purge_key(key)
         case key
@@ -664,98 +599,36 @@ module RubyPlayer
           @status_line.set_message('Nothing playing')
           return
         end
-        # prepare_now_playing owns telemetry visibility and art once shown.
-        @show_now_playing = true
-        prepare_now_playing(track)
+        @now_playing.open(track)
+        fetch_art(track) if @art_bytes.nil?
         invalidate_screen!
       end
 
-      # Which live page the current playback supports: VGM register telemetry,
-      # SPC DSP or GBS APU snapshots, or none.
-      def live_kind
-        return :vgm if @engine.vgm_telemetry_request
-
-        @engine.chip_live_kind
-      end
-
-      # A track change passes the page being shown, so a live page the new
-      # track also offers (such as the VGM Tracker) stays open. Anything else
-      # opens on the first live page, or Info when the kind has none (no live
-      # state, or a kind whose page does not exist yet).
-      def prepare_now_playing(track, preferred_page: nil)
-        kind = live_kind
-        pages = NowPlayingModal::LIVE_PAGES.fetch(kind, [])
-        live = pages.any?
-        @now_playing_page = pages.include?(preferred_page) ? preferred_page : pages.first || :info
-        @last_live_page = live ? @now_playing_page : nil
-        @vgm_live_view.update(nil)
-        @vgm_tracker_view.update(nil)
-        modal = NowPlayingModal.new(track, extras: @library.track_metadata_for(track.id),
-                                           page: @now_playing_page,
-                                           chip_view: @chip_pages[kind]&.live_view || @vgm_live_view,
-                                           live_available: live, live_kind: (kind if live), spc_view: @spc_live_view,
-                                           tracker_view: @chip_pages[kind]&.tracker_view || @vgm_tracker_view)
-        @now_playing_modal = modal
-        if @show_now_playing
-          @vgm_telemetry_controller.visible = kind == :vgm
-          fetch_art(track) if @art_bytes.nil?
-        end
-        # Existing library rows predate technical metadata. Probe once when
-        # opening, off the UI thread, rather than requiring a destructive rescan.
-        Thread.new do
-          path = @archive_cache.playable_path(track)
-          backend = @registry.backend_for(path)
-          next unless backend.technical_metadata?
-
-          metadata = backend.metadata(path, track.subtune_index)
-          @bus.publish(:now_playing_metadata_ready, modal: modal, metadata: metadata)
-        rescue StandardError
-          # File may have disappeared since playback began; retain cached facts.
-          nil
-        end
-      end
-
       def advance_now_playing_page
-        page = @now_playing_modal.next_live_page
+        page = @now_playing.modal.next_live_page
         return close_now_playing unless page
 
         change_now_playing_page(page)
       end
 
       def toggle_now_playing_info
-        if @now_playing_modal.live_page?
-          @last_live_page = @now_playing_page
-          page = :info
-        else
-          page = @last_live_page || @now_playing_modal.live_pages.first
-        end
-        change_now_playing_page(page)
+        @now_playing.toggle_info
+        after_now_playing_page_change
       end
 
       def change_now_playing_page(page)
-        was_live = @now_playing_modal.live_page?
-        # The modal normalizes pages its track does not offer; mirror its choice.
-        @now_playing_modal.page = page
-        @now_playing_page = @now_playing_modal.page
-        is_live = @now_playing_modal.live_page?
-        if is_live && !was_live
-          @vgm_live_view.update(nil)
-          @vgm_tracker_view.update(nil)
-          @vgm_telemetry_controller.visible = @now_playing_modal.live_kind == :vgm
-        elsif !is_live
-          @vgm_telemetry_controller.visible = false
-          fetch_art(@engine.state[:track]) if @art_bytes.nil?
-        end
+        @now_playing.change_page(page)
+        after_now_playing_page_change
+      end
+
+      # Leaving the live pages brings the art back into the modal.
+      def after_now_playing_page_change
+        fetch_art(@engine.state[:track]) if !@now_playing.live_page? && @art_bytes.nil?
         invalidate_screen!
       end
 
       def close_now_playing
-        @show_now_playing = false
-        @vgm_telemetry_controller.visible = false
-        @vgm_live_view.update(nil)
-        @vgm_tracker_view.update(nil)
-        @now_playing_page = :info
-        @last_live_page = nil
+        @now_playing.close
         track = @engine.state[:track]
         fetch_art(track) if track && @art_bytes.nil?
         invalidate_screen!
@@ -847,8 +720,8 @@ module RubyPlayer
       def art_should_show?
         return false unless @art_supported && @art_bytes
         return false if modal_active?
-        return false if @show_now_playing && @now_playing_modal&.live_page?
-        return true if @show_now_playing
+        return false if @now_playing.shown? && @now_playing.live_page?
+        return true if @now_playing.shown?
 
         @art_mode != :off
       end
@@ -1164,11 +1037,7 @@ module RubyPlayer
             handle_track_started(payload)
             refresh = true
           when :now_playing_metadata_ready
-            if @show_now_playing && payload[:modal].equal?(@now_playing_modal) &&
-               @now_playing_modal.matches?(@engine.state[:track])
-              @now_playing_modal.update(payload[:metadata])
-              invalidate_screen!
-            end
+            invalidate_screen! if @now_playing.accept_metadata(payload[:modal], payload[:metadata], @engine.state[:track])
           when :vgm_telemetry_ready
             handle_vgm_telemetry_event(payload)
           when :queue_changed, :track_ended then refresh = true
@@ -1197,7 +1066,7 @@ module RubyPlayer
           @queued_pane.reload!
         end
         state = @engine.state
-        close_now_playing if @show_now_playing && state[:track].nil?
+        close_now_playing if @now_playing.shown? && state[:track].nil?
         @media_keys.update(state)
       end
 
@@ -1221,13 +1090,11 @@ module RubyPlayer
 
       def handle_track_started(payload)
         track = payload[:track]
-        current = @engine.state[:track]&.id == track.id
-        set_art(nil) if current
-        if @show_now_playing && current
-          prepare_now_playing(track, preferred_page: @now_playing_page)
-        else
-          fetch_art(track)
+        if @engine.state[:track]&.id == track.id
+          set_art(nil)
+          @now_playing.follow(track) if @now_playing.shown?
         end
+        fetch_art(track)
       end
 
       def handle_scan_complete(payload)
@@ -1257,34 +1124,20 @@ module RubyPlayer
         snapshot = @vgm_telemetry.take_snapshot
         return unless @vgm_telemetry_controller.accept(snapshot)
 
-        @vgm_live_view.update(@vgm_telemetry_controller.snapshot)
-        @vgm_tracker_view.update(@vgm_telemetry_controller.snapshot)
+        @now_playing.show_vgm_snapshot(@vgm_telemetry_controller.snapshot)
         invalidate_screen!
       end
 
       def tick_vgm_telemetry
-        visible = @show_now_playing && @now_playing_modal&.live_page? && !modal_active? &&
-                  @now_playing_modal&.live_kind == :vgm
+        visible = @now_playing.vgm_visible? && !modal_active?
         # Visibility handling suspends the worker and clears the controller,
         # so stale rows must be dropped even on the hidden early return.
         @vgm_telemetry_controller.visible = visible
-        unless visible
-          clear_stale_vgm_views
-          return
+        if visible
+          @now_playing.vgm_live_view.paused = @engine.state[:paused]
+          @vgm_telemetry_controller.tick
         end
-
-        @vgm_live_view.paused = @engine.state[:paused]
-        @vgm_telemetry_controller.tick
-        clear_stale_vgm_views
-      end
-
-      def clear_stale_vgm_views
-        return unless @vgm_telemetry_controller.snapshot.nil?
-        return unless @vgm_live_view.snapshot || @vgm_tracker_view.snapshot
-
-        @vgm_live_view.update(nil)
-        @vgm_tracker_view.update(nil)
-        invalidate_screen!
+        invalidate_screen! if @now_playing.clear_stale_vgm_views
       end
 
       # Scan progress passes queued: false: scanning adds library rows but
@@ -1422,7 +1275,7 @@ module RubyPlayer
         @hotkey_line.render(@screen, row: status_row + 1, w: cols, pane: @active_pane, theme: @theme,
                                      toggle_states: { toggle_skip_disliked: playback_state[:skip_disliked],
                                                       toggle_group: @tracks_pane.grouped? })
-        render_now_playing_modal(playback_state) if @show_now_playing
+        render_now_playing_modal(playback_state) if @now_playing.shown?
         render_playlist_modal if @playlist_modal
         render_name_prompt_modal if @name_prompt
         render_playlist_delete_modal if @pending_playlist_delete
@@ -1607,42 +1460,21 @@ module RubyPlayer
       # modal can still cover it. While open it owns @art_region — the image
       # belongs inside the modal, not wherever the persistent mode had it —
       # which is also why modal_active? (the emit gate) deliberately
-      # excludes @show_now_playing. Live pages leave @art_region nil, hiding
+      # excludes an open Now Playing. Live pages leave @art_region nil, hiding
       # the placement while keeping the same track's upload available.
       def render_now_playing_modal(playback_state)
         track = playback_state[:track]
         # Track ended while the modal was open: nothing to show anymore.
-        return @show_now_playing = false unless track
+        return @now_playing.hide unless track
 
-        return unless @now_playing_modal&.matches?(track)
+        modal = @now_playing.modal
+        return unless modal&.matches?(track)
 
-        case @now_playing_modal.live_kind
-        when :spc
-          @now_playing_modal.update_spc(state: @engine.spc_live, position_ms: playback_state[:position_ms])
-        when :vgm
-          @now_playing_modal.update_chip(now_sample: @engine.vgm_telemetry_request&.sample,
-                                         mute_mask: @engine.voice_mute_mask)
-        when *@chip_pages.keys then update_chip_live(@now_playing_modal.live_kind, playback_state[:position_ms])
-        end
-        @art_region = @now_playing_modal.render(@screen, theme: @theme, frame: method(:render_modal),
-                                                         min_art_rows: @config['ui', 'art_min_rows'],
-                                                         art: art_loaded?)
+        @now_playing.update_live(playback_state[:position_ms])
+        @art_region = modal.render(@screen, theme: @theme, frame: method(:render_modal),
+                                            min_art_rows: @config['ui', 'art_min_rows'],
+                                            art: art_loaded?)
         render_art_placeholder(playback_state)
-      end
-
-      # Feeds every chip snapshot heard since the last frame to the page's
-      # tracker, even on the Info page, so note history stays continuous.
-      def update_chip_live(kind, position_ms)
-        live = @engine.chip_live
-        return unless live
-
-        page = @chip_pages.fetch(kind)
-        tracker = page.tracker
-        changed = tracker.update(live)
-        [page.live_view, page.tracker_view].each { |view| view.update(tracker.snapshot) if changed || view.snapshot.nil? }
-        page.live_view.paused = live.paused
-        @now_playing_modal.update_chip(now_sample: tracker.now_sample, mute_mask: live.mute_mask,
-                                       position_ms: position_ms)
       end
 
       # The inset is the one art region kept without a cover: while audio is

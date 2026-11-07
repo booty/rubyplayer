@@ -20,7 +20,7 @@ class AppGbsLiveTest < Minitest::Test
   def test_gbs_opens_on_a_full_width_live_page
     @app.handle_key('o')
 
-    assert_equal :live, @app.instance_variable_get(:@now_playing_page)
+    assert_equal :live, @app.now_playing_page
     text = wait_for_rows
 
     assert_includes text, 'GBS LIVE'
@@ -33,7 +33,7 @@ class AppGbsLiveTest < Minitest::Test
     wait_for_rows
     @app.handle_key('tab')
 
-    assert_equal :info, @app.instance_variable_get(:@now_playing_page)
+    assert_equal :info, @app.now_playing_page
     assert_includes rendered_text, 'Technical'
     @app.handle_key('tab')
 
@@ -44,7 +44,7 @@ class AppGbsLiveTest < Minitest::Test
     @app.handle_key('o')
     @app.handle_key('o')
 
-    refute @app.show_now_playing
+    refute_predicate @app, :show_now_playing?
   end
 
   # Each Game Boy channel is its own libgme voice.

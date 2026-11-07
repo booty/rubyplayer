@@ -16,9 +16,9 @@ class AppNowPlayingTest < Minitest::Test
     use_screen(rows: 40, cols: 110)
     @app.handle_key('o')
     # GBS opens on the live page; the refreshed details are on Info.
-    @app.handle_key('tab') if @app.instance_variable_get(:@now_playing_page) == :live
+    @app.handle_key('tab') if @app.now_playing_page == :live
 
-    assert_equal :info, @app.instance_variable_get(:@now_playing_page)
+    assert_equal :info, @app.now_playing_page
     wait_until do
       @app.handle_events
       @app.render
@@ -37,7 +37,7 @@ class AppNowPlayingTest < Minitest::Test
     @app.handle_key('space')
     wait_until { @app.engine.state[:paused] }
 
-    assert @app.instance_variable_get(:@show_now_playing)
+    assert_predicate @app, :show_now_playing?
     @app.handle_key('space')
     wait_until { !@app.engine.state[:paused] }
     @app.handle_key(']')
@@ -46,8 +46,8 @@ class AppNowPlayingTest < Minitest::Test
     wait_until { @app.engine.state[:track]&.id == tracks.last.id }
     @app.handle_events
 
-    assert @app.instance_variable_get(:@show_now_playing)
-    assert @app.instance_variable_get(:@now_playing_modal).matches?(tracks.last)
+    assert_predicate @app, :show_now_playing?
+    assert @app.now_playing.modal.matches?(tracks.last)
   end
 
   # Formats without a live page keep the plain Info popup.
@@ -64,7 +64,7 @@ class AppNowPlayingTest < Minitest::Test
     refute_includes back_buffer_text, 'Info / Live'
     @app.handle_key('tab')
 
-    assert_equal :info, @app.instance_variable_get(:@now_playing_page)
+    assert_equal :info, @app.now_playing_page
   end
 
   # SPC tracks scan as backend 'snes_spc'; the popup must still refresh their
@@ -83,7 +83,7 @@ class AppNowPlayingTest < Minitest::Test
     use_screen(rows: 40, cols: 110)
     @app.handle_key('o')
     # SPC opens on the live page; the refreshed details are on Info.
-    @app.handle_key('tab') if @app.instance_variable_get(:@now_playing_page) == :live
+    @app.handle_key('tab') if @app.now_playing_page == :live
 
     wait_until do
       @app.handle_events
@@ -124,7 +124,7 @@ class AppNowPlayingTest < Minitest::Test
     start_normal_playback
     @app.handle_events
     @app.handle_key('o')
-    old_modal = @app.instance_variable_get(:@now_playing_modal)
+    old_modal = @app.now_playing.modal
     old_id = @app.engine.state[:track].id
     next_track = @app.instance_variable_get(:@library).all_tracks.find { |track| track.id != old_id }
     @app.engine.enqueue_end([next_track])
@@ -140,7 +140,7 @@ class AppNowPlayingTest < Minitest::Test
     assert_includes back_buffer_text, @app.engine.state[:track].title[0, 20]
     refute_includes back_buffer_text, 'Stale metadata'
     # GBS tracks open on their live page; others on Info.
-    live = @app.instance_variable_get(:@now_playing_page) == :live
+    live = @app.now_playing_page == :live
 
     assert_includes back_buffer_text, live ? 'GBS LIVE' : 'Technical'
   end
@@ -172,7 +172,7 @@ class AppNowPlayingTest < Minitest::Test
     use_screen(rows: 32, cols: 110)
     @app.handle_key('o')
 
-    assert_equal :live, @app.instance_variable_get(:@now_playing_page)
+    assert_equal :live, @app.now_playing_page
     assert @app.instance_variable_get(:@vgm_telemetry_controller).instance_variable_get(:@visible)
     before_selection = @app.tracks_pane.selection
     @app.handle_key('down')
@@ -183,18 +183,18 @@ class AppNowPlayingTest < Minitest::Test
     wait_for_live_vgm_rows(controller)
     @app.handle_key('tab')
 
-    assert_equal :info, @app.instance_variable_get(:@now_playing_page)
+    assert_equal :info, @app.now_playing_page
     refute controller.instance_variable_get(:@visible)
     @app.handle_key('tab')
 
-    assert_equal :live, @app.instance_variable_get(:@now_playing_page)
+    assert_equal :live, @app.now_playing_page
     @app.handle_key('o')
 
-    assert_equal :tracker, @app.instance_variable_get(:@now_playing_page)
-    assert @app.show_now_playing
+    assert_equal :tracker, @app.now_playing_page
+    assert_predicate @app, :show_now_playing?
     @app.handle_key('o')
 
-    refute @app.show_now_playing
+    refute_predicate @app, :show_now_playing?
     refute controller.instance_variable_get(:@visible)
   end
 
@@ -202,22 +202,22 @@ class AppNowPlayingTest < Minitest::Test
     start_live_vgm_track
     @app.handle_key('o')
 
-    assert_equal :live, @app.instance_variable_get(:@now_playing_page)
+    assert_equal :live, @app.now_playing_page
     @app.handle_key('o')
 
-    assert_equal :tracker, @app.instance_variable_get(:@now_playing_page)
+    assert_equal :tracker, @app.now_playing_page
     @app.handle_key('tab')
 
-    assert_equal :info, @app.instance_variable_get(:@now_playing_page)
+    assert_equal :info, @app.now_playing_page
     @app.handle_key('tab')
 
-    assert_equal :tracker, @app.instance_variable_get(:@now_playing_page)
+    assert_equal :tracker, @app.now_playing_page
     @app.handle_key('o')
 
-    refute @app.show_now_playing
+    refute_predicate @app, :show_now_playing?
     @app.handle_key('o')
 
-    assert_equal :live, @app.instance_variable_get(:@now_playing_page)
+    assert_equal :live, @app.now_playing_page
   end
 
   def test_tracker_keeps_playback_keys_and_escape_closes_it
@@ -227,11 +227,11 @@ class AppNowPlayingTest < Minitest::Test
     @app.handle_key('space')
     wait_until { @app.engine.state[:paused] }
 
-    assert_equal :tracker, @app.instance_variable_get(:@now_playing_page)
-    assert @app.show_now_playing
+    assert_equal :tracker, @app.now_playing_page
+    assert_predicate @app, :show_now_playing?
     @app.handle_key('escape')
 
-    refute @app.show_now_playing
+    refute_predicate @app, :show_now_playing?
   end
 
   def test_switching_vgm_live_pages_keeps_telemetry_and_info_suspends_it
@@ -247,7 +247,7 @@ class AppNowPlayingTest < Minitest::Test
 
     assert controller.instance_variable_get(:@visible)
     assert_same snapshot, controller.snapshot
-    assert_same snapshot, @app.instance_variable_get(:@vgm_tracker_view).snapshot
+    assert_same snapshot, @app.now_playing.vgm_tracker_view.snapshot
     assert_includes back_buffer_text, 'VGM TRACKER'
     @app.handle_key('m')
 
@@ -256,10 +256,10 @@ class AppNowPlayingTest < Minitest::Test
     @app.send(:tick_vgm_telemetry)
 
     refute controller.instance_variable_get(:@visible)
-    assert_nil @app.instance_variable_get(:@vgm_tracker_view).snapshot
+    assert_nil @app.now_playing.vgm_tracker_view.snapshot
     @app.handle_key('tab')
 
-    assert_equal :tracker, @app.instance_variable_get(:@now_playing_page)
+    assert_equal :tracker, @app.now_playing_page
     assert controller.instance_variable_get(:@visible)
   end
 
@@ -272,11 +272,11 @@ class AppNowPlayingTest < Minitest::Test
     wait_until { @app.engine.state[:track]&.id == track.id }
     @app.handle_events
     use_screen(rows: 40, cols: 110)
-    @app.stub(:live_kind, :pageless) { @app.handle_key('o') }
+    @app.now_playing.stub(:live_kind, :pageless) { @app.handle_key('o') }
     @app.render
 
-    assert_equal :info, @app.instance_variable_get(:@now_playing_page)
-    assert_nil @app.instance_variable_get(:@last_live_page)
+    assert_equal :info, @app.now_playing_page
+    assert_nil @app.now_playing.instance_variable_get(:@last_live_page)
     refute_includes back_buffer_text, 'Info / Live'
     refute @app.instance_variable_get(:@vgm_telemetry_controller).instance_variable_get(:@visible)
   end
@@ -289,10 +289,10 @@ class AppNowPlayingTest < Minitest::Test
     @app.handle_events
     @app.handle_key('o')
 
-    assert_equal :info, @app.instance_variable_get(:@now_playing_page)
+    assert_equal :info, @app.now_playing_page
     @app.handle_key('o')
 
-    refute @app.show_now_playing
+    refute_predicate @app, :show_now_playing?
   end
 
   # The fixture declares a YM2612 and an SN76489: libgme voices FM 1-6,
@@ -325,7 +325,7 @@ class AppNowPlayingTest < Minitest::Test
     @app.handle_key('o')
     controller = @app.instance_variable_get(:@vgm_telemetry_controller)
     wait_for_live_vgm_rows(controller)
-    channels = @app.instance_variable_get(:@vgm_live_view)
+    channels = @app.now_playing.vgm_live_view
     previous_snapshot = channels.instance_variable_get(:@snapshot)
 
     refute_nil previous_snapshot
@@ -346,15 +346,15 @@ class AppNowPlayingTest < Minitest::Test
     controller = @app.instance_variable_get(:@vgm_telemetry_controller)
     wait_for_live_vgm_rows(controller)
     @app.handle_key('o')
-    old_snapshot = @app.instance_variable_get(:@vgm_tracker_view).snapshot
+    old_snapshot = @app.now_playing.vgm_tracker_view.snapshot
 
     refute_nil old_snapshot
     @app.engine.seek(500)
     wait_until { @app.engine.vgm_telemetry_request&.revision != old_snapshot.revision }
     @app.send(:tick_vgm_telemetry)
 
-    assert_nil @app.instance_variable_get(:@vgm_tracker_view).snapshot
-    assert_nil @app.instance_variable_get(:@vgm_live_view).snapshot
+    assert_nil @app.now_playing.vgm_tracker_view.snapshot
+    assert_nil @app.now_playing.vgm_live_view.snapshot
   end
 
   def test_vgm_tracker_suspends_when_another_modal_covers_it
@@ -368,7 +368,7 @@ class AppNowPlayingTest < Minitest::Test
     @app.send(:tick_vgm_telemetry)
 
     refute controller.instance_variable_get(:@visible)
-    assert_nil @app.instance_variable_get(:@vgm_tracker_view).snapshot
+    assert_nil @app.now_playing.vgm_tracker_view.snapshot
   end
 
   def test_track_change_from_vgm_tracker_rebuilds_the_first_live_page
@@ -386,10 +386,10 @@ class AppNowPlayingTest < Minitest::Test
     wait_until { @app.engine.state[:track]&.id == gbs.id }
     @app.handle_events
 
-    assert_equal :live, @app.instance_variable_get(:@now_playing_page)
-    assert_equal :gbs, @app.instance_variable_get(:@now_playing_modal).live_kind
+    assert_equal :live, @app.now_playing_page
+    assert_equal :gbs, @app.now_playing.modal.live_kind
     refute controller.accept(old_snapshot)
-    assert_nil @app.instance_variable_get(:@vgm_tracker_view).snapshot
+    assert_nil @app.now_playing.vgm_tracker_view.snapshot
   end
 
   def test_track_change_from_vgm_tracker_stays_on_tracker_for_another_vgm
@@ -405,9 +405,9 @@ class AppNowPlayingTest < Minitest::Test
     @app.engine.enqueue_now([library.find_track(next_id)])
     wait_until { @app.engine.state[:track]&.id == next_id }
     @app.handle_events
-    modal = @app.instance_variable_get(:@now_playing_modal)
+    modal = @app.now_playing.modal
 
-    assert_equal :tracker, @app.instance_variable_get(:@now_playing_page)
+    assert_equal :tracker, @app.now_playing_page
     assert_equal :tracker, modal.page
     @app.handle_key('tab')
     @app.handle_key('tab')
@@ -421,7 +421,7 @@ class AppNowPlayingTest < Minitest::Test
     @app.handle_key('o')
     controller = @app.instance_variable_get(:@vgm_telemetry_controller)
     wait_for_live_vgm_rows(controller)
-    channels = @app.instance_variable_get(:@vgm_live_view)
+    channels = @app.now_playing.vgm_live_view
 
     refute_nil channels.snapshot
     @app.instance_variable_set(:@config_error, 'configuration error')

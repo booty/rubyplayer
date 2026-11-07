@@ -129,7 +129,7 @@ class AppArtworkTest < Minitest::Test
     assert_graphics_count(out, 'a=t,', 1)
 
     @app.handle_key('o')
-    modal = @app.instance_variable_get(:@now_playing_modal)
+    modal = @app.now_playing.modal
 
     assert_equal [:live], modal.live_pages
     @app.render_if_needed
