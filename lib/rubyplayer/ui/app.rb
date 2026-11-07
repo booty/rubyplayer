@@ -9,6 +9,7 @@ require_relative '../audio_output'
 require_relative '../effects_rack'
 require_relative '../media_keys'
 require_relative '../playback_engine'
+require_relative '../playback_state'
 require_relative '../vgm/telemetry'
 require_relative 'chip_live_view'
 require_relative 'spc_live_view'
@@ -1207,9 +1208,9 @@ module RubyPlayer
       def handle_media_command(action)
         case action
         when :play
-          dispatch(:toggle_play) unless @engine.state[:playing] && !@engine.state[:paused]
+          dispatch(:toggle_play) unless PlaybackState.actively_playing?(@engine.state)
         when :pause
-          dispatch(:toggle_play) if @engine.state[:playing] && !@engine.state[:paused]
+          dispatch(:toggle_play) if PlaybackState.actively_playing?(@engine.state)
         when :toggle_play, :next_track, :previous_track
           dispatch(action)
         end
@@ -1378,7 +1379,7 @@ module RubyPlayer
 
       def animating?
         state = @engine.state
-        !!(state[:focus_sound] || (state[:playing] && !state[:paused]))
+        !!state[:focus_sound] || PlaybackState.actively_playing?(state)
       end
 
       # How long IO.select may block. While animating, the frame interval

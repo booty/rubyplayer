@@ -2,6 +2,7 @@
 
 require 'json'
 require_relative 'native_paths'
+require_relative 'playback_state'
 
 module RubyPlayer
   # The bundled macOS helper owns the Now Playing app identity. Its stdout
@@ -46,7 +47,7 @@ module RubyPlayer
       return unless @io
 
       track = state[:track]
-      playback_state = if state[:playing] && !state[:paused]
+      playback_state = if PlaybackState.actively_playing?(state)
                          PLAYING
                        elsif state[:paused]
                          PAUSED
