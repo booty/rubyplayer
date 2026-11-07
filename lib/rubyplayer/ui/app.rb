@@ -34,12 +34,33 @@ module RubyPlayer
       # within a second without a stat on every loop pass.
       CONFIG_CHECK_INTERVAL_SECONDS = 1.0
       private_constant :SCAN_REFRESH_INTERVAL_SECONDS, :CONFIG_CHECK_INTERVAL_SECONDS
+      # A modal that takes over input: the reader that is truthy while it is
+      # open, its key handler, and its renderer.
+      ModalLayer = Data.define(:open_reader, :key_handler, :renderer)
+      # Topmost first. The first open layer gets every key, and layers are
+      # drawn in reverse so it also paints on top; modal_active? is any of
+      # them. Now Playing is not a layer: it draws beneath them all and
+      # album art may show inside it. Delete confirms sit above the
+      # playlist prompts they can be raised from.
+      MODAL_LAYERS = [
+        ModalLayer.new(:config_error, :handle_config_error_key, :render_config_error_modal),
+        ModalLayer.new(:theme_picker, :handle_theme_picker_key, :render_theme_picker_modal),
+        ModalLayer.new(:effects_modal, :handle_effects_key, :render_effects_modal),
+        ModalLayer.new(:show_help, :handle_help_key, :render_help_modal),
+        ModalLayer.new(:info_track, :handle_info_key, :render_info_modal),
+        ModalLayer.new(:pending_missing_purge, :handle_missing_purge_key, :render_missing_purge_modal),
+        ModalLayer.new(:pending_delete, :handle_confirm_key, :render_confirm_modal),
+        ModalLayer.new(:pending_playlist_delete, :handle_playlist_delete_key, :render_playlist_delete_modal),
+        ModalLayer.new(:name_prompt, :handle_name_prompt_key, :render_name_prompt_modal),
+        ModalLayer.new(:playlist_modal, :handle_playlist_modal_key, :render_playlist_modal)
+      ].freeze
+      private_constant :ModalLayer, :MODAL_LAYERS
 
       attr_reader :engine, :library_pane, :tracks_pane, :queued_pane, :active_pane, :input_buffer,
                   :pending_delete, :info_track, :show_help, :theme_id, :theme_picker,
                   :focus_player, :filter_buffer, :pending_missing_purge, :config_error,
                   :playlist_modal, :name_prompt,
-                  :pending_playlist_delete, :now_playing, :art
+                  :pending_playlist_delete, :now_playing, :art, :effects_modal
 
       def initialize(argv: [], config_path: nil, data_path: nil, null_audio: false,
                      io_out: $stdout, focus_player: nil, media_keys: nil, env: ENV)
@@ -211,20 +232,11 @@ module RubyPlayer
         # wasted repaint per stray keypress is cheaper than auditing every
         # dispatch path for whether it changed something visible.
         @needs_render = true
-        return handle_config_error_key(key) if @config_error
-        return handle_theme_picker_key(key) if @theme_picker
-        return handle_help_key(key) if @show_help
-        return handle_info_key(key) if @info_track
-        return handle_effects_key(key) if @effects_modal
-        return handle_now_playing_key(key) if @now_playing.shown?
-        return handle_missing_purge_key(key) if @pending_missing_purge
-        return handle_confirm_key(key) if @pending_delete
         # Before the Paste check: a paste mid-modal must not fall through to
-        # the path-scanner. Delete confirm outranks the other playlist states,
-        # mirroring the existing confirm ordering.
-        return handle_playlist_delete_key(key) if @pending_playlist_delete
-        return handle_name_prompt_key(key) if @name_prompt
-        return handle_playlist_modal_key(key) if @playlist_modal
+        # the path-scanner.
+        layer = top_modal_layer
+        return send(layer.key_handler, key) if layer
+        return handle_now_playing_key(key) if @now_playing.shown?
         return handle_paste(key.text) if key.is_a?(KeyDecoder::Paste)
         return handle_filter_mode_key(key) if @filter_buffer
         return handle_input_mode_key(key) if @input_buffer
@@ -662,11 +674,9 @@ module RubyPlayer
         @art.mark_dirty!
       end
 
-      def modal_active?
-        !!(@pending_delete || @pending_missing_purge || @info_track ||
-           @show_help || @theme_picker || @config_error || @playlist_modal || @effects_modal ||
-           @name_prompt || @pending_playlist_delete)
-      end
+      def modal_active? = !top_modal_layer.nil?
+
+      def top_modal_layer = MODAL_LAYERS.find { |layer| public_send(layer.open_reader) }
 
       # Called after Screen#flush, which the art placement lives outside of.
       def emit_art = @art.emit(art_view_open?, settling: resize_settling?)
@@ -1210,16 +1220,7 @@ module RubyPlayer
                                      toggle_states: { toggle_skip_disliked: playback_state[:skip_disliked],
                                                       toggle_group: @tracks_pane.grouped? })
         render_now_playing_modal(playback_state) if @now_playing.shown?
-        render_playlist_modal if @playlist_modal
-        render_name_prompt_modal if @name_prompt
-        render_playlist_delete_modal if @pending_playlist_delete
-        render_confirm_modal if @pending_delete
-        render_missing_purge_modal if @pending_missing_purge
-        render_info_modal if @info_track
-        render_help_modal if @show_help
-        @effects_modal&.render(@screen, theme: @theme, frame: method(:render_modal))
-        render_theme_picker_modal if @theme_picker
-        render_config_error_modal if @config_error
+        MODAL_LAYERS.reverse_each { |layer| send(layer.renderer) if public_send(layer.open_reader) }
         @screen.flush
         emit_art
       end
@@ -1434,6 +1435,8 @@ module RubyPlayer
           remaining -= text.length
         end
       end
+
+      def render_effects_modal = @effects_modal.render(@screen, theme: @theme, frame: method(:render_modal))
 
       def render_playlist_modal
         @playlist_modal.render(@screen, theme: @theme, frame: method(:render_modal))
