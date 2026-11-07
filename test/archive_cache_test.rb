@@ -67,6 +67,16 @@ class ArchiveCacheTest < Minitest::Test
     assert_equal '/x/a.vgm', @cache.materialize('/x/a.vgm', nil)
   end
 
+  def test_playable_path_resolves_a_tracks_file
+    loose = RubyPlayer::Track.new(physical_path: '/x/a.vgm', archive_entry: '')
+    archived = RubyPlayer::Track.new(physical_path: File.join(FIXTURES, 'musha.zip'),
+                                     archive_entry: '10 - Round Clear.vgm')
+
+    assert_equal '/x/a.vgm', @cache.playable_path(loose)
+    assert_equal '10 - Round Clear.vgm', File.basename(@cache.playable_path(archived))
+    assert File.file?(@cache.playable_path(archived))
+  end
+
   def test_materialize_resolves_entry_to_extracted_file
     src = File.join(FIXTURES, 'musha.zip')
     path = @cache.materialize(src, '10 - Round Clear.vgm')

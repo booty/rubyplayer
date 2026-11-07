@@ -89,8 +89,11 @@ class PlaybackEngineVgmTest < Minitest::Test
       @calls = []
     end
 
-    def materialize(physical_path, entry)
-      @calls << [physical_path, entry]
+    # Mirrors ArchiveCache: loose files resolve to themselves untouched.
+    def playable_path(track)
+      return track.physical_path if track.archive_entry.to_s.empty?
+
+      @calls << [track.physical_path, track.archive_entry]
       @path
     end
   end

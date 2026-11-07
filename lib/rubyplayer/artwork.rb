@@ -105,10 +105,9 @@ module RubyPlayer
     # Scanning already extracted it, so this is normally a cache hit; it runs
     # off the UI thread regardless.
     def archived_art(track)
-      entry = track.archive_entry.to_s
-      return nil if entry.empty? || @archive_cache.nil?
+      return nil if track.archive_entry.to_s.empty? || @archive_cache.nil?
 
-      folder_art(File.dirname(@archive_cache.materialize(track.physical_path, entry)))
+      folder_art(File.dirname(@archive_cache.playable_path(track)))
     rescue ArchiveCache::ExtractError, SystemCallError
       nil
     end

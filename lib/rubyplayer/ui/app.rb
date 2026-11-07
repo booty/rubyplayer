@@ -695,11 +695,7 @@ module RubyPlayer
         # Existing library rows predate technical metadata. Probe once when
         # opening, off the UI thread, rather than requiring a destructive rescan.
         Thread.new do
-          path = if track.archive_entry.to_s.empty?
-                   track.physical_path
-                 else
-                   @archive_cache.materialize(track.physical_path, track.archive_entry)
-                 end
+          path = @archive_cache.playable_path(track)
           metadata = @registry.backend_for(path).metadata(path, track.subtune_index)
           @bus.publish(:now_playing_metadata_ready, modal: modal, metadata: metadata)
         rescue StandardError

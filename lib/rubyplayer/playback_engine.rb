@@ -454,10 +454,7 @@ module RubyPlayer
     end
 
     def playable_path(track)
-      entry = track.archive_entry.to_s
-      return track.physical_path if entry.empty? || @archive_cache.nil?
-
-      @archive_cache.materialize(track.physical_path, entry)
+      @archive_cache ? @archive_cache.playable_path(track) : track.physical_path
     end
 
     def play_head

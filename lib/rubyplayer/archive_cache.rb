@@ -47,6 +47,10 @@ module RubyPlayer
       dir
     end
 
+    # The real file a track's backend should open: its own path, or its entry
+    # extracted from the archive it lives in.
+    def playable_path(track) = materialize(track.physical_path, track.archive_entry)
+
     # Resolves a track's (physical_path, archive_entry) pair to a real file.
     # entry components that are themselves archives ("nested.zip/a.vgm") are
     # extracted along the way, so arbitrarily nested containers work.
