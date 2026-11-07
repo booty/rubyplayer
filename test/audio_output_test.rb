@@ -122,9 +122,10 @@ class AudioOutputTest < Minitest::Test
     assert_equal accepted, out.buffered_frames
 
     out.start
-    sleep 0.3
+    # The null device consumes in real time; wait for it rather than sleep.
+    wait_until(timeout: 2, failure_message: 'null device never consumed audio') { out.frames_played.positive? }
 
-    assert_operator out.frames_played, :>, 0 # null device consumes in real time
+    assert_operator out.frames_played, :>, 0
 
     out.paused = true
     out.flush
