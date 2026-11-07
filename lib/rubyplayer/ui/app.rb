@@ -879,15 +879,14 @@ module RubyPlayer
           before = @library_pane.selected
           @library_pane.handle_action(action)
           show_selected_tracks if @library_pane.selected != before
-        elsif @active_pane == :queued
-          outcome = @queued_pane.handle_action(action)
-          @status_line.set_message(outcome[1]) if outcome.is_a?(Array) && outcome[0] == :disabled
-        else
-          outcome = @tracks_pane.handle_action(action)
-          # Panes describe unavailable actions but do not own StatusLine;
-          # App remains sole coordinator for transient user-facing feedback.
-          @status_line.set_message(outcome[1]) if outcome.is_a?(Array) && outcome[0] == :disabled
+          return
         end
+
+        pane = @active_pane == :queued ? @queued_pane : @tracks_pane
+        outcome, reason = pane.handle_action(action)
+        # Panes describe unavailable actions but do not own StatusLine;
+        # App remains sole coordinator for transient user-facing feedback.
+        @status_line.set_message(reason) if outcome == :disabled
       end
 
       def enqueue(where)
