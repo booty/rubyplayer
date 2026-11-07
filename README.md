@@ -61,6 +61,7 @@ Select **Focus** in the Library pane, then choose a noise recipe in Tracks and p
 ### Navigation and views
 
 - Press `>` to skip to the next track. Press `<` to restart the current track; within its first three seconds, it plays the previous track from this session if available. With no previous track, it restarts the current track.
+- On macOS, the media play/pause, next, and previous buttons control RubyPlayer while it is the system's Now Playing app. Next and previous use the same behavior as `>` and `<`.
 - Footer commands occupy three stable rows: playback, queue actions, and controls for the focused pane. Keys and colons are bold; Ctrl combinations use caret notation (`^R` for Ctrl+R). Feature toggles show their current `(on)` or `(off)` state. Narrow terminals show shorter labels and fewer hints. Help stays at the right edge; press `?` for every available command.
 - Page Up/Page Down (Fn+↑/↓ on Mac laptops), Option+↑/↓, `Ctrl+B`/`Ctrl+F`, or `Ctrl+U`/`Ctrl+D` page through lists.
 - Press `/` to filter current Tracks view live across title, artist, album, composer, and path. Enter accepts filter, as do Up, Down, and Tab, which then move the selection or switch pane as usual; Escape restores previous filter. Each view remembers its filter, cursor, and scroll position.

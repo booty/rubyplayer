@@ -145,3 +145,10 @@ the authority for workflow and invariants.
   Native trackers count output frames since launch; the Tracker latches
   `position − now_sample` once per generation, so ms rounding cannot move
   notes between its 50 ms rows.
+- macOS media controls use `MPRemoteCommandCenter` in a small Objective-C
+  dylib. Native callbacks publish to `EventBus`; `App#handle_events` dispatches
+  them on the UI thread. Publish `MPNowPlayingInfoCenter.playbackState` whenever
+  playback changes, or macOS may stop delivering remote commands. The regular
+  `bundle exec` test command can fail in this Ruby 4.0.1 environment before
+  loading tests; running each test file directly with mise Ruby and
+  `-rminitest/mock` covers the suite while that toolchain issue persists.

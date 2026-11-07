@@ -7,6 +7,7 @@ require_relative '../../rubyplayer'
 require_relative '../duration_formatter'
 require_relative '../audio_output'
 require_relative '../effects_rack'
+require_relative '../media_keys'
 require_relative '../playback_engine'
 require_relative '../vgm/telemetry'
 require_relative 'chip_live_view'
@@ -166,6 +167,8 @@ module RubyPlayer
       end
 
       def run
+        @media_keys = MediaKeys.new(event_bus: @bus)
+        @media_keys.start
         setup_terminal
         trap('SIGWINCH') { @resized = true }
         scan_paths(@library.root_paths + @argv)
@@ -188,7 +191,8 @@ module RubyPlayer
         # Shutdown is best-effort across independent resources. Focus process
         # failure must not leave decoder thread, native audio, or SQLite open;
         # preserve the first error so callers still learn cleanup was incomplete.
-        [-> { @kitty_image.clear }, -> { @vgm_telemetry_controller.shutdown }, -> { @engine.shutdown },
+        [-> { @media_keys&.stop }, -> { @kitty_image.clear }, -> { @vgm_telemetry_controller.shutdown },
+         -> { @engine.shutdown },
          -> { @audio.close }, -> { @db.close }].each do |cleanup|
           cleanup.call
         rescue StandardError => e
@@ -1157,6 +1161,8 @@ module RubyPlayer
         @needs_render = true unless events.empty?
         events.each do |type, payload|
           case type
+          when :media_command
+            handle_media_command(payload[:action])
           when :track_started
             handle_track_started(payload)
             refresh = true
@@ -1194,6 +1200,18 @@ module RubyPlayer
           @queued_pane.reload!
         end
         close_now_playing if @show_now_playing && @engine.state[:track].nil?
+        @media_keys&.update(@engine.state)
+      end
+
+      def handle_media_command(action)
+        case action
+        when :play
+          dispatch(:toggle_play) unless @engine.state[:playing] && !@engine.state[:paused]
+        when :pause
+          dispatch(:toggle_play) if @engine.state[:playing] && !@engine.state[:paused]
+        when :toggle_play, :next_track, :previous_track
+          dispatch(action)
+        end
       end
 
       def handle_scan_progress(payload)

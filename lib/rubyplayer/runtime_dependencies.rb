@@ -37,6 +37,7 @@ module RubyPlayer
     ].freeze
     NATIVE_LIBRARIES = [
       NativeLibrary.new('native audio shim', 'lib/rubyplayer/native/librp_audio.dylib'),
+      NativeLibrary.new('native media keys', 'lib/rubyplayer/native/librp_media_keys.dylib'),
       NativeLibrary.new('native SPC player', 'lib/rubyplayer/native/librp_spc.dylib'),
       NativeLibrary.new('native GBS player', 'lib/rubyplayer/native/librp_gbs.dylib'),
       NativeLibrary.new('native NSF player', 'lib/rubyplayer/native/librp_nsf.dylib'),
