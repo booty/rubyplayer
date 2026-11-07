@@ -46,11 +46,47 @@ class MediaKeysTest < Minitest::Test
     assert_equal 'Bad � tag', JSON.parse(pipe.lines.last)['title']
   end
 
+  # Regression: position_s changed every frame, so the unchanged-payload
+  # check never matched and the helper got ~30 JSON lines a second while
+  # animating. macOS extrapolates elapsed time from the playback rate, so
+  # steady playback needs no position updates.
+  def test_steady_playback_sends_no_position_updates
+    pipe = RecordingPipe.new
+    now_s = 100.0
+    media_keys = RubyPlayer::MediaKeys.new(event_bus: RubyPlayer::EventBus.new, helper_launcher: -> { pipe },
+                                           clock: -> { now_s })
+    media_keys.start
+
+    media_keys.update(playing_state(position_ms: 1_000))
+    now_s += 0.5
+    media_keys.update(playing_state(position_ms: 1_500))
+    now_s += 0.5
+    media_keys.update(playing_state(position_ms: 2_000))
+
+    assert_equal 1, pipe.lines.size
+  end
+
+  def test_seek_and_pause_resend_position
+    pipe = RecordingPipe.new
+    now_s = 100.0
+    media_keys = RubyPlayer::MediaKeys.new(event_bus: RubyPlayer::EventBus.new, helper_launcher: -> { pipe },
+                                           clock: -> { now_s })
+    media_keys.start
+
+    media_keys.update(playing_state(position_ms: 1_000))
+    now_s += 0.1
+    media_keys.update(playing_state(position_ms: 30_000))
+    now_s += 0.1
+    media_keys.update(playing_state(position_ms: 30_100).merge(paused: true))
+
+    assert_equal [1.0, 30.0, 30.1], pipe.lines.map { |line| JSON.parse(line)['position_s'] }
+  end
+
   private
 
-  def playing_state(title: 'Test track')
+  def playing_state(title: 'Test track', position_ms: 1_000)
     track = RubyPlayer::Track.new(title: title, artist: 'Test artist', duration_ms: 60_000)
-    { track: track, playing: true, paused: false, position_ms: 1_000 }
+    { track: track, playing: true, paused: false, position_ms: position_ms }
   end
 
   # Stands in for the helper's stdin/stdout pipe.

@@ -11,10 +11,17 @@ module RubyPlayer
                  4 => :play, 5 => :pause }.freeze
     # The helper is optional: losing its pipe must never take the player down.
     HELPER_GONE_ERRORS = [Errno::EPIPE, IOError].freeze
+    # macOS advances elapsed time itself from the playback rate, so position
+    # is resent only when it strays from that estimate: a seek, or drift.
+    # Above the one-second publish cadence of engine positions.
+    POSITION_DRIFT_TOLERANCE_S = 1.5
+    MILLISECONDS_PER_SECOND = 1000.0
 
-    def initialize(event_bus:, helper_launcher: -> { IO.popen([HELPER_PATH], 'r+') })
+    def initialize(event_bus:, helper_launcher: -> { IO.popen([HELPER_PATH], 'r+') },
+                   clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) })
       @event_bus = event_bus
       @helper_launcher = helper_launcher
+      @clock = clock
     end
 
     def start
@@ -40,14 +47,16 @@ module RubyPlayer
                        else
                          0
                        end
-      payload = { title: utf8(track&.title), artist: utf8(track&.artist), album: utf8(track&.album),
-                  duration_s: (track&.display_duration_ms || 0) / 1000.0,
-                  position_s: state[:position_ms] / 1000.0, state: playback_state }
-      return if payload == @last_payload
+      facts = { title: utf8(track&.title), artist: utf8(track&.artist), album: utf8(track&.album),
+                duration_s: (track&.display_duration_ms || 0) / MILLISECONDS_PER_SECOND, state: playback_state }
+      position_s = state[:position_ms] / MILLISECONDS_PER_SECOND
+      return if facts == @sent_facts && (position_s - expected_position_s).abs <= POSITION_DRIFT_TOLERANCE_S
 
-      @io.puts(JSON.generate(payload))
+      @io.puts(JSON.generate(facts.merge(position_s: position_s)))
       @io.flush
-      @last_payload = payload
+      @sent_facts = facts
+      @sent_position_s = position_s
+      @sent_at_s = @clock.call
     rescue *HELPER_GONE_ERRORS
       stop
     end
@@ -70,6 +79,14 @@ module RubyPlayer
     end
 
     private
+
+    # Where macOS now shows the playhead: the last sent position, advanced
+    # in real time only while the helper was told playback is running.
+    def expected_position_s
+      return @sent_position_s unless @sent_facts[:state] == 1
+
+      @sent_position_s + (@clock.call - @sent_at_s)
+    end
 
     # JSON.generate raises on invalid UTF-8, and tags read from files can
     # carry stray bytes. Binary strings are assumed to be mislabeled UTF-8.
