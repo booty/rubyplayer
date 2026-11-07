@@ -66,10 +66,10 @@ class AppScanningTest < Minitest::Test
   def test_scan_progress_refresh_is_throttled_and_deferred
     @app.handle_events
     refreshes = 0
-    original = @app.method(:refresh_scan_panes)
-    @app.define_singleton_method(:refresh_scan_panes) do
-      refreshes += 1
-      original.call
+    original = @app.method(:refresh_panes)
+    @app.define_singleton_method(:refresh_panes) do |queued: true|
+      refreshes += 1 unless queued
+      original.call(queued: queued)
     end
     bus = @app.instance_variable_get(:@bus)
     @app.instance_variable_set(

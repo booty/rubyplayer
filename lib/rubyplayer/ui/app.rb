@@ -1247,7 +1247,7 @@ module RubyPlayer
 
         @scan_refresh_pending = false
         @last_scan_refresh_at = now
-        refresh_scan_panes
+        refresh_panes(queued: false)
         :refreshed
       end
 
@@ -1289,7 +1289,9 @@ module RubyPlayer
         invalidate_screen!
       end
 
-      def refresh_panes
+      # Scan progress passes queued: false: scanning adds library rows but
+      # cannot change the queue, and Queued reloads its history from SQLite.
+      def refresh_panes(queued: true)
         @folder_stats = nil
         # Callers outside the key/event paths (scan_paths wait: true) reach
         # here too — pane contents changed, so the next frame must paint.
@@ -1300,14 +1302,7 @@ module RubyPlayer
         # correct here. `show` is reserved for actual selection changes (see
         # route_to_pane/select_queue) where resetting the cursor is desired.
         @tracks_pane.reload!
-        @queued_pane.reload!
-      end
-
-      def refresh_scan_panes
-        @folder_stats = nil
-        @needs_render = true
-        @library_pane.rebuild!
-        @tracks_pane.reload!
+        @queued_pane.reload! if queued
       end
 
       def reload_config_if_changed
