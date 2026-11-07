@@ -195,6 +195,11 @@ module RubyPlayer
     def validate_audio_values!(data)
       sample_rate = dig(data, 'audio.sample_rate')
       raise SettingError, 'audio.sample_rate must be "auto" or a positive Integer' unless sample_rate == 'auto' || (sample_rate.is_a?(Integer) && sample_rate.positive?)
+
+      %w[audio.effect_default_percent audio.effect_step_percent].each do |setting|
+        percent = dig(data, setting)
+        raise SettingError, "#{setting} must be an Integer from 1 to 100" unless percent.is_a?(Integer) && percent.between?(1, 100)
+      end
     end
 
     def validate_theme_value!(data)

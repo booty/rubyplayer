@@ -110,4 +110,33 @@ class AppEffectsTest < Minitest::Test
 
     assert @app.instance_variable_get(:@effects_modal)
   end
+
+  # Regression: the modal closed on a hardcoded 'd' too, so rebinding
+  # show_effects left the old key still closing the panel.
+  def test_panel_closes_only_on_the_bound_effects_key
+    @app.instance_variable_set(:@keymap, RubyPlayer::Keymap.new('global' => { 'e' => 'show_effects', 'd' => nil }))
+    @app.handle_key('e')
+    @app.handle_key('d')
+
+    assert @app.instance_variable_get(:@effects_modal)
+
+    @app.handle_key('e')
+
+    assert_nil @app.instance_variable_get(:@effects_modal)
+  end
+
+  def test_effect_step_and_starting_level_come_from_config
+    File.write(File.join(@tmp, 'config.rb'), <<~RUBY)
+      RubyPlayer.configure do |config|
+        config.audio.effect_default_percent = 30
+        config.audio.effect_step_percent = 10
+      end
+    RUBY
+    @app.shutdown
+    @app = make_app
+    @app.handle_key('d')
+    @app.handle_key('right')
+
+    assert_equal 40, @app.instance_variable_get(:@effects_rack).effects[0].intensity_percent
+  end
 end

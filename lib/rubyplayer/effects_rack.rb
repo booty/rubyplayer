@@ -4,13 +4,20 @@ module RubyPlayer
   # Session-only settings; native audio output owns all signal processing.
   class EffectsRack
     Effect = Struct.new(:name, :enabled, :intensity_percent, keyword_init: true)
+    # The native control treats 0 as "off", so an enabled effect keeps at
+    # least 1 percent; on/off is the separate enabled flag.
+    MIN_INTENSITY_PERCENT = 1
+    MAX_INTENSITY_PERCENT = 100
 
     attr_reader :effects
 
-    def initialize(audio:)
+    def initialize(audio:, default_intensity_percent: 50, step_percent: 5)
       @audio = audio
+      @step_percent = step_percent
       # Names come from the native rack, so an effect's index is its id.
-      @effects = audio.effect_names.map { |name| Effect.new(name: name, enabled: false, intensity_percent: 50) }
+      @effects = audio.effect_names.map do |name|
+        Effect.new(name: name, enabled: false, intensity_percent: clamp_intensity(default_intensity_percent))
+      end
       @bypassed = false
     end
 
@@ -22,9 +29,12 @@ module RubyPlayer
       @audio.set_effect(index, effect.enabled ? effect.intensity_percent : 0, reset: !effect.enabled)
     end
 
+    def increase(index) = adjust(index, @step_percent)
+    def decrease(index) = adjust(index, -@step_percent)
+
     def adjust(index, delta_percent)
       effect = @effects.fetch(index)
-      effect.intensity_percent = (effect.intensity_percent + delta_percent).clamp(1, 100)
+      effect.intensity_percent = clamp_intensity(effect.intensity_percent + delta_percent)
       @audio.set_effect(index, effect.intensity_percent, reset: false) if effect.enabled
     end
 
@@ -32,5 +42,9 @@ module RubyPlayer
       @bypassed = !@bypassed
       @audio.set_effects_bypass(@bypassed, reset: true)
     end
+
+    private
+
+    def clamp_intensity(percent) = percent.clamp(MIN_INTENSITY_PERCENT, MAX_INTENSITY_PERCENT)
   end
 end

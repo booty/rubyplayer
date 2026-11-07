@@ -247,6 +247,17 @@ class ConfigTest < Minitest::Test
     assert_includes error.message, 'positive Integer'
   end
 
+  def test_effect_percents_must_stay_within_native_range
+    write_config 'RubyPlayer.configure { |config| config.audio.effect_step_percent = 0 }'
+
+    error = assert_raises(RubyPlayer::ConfigError) do
+      RubyPlayer::ConfigStore.new(path: @path)
+    end
+
+    assert_includes error.message, 'audio.effect_step_percent'
+    assert_includes error.message, 'from 1 to 100'
+  end
+
   def test_invalid_dynamic_map_values_fail_during_config_load
     {
       'config.backends[".foo"] = 12' => 'backends[".foo"]',

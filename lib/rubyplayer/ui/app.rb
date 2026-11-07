@@ -68,7 +68,9 @@ module RubyPlayer
         @audio = AudioOutput.new(sample_rate: @config['audio', 'sample_rate'],
                                  ring_buffer_ms: @config['audio', 'ring_buffer_ms'],
                                  null_backend: null_audio)
-        @effects_rack = EffectsRack.new(audio: @audio)
+        @effects_rack = EffectsRack.new(audio: @audio,
+                                        default_intensity_percent: @config['audio', 'effect_default_percent'],
+                                        step_percent: @config['audio', 'effect_step_percent'])
         @archive_cache = ArchiveCache.new(root: @config['library', 'archive_cache_dir'],
                                           tar: @config['library', 'archive_tool'])
         @focus_player = focus_player || FocusPlayer.new

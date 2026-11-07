@@ -87,7 +87,8 @@ Select **Focus** in the Library pane, then choose a noise recipe in Tracks and p
 Press `D` to open the Effects panel while playing music or Focus sounds. Use
 Up/Down to select an effect, Enter to toggle it, and Left/Right to adjust its
 intensity. Enable several effects together; `B` bypasses the entire rack for a
-clean comparison without changing its settings. Escape or `D` closes the panel,
+clean comparison without changing its settings. Escape or `D` (the
+`show_effects` binding) closes the panel,
 and playback keys continue to work while it is open. Effects start off on each
 launch and retain their settings only for the current session.
 
@@ -514,6 +515,8 @@ restart.
 | `config.audio.sample_rate` | `"auto"` | Device-native or positive integer Hz. |
 | `config.audio.ring_buffer_ms` | `500` | Audio buffer; positive integer ms. |
 | `config.audio.decode_chunk_frames` | `16384` | Decode chunk; positive integer frames. Larger bursts use less CPU for FM chiptunes. |
+| `config.audio.effect_default_percent` | `50` | Starting intensity of each output effect; integer 1-100. |
+| `config.audio.effect_step_percent` | `5` | Intensity change per Left/Right press in the Effects panel; integer 1-100. |
 | `config.scanner.thread_count` | `0` | Extractor workers; `0` uses CPU count. |
 | `config.library.backup_retention` | `10` | SQLite backups retained. |
 | `config.library.history_limit` | `100` | Tracks shown in History. |

@@ -50,4 +50,14 @@ class EffectsRackTest < Minitest::Test
 
     assert_equal 100, rack.effects[0].intensity_percent
   end
+
+  def test_step_and_starting_level_are_configurable
+    rack = RubyPlayer::EffectsRack.new(audio: AudioRecorder.new, default_intensity_percent: 40, step_percent: 10)
+    rack.increase(0)
+
+    assert_equal 50, rack.effects[0].intensity_percent
+    rack.decrease(1)
+
+    assert_equal 30, rack.effects[1].intensity_percent
+  end
 end
