@@ -52,7 +52,7 @@ module RubyPlayer
                   :pending_playlist_delete
 
       def initialize(argv: [], config_path: nil, data_path: nil, null_audio: false,
-                     io_out: $stdout, focus_player: nil, env: ENV)
+                     io_out: $stdout, focus_player: nil, media_keys: nil, env: ENV)
         @argv = argv
         @io_out = io_out
         @config = ConfigStore.new(path: config_path || RubyPlayer.config_path)
@@ -62,6 +62,9 @@ module RubyPlayer
         @library = Library.new(@db)
         @registry = Backends::Registry.new(@config['backends'])
         @bus = EventBus.new
+        # Constructed here but started in #run, so tests that never run the
+        # loop never spawn the helper; updates before start are no-ops.
+        @media_keys = media_keys || MediaKeys.new(event_bus: @bus)
         @audio = AudioOutput.new(sample_rate: @config['audio', 'sample_rate'],
                                  ring_buffer_ms: @config['audio', 'ring_buffer_ms'],
                                  null_backend: null_audio)
@@ -167,7 +170,6 @@ module RubyPlayer
       end
 
       def run
-        @media_keys = MediaKeys.new(event_bus: @bus)
         @media_keys.start
         setup_terminal
         trap('SIGWINCH') { @resized = true }
@@ -191,7 +193,7 @@ module RubyPlayer
         # Shutdown is best-effort across independent resources. Focus process
         # failure must not leave decoder thread, native audio, or SQLite open;
         # preserve the first error so callers still learn cleanup was incomplete.
-        [-> { @media_keys&.stop }, -> { @kitty_image.clear }, -> { @vgm_telemetry_controller.shutdown },
+        [-> { @media_keys.stop }, -> { @kitty_image.clear }, -> { @vgm_telemetry_controller.shutdown },
          -> { @engine.shutdown },
          -> { @audio.close }, -> { @db.close }].each do |cleanup|
           cleanup.call
@@ -1200,7 +1202,7 @@ module RubyPlayer
           @queued_pane.reload!
         end
         close_now_playing if @show_now_playing && @engine.state[:track].nil?
-        @media_keys&.update(@engine.state)
+        @media_keys.update(@engine.state)
       end
 
       def handle_media_command(action)

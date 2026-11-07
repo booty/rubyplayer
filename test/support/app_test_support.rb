@@ -37,8 +37,24 @@ module TestSupport
       end
     end
 
+    # Records what App hands the macOS Now Playing helper, without spawning it.
+    class FakeMediaKeys
+      attr_reader :states, :start_calls, :stop_calls
+
+      def initialize
+        @states = []
+        @start_calls = 0
+        @stop_calls = 0
+      end
+
+      def start = @start_calls += 1
+      def update(state) = @states << state
+      def stop = @stop_calls += 1
+    end
+
     def self.included(test_class)
       test_class.const_set(:FakeFocusPlayer, FakeFocusPlayer)
+      test_class.const_set(:FakeMediaKeys, FakeMediaKeys)
     end
 
     def setup
@@ -48,6 +64,7 @@ module TestSupport
       FileUtils.cp(File.join(FIXTURES, 'space-debris.mod'), @music)
       FileUtils.cp(File.join(FIXTURES, 'shantae.gbs'), @music)
       @focus_player = FakeFocusPlayer.new
+      @media_keys = FakeMediaKeys.new
       @app = make_app
       @app.scan_paths([@music], wait: true)
     end
@@ -58,7 +75,7 @@ module TestSupport
         config_path: config_path,
         data_path: File.join(@tmp, 'library.sqlite3'),
         null_audio: true, io_out: StringIO.new, focus_player: @focus_player,
-        env: env
+        media_keys: @media_keys, env: env
       )
     end
 

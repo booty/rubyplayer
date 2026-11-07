@@ -32,4 +32,16 @@ class AppMediaKeysTest < Minitest::Test
 
     refute_equal first_id, @app.engine.state[:track]&.id
   end
+
+  def test_events_publish_playback_state_and_shutdown_stops_helper
+    start_normal_playback
+    @app.handle_events
+
+    assert_equal @app.engine.state[:track], @media_keys.states.last[:track]
+
+    @app.shutdown
+    @app = nil
+
+    assert_equal 1, @media_keys.stop_calls
+  end
 end
