@@ -26,6 +26,8 @@ module RubyPlayer
     attach_function :rp_set_effect, %i[uint uint int], :void
     attach_function :rp_set_effects_bypass, %i[int int], :void
     attach_function :rp_free, [], :void
+    attach_function :rp_effect_count, [], :uint
+    attach_function :rp_effect_name, [:uint], :string
   end
 
   # Playback device + C-side ring buffer. ONE instance per process (the C shim
@@ -37,6 +39,12 @@ module RubyPlayer
     private_constant :DEFAULT_RING_BUFFER_MS
 
     attr_reader :sample_rate
+
+    # Effect display names in native id order; an effect's index here is the
+    # id set_effect takes.
+    def self.effect_names(native: RpAudio)
+      Array.new(native.rp_effect_count) { |id| native.rp_effect_name(id) }.freeze
+    end
 
     def initialize(sample_rate: 'auto', ring_buffer_ms: DEFAULT_RING_BUFFER_MS,
                    null_backend: false, native: RpAudio)
@@ -89,6 +97,8 @@ module RubyPlayer
     def buffered_frames = @native.rp_buffered_frames
     def frames_played = @native.rp_frames_played
     def flush = @write_mutex.synchronize { @native.rp_flush }
+
+    def effect_names = self.class.effect_names(native: @native)
 
     def set_effect(id, intensity_percent, reset:)
       @write_mutex.synchronize do

@@ -27,6 +27,11 @@ typedef struct {
     int bypass;
 } rp_effect_controls;
 
+/* Display name for an effect id, or NULL past the last one. The UI reads
+ * names from here so its list can never fall out of enum order. */
+const char *rp_effect_name(unsigned int id);
+unsigned int rp_effect_count(void);
+
 rp_effects *rp_effects_create(unsigned int sample_rate_hz);
 void rp_effects_destroy(rp_effects *rack);
 void rp_effects_reset(rp_effects *rack);

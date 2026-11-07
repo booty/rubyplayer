@@ -4,14 +4,13 @@ module RubyPlayer
   # Session-only settings; native audio output owns all signal processing.
   class EffectsRack
     Effect = Struct.new(:name, :enabled, :intensity_percent, keyword_init: true)
-    NAMES = ['AM Radio', 'Arcade Cabinet', 'Tube Amp', 'Cassette Deck',
-             'Mega Bass', 'Underwater', 'Music Hall', 'Echo Chamber'].freeze
 
     attr_reader :effects
 
     def initialize(audio:)
       @audio = audio
-      @effects = NAMES.map { |name| Effect.new(name: name, enabled: false, intensity_percent: 50) }
+      # Names come from the native rack, so an effect's index is its id.
+      @effects = audio.effect_names.map { |name| Effect.new(name: name, enabled: false, intensity_percent: 50) }
       @bypassed = false
     end
 

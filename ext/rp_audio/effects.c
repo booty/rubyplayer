@@ -34,6 +34,21 @@ struct rp_effects {
     rp_effect_state effects[RP_EFFECT_COUNT];
 };
 
+static const char *const EFFECT_NAMES[RP_EFFECT_COUNT] = {
+    [RP_EFFECT_AM_RADIO] = "AM Radio",
+    [RP_EFFECT_ARCADE] = "Arcade Cabinet",
+    [RP_EFFECT_TUBE] = "Tube Amp",
+    [RP_EFFECT_CASSETTE] = "Cassette Deck",
+    [RP_EFFECT_BASS] = "Mega Bass",
+    [RP_EFFECT_UNDERWATER] = "Underwater",
+    [RP_EFFECT_HALL] = "Music Hall",
+    [RP_EFFECT_ECHO] = "Echo Chamber",
+};
+
+const char *rp_effect_name(unsigned int id) { return id < RP_EFFECT_COUNT ? EFFECT_NAMES[id] : NULL; }
+
+unsigned int rp_effect_count(void) { return RP_EFFECT_COUNT; }
+
 static int delay_init(rp_delay *delay, unsigned int sample_rate_hz) {
     delay->capacity_frames = (size_t)sample_rate_hz * RP_DELAY_SECONDS + 4;
     delay->samples = calloc(delay->capacity_frames * RP_CHANNELS, sizeof(float));

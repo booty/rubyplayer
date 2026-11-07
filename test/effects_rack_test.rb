@@ -6,6 +6,7 @@ class EffectsRackTest < Minitest::Test
     attr_reader :calls
 
     def initialize = @calls = []
+    def effect_names = %w[Radio Arcade Tube Cassette Bass Underwater Hall Echo]
     def set_effect(id, intensity_percent, reset:) = @calls << [id, intensity_percent, reset]
     def set_effects_bypass(bypass, reset:) = @calls << [bypass, reset]
   end
@@ -14,6 +15,7 @@ class EffectsRackTest < Minitest::Test
     audio = AudioRecorder.new
     rack = RubyPlayer::EffectsRack.new(audio: audio)
 
+    assert_equal audio.effect_names, rack.effects.map(&:name)
     assert rack.effects.none?(&:enabled)
     refute_predicate rack, :bypassed?
 

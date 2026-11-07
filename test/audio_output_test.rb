@@ -36,6 +36,16 @@ class AudioOutputTest < Minitest::Test
     def rp_set_effects_bypass(bypass, reset) = @effect_updates << [bypass, reset]
   end
 
+  # Effect ids index the native enum, so names come from the same table
+  # rather than a Ruby list that had to match its order by hand.
+  def test_effect_names_come_from_the_native_enum_in_id_order
+    names = RubyPlayer::AudioOutput.effect_names
+
+    assert_equal ['AM Radio', 'Arcade Cabinet', 'Tube Amp', 'Cassette Deck',
+                  'Mega Bass', 'Underwater', 'Music Hall', 'Echo Chamber'], names
+    assert_nil RubyPlayer::RpAudio.rp_effect_name(names.size)
+  end
+
   def test_effect_updates_are_forwarded_and_rejected_after_close
     native = FakeNative.new
     out = RubyPlayer::AudioOutput.new(sample_rate: 48_000, native: native)
