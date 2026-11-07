@@ -5,13 +5,14 @@ require 'rubyplayer/audio_output'
 
 class AudioOutputTest < Minitest::Test
   class FakeNative
-    attr_reader :max_writers, :write_calls
+    attr_reader :max_writers, :write_calls, :effect_updates
 
     def initialize
       @mutex = Mutex.new
       @writers = 0
       @max_writers = 0
       @write_calls = 0
+      @effect_updates = []
     end
 
     def rp_init(*) = 0
@@ -30,6 +31,22 @@ class AudioOutputTest < Minitest::Test
     end
 
     def rp_free; end
+
+    def rp_set_effect(id, intensity, reset) = @effect_updates << [id, intensity, reset]
+    def rp_set_effects_bypass(bypass, reset) = @effect_updates << [bypass, reset]
+  end
+
+  def test_effect_updates_are_forwarded_and_rejected_after_close
+    native = FakeNative.new
+    out = RubyPlayer::AudioOutput.new(sample_rate: 48_000, native: native)
+    out.set_effect(2, 50, reset: true)
+    out.set_effects_bypass(true, reset: true)
+
+    assert_equal [[2, 50, 1], [1, 1]], native.effect_updates
+
+    out.close
+    assert_raises(IOError) { out.set_effect(2, 0, reset: true) }
+    assert_raises(IOError) { out.set_effects_bypass(false, reset: true) }
   end
 
   def test_serializes_concurrent_writes_to_native_ring_buffer

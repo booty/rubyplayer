@@ -31,6 +31,7 @@ module RubyPlayer
         # "v" for "view": cycles album-art placement (off/inset/pane/corner).
         'v' => 'cycle_art_mode',
         'o' => 'show_now_playing',
+        'd' => 'show_effects',
         # "l" for "list": opens the add-to-playlist modal on the highlighted track.
         'l' => 'add_to_playlist'
       },

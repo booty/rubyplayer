@@ -76,6 +76,21 @@ Select **Focus** in the Library pane, then choose a noise recipe in Tracks and p
 - In **Missing**, press `Ctrl+X` to permanently purge currently filtered/visible tracks and their playback history after confirmation.
 - During Focus playback the Now Playing bar names the active recipe, shows ∞ for its duration, and notes the paused queue.
 
+### Output effects
+
+Press `D` to open the Effects panel while playing music or Focus sounds. Use
+Up/Down to select an effect, Enter to toggle it, and Left/Right to adjust its
+intensity. Enable several effects together; `B` bypasses the entire rack for a
+clean comparison without changing its settings. Escape or `D` closes the panel,
+and playback keys continue to work while it is open. Effects start off on each
+launch and retain their settings only for the current session.
+
+The rack includes AM Radio, Arcade Cabinet, Tube Amp, Cassette Deck, Mega Bass,
+Underwater, Music Hall and Echo Chamber. Effects are applied to the audio output,
+so the spectrum and live chip views still show the original source. Echo and
+reverb history pauses during silence caused by pause or output underrun and is
+discarded on seek or source changes.
+
 ### Album artwork
 
 Inline artwork uses the Kitty graphics protocol in Kitty and iTerm2 3.5.4 or

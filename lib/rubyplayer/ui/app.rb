@@ -6,6 +6,7 @@ require 'tty-screen'
 require_relative '../../rubyplayer'
 require_relative '../duration_formatter'
 require_relative '../audio_output'
+require_relative '../effects_rack'
 require_relative '../playback_engine'
 require_relative '../vgm/telemetry'
 require_relative 'chip_live_view'
@@ -15,6 +16,7 @@ require_relative '../gbs/tracker'
 require_relative '../nsf/tracker'
 require_relative '../hes/tracker'
 require_relative 'vgm_telemetry_controller'
+require_relative 'effects_modal'
 
 module RubyPlayer
   module UI
@@ -62,6 +64,7 @@ module RubyPlayer
         @audio = AudioOutput.new(sample_rate: @config['audio', 'sample_rate'],
                                  ring_buffer_ms: @config['audio', 'ring_buffer_ms'],
                                  null_backend: null_audio)
+        @effects_rack = EffectsRack.new(audio: @audio)
         @archive_cache = ArchiveCache.new(root: @config['library', 'archive_cache_dir'],
                                           tar: @config['library', 'archive_tool'])
         @focus_player = focus_player || FocusPlayer.new
@@ -115,6 +118,7 @@ module RubyPlayer
         @pending_delete = nil
         @pending_missing_purge = nil
         @playlist_modal = nil
+        @effects_modal = nil
         @name_prompt = nil
         @pending_playlist_delete = nil
         @info_track = nil
@@ -211,6 +215,7 @@ module RubyPlayer
         return handle_theme_picker_key(key) if @theme_picker
         return handle_help_key(key) if @show_help
         return handle_info_key(key) if @info_track
+        return handle_effects_key(key) if @effects_modal
         return handle_now_playing_key(key) if @show_now_playing
         return handle_missing_purge_key(key) if @pending_missing_purge
         return handle_confirm_key(key) if @pending_delete
@@ -292,6 +297,8 @@ module RubyPlayer
         action = @keymap.action_for(key, pane: @active_pane)
         if NOW_PLAYING_PLAYBACK_ACTIONS.include?(action)
           dispatch(action)
+        elsif action == :show_effects
+          @effects_modal = EffectsModal.new(@effects_rack)
         elsif key == 'o'
           advance_now_playing_page
         elsif %w[escape enter].include?(key)
@@ -303,6 +310,18 @@ module RubyPlayer
 
           mapped_key = { 'pgup' => 'pageup', 'pgdn' => 'pagedown' }.fetch(key, key)
           invalidate_screen! if @now_playing_modal&.handle_live_key(mapped_key)
+        end
+      end
+
+      def handle_effects_key(key)
+        return unless key.is_a?(String)
+
+        action = @keymap.action_for(key, pane: @active_pane)
+        if NOW_PLAYING_PLAYBACK_ACTIONS.include?(action)
+          dispatch(action)
+        elsif action == :show_effects || @effects_modal.handle_key(key.downcase) == :close
+          @effects_modal = nil
+          invalidate_screen!
         end
       end
 
@@ -479,6 +498,7 @@ module RubyPlayer
         when :show_theme_picker then request_show_theme_picker
         when :cycle_art_mode then cycle_art_mode
         when :show_now_playing then request_show_now_playing
+        when :show_effects then @effects_modal = EffectsModal.new(@effects_rack)
         when :add_to_playlist then request_add_to_playlist
         when :rename_playlist then request_playlist_name(:rename)
         when :duplicate_playlist then request_playlist_name(:duplicate)
@@ -790,7 +810,7 @@ module RubyPlayer
 
       def modal_active?
         !!(@pending_delete || @pending_missing_purge || @info_track ||
-           @show_help || @theme_picker || @config_error || @playlist_modal ||
+           @show_help || @theme_picker || @config_error || @playlist_modal || @effects_modal ||
            @name_prompt || @pending_playlist_delete)
       end
 
@@ -1397,6 +1417,7 @@ module RubyPlayer
         render_missing_purge_modal if @pending_missing_purge
         render_info_modal if @info_track
         render_help_modal if @show_help
+        @effects_modal&.render(@screen, theme: @theme, frame: method(:render_modal))
         render_theme_picker_modal if @theme_picker
         render_config_error_modal if @config_error
         @screen.flush

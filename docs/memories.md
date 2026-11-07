@@ -1,6 +1,6 @@
 # Implementation lessons
 
-Current as of 2026-10-13. Supplementary implementation notes; AGENTS.md remains
+Current as of 2026-11-06. Supplementary implementation notes; AGENTS.md remains
 the authority for workflow and invariants.
 
 - Installed launchers select the checkout's explicit mise Ruby version, then
@@ -19,6 +19,11 @@ the authority for workflow and invariants.
   recompute folder counts and publish scan completion, even with zero workers.
 - Decoder command waits can block indefinitely when idle or paused. Every
   transition requiring work arrives through the command queue.
+- Output effects run on consumed frames in the native callback. Their history
+  is callback-owned: flush brackets its ring change with an epoch and the
+  callback rejects a copied block if that epoch changed. Control/reset mailboxes
+  must claim both together; exiting bypass waits for old histories to reset.
+  Delay generations invalidate large buffers without clearing them in callback.
 - Previous-track navigation uses decoder-owned session history, separate from
   the library's minimum-listening-threshold history. Restart seeks to zero;
   going back restores the queue head without creating a manual undo snapshot.

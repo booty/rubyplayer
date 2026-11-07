@@ -52,7 +52,7 @@ module RubyPlayer
         purge_visible_missing: 'purge missing',
         show_track_info: 'info', show_help: 'help', show_theme_picker: 'theme',
         filter_tracks: 'filter', cycle_art_mode: 'art',
-        show_now_playing: 'now playing',
+        show_now_playing: 'now playing', show_effects: 'effects',
         add_to_playlist: 'playlist+', duplicate_playlist: 'dup playlist',
         rename_playlist: 'rename', move_entry_up: nil, move_entry_down: nil,
         extend_selection_up: 'select up', extend_selection_down: 'select down',
@@ -62,7 +62,7 @@ module RubyPlayer
       ROWS = 3
       COMPACT_WIDTH = 100
       PLAY_GROUPS = [%i[toggle_play previous_track next_track seek_back seek_forward],
-                     %i[toggle_skip_disliked show_now_playing]].freeze
+                     %i[toggle_skip_disliked show_now_playing show_effects]].freeze
       QUEUE_GROUPS = [%i[play_now enqueue_front enqueue_end select_queue],
                       %i[remove_from_queue undo redo add_to_playlist]].freeze
       VIEW_GROUPS = [%i[cycle_pane filter_tracks toggle_group],

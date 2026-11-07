@@ -48,7 +48,8 @@ sequenceDiagram
 
     Note over Audio,Callback: Callback runs independently at the device pace
     Callback->>Audio: Consume available ring frames
-    Audio-->>Callback: PCM, plus silence on pause or underrun
+    Audio-->>Callback: Source PCM, plus silence on pause or underrun
+    Note over Callback: Apply enabled output effects to consumed source frames
     Note over Callback: Send frames to audio device, never call Ruby
 
     Bus-->>App: Self-pipe wakes IO.select
@@ -79,6 +80,13 @@ only if the configured duration percentage (or unknown-duration seconds) is met.
 Pause and seek enter through the command queue. Paused and idle decoding blocks
 on that queue. A seek pauses and flushes old audio, seeks the handle, resets
 pending PCM and timing, then restores pause state.
+
+The output callback owns the effects rack and applies it after reading the ring,
+so music and Focus share the same effects. UI settings cross into the callback
+through atomic mailboxes, and a flush epoch protects the boundary between old
+and new source audio. Effects off or master bypass preserve the original PCM;
+effect history is frozen while paused or underrunning and reset on flush. The
+existing spectrum tap and chip views follow the unprocessed source.
 
 Open or decode failures flag the track as errored, publish `:track_error`, and
 advance the queue. Recovery keeps the decoder thread alive. Focus sounds use a

@@ -23,6 +23,8 @@ module RubyPlayer
     attach_function :rp_buffered_frames, [], :uint
     attach_function :rp_frames_played, [], :uint64
     attach_function :rp_flush, [], :void
+    attach_function :rp_set_effect, %i[uint uint int], :void
+    attach_function :rp_set_effects_bypass, %i[int int], :void
     attach_function :rp_free, [], :void
   end
 
@@ -87,6 +89,22 @@ module RubyPlayer
     def buffered_frames = @native.rp_buffered_frames
     def frames_played = @native.rp_frames_played
     def flush = @write_mutex.synchronize { @native.rp_flush }
+
+    def set_effect(id, intensity_percent, reset:)
+      @write_mutex.synchronize do
+        raise IOError, 'audio output is closed' if @closed
+
+        @native.rp_set_effect(id, intensity_percent, reset ? 1 : 0)
+      end
+    end
+
+    def set_effects_bypass(bypass, reset:)
+      @write_mutex.synchronize do
+        raise IOError, 'audio output is closed' if @closed
+
+        @native.rp_set_effects_bypass(bypass ? 1 : 0, reset ? 1 : 0)
+      end
+    end
 
     def close
       @write_mutex.synchronize do
