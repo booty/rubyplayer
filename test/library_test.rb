@@ -448,6 +448,27 @@ class LibraryTest < Minitest::Test
     assert_equal [0, 1, 2], playlist_positions(id)
   end
 
+  # Adding a Ctrl+A selection used one write transaction per track, and a
+  # track deleted mid-loop left the playlist with only part of the batch.
+  def test_add_playlist_entries_appends_all_in_one_transaction
+    id, ids = playlist_with_tracks(%w[a])
+    extra = %w[b c].map { |n| add_track("/m/sega/#{n}.vgm", title: n) }
+    writes = count_writes
+
+    @lib.add_playlist_entries(id, [extra[0], ids[0], extra[1]])
+
+    assert_equal 1, writes.call
+    assert_equal %w[a b a c], @lib.playlist_tracks(id).map(&:title)
+    assert_equal [0, 1, 2, 3], playlist_positions(id)
+  end
+
+  def test_add_playlist_entries_adds_nothing_when_a_track_is_gone
+    id, ids = playlist_with_tracks(%w[a])
+
+    assert_raises(RubyPlayer::Library::PlaylistError) { @lib.add_playlist_entries(id, [ids[0], 999_999]) }
+    assert_equal %w[a], @lib.playlist_tracks(id).map(&:title)
+  end
+
   def test_duplicate_playlist_copies_all_entries_including_hidden
     id, ids = playlist_with_tracks(%w[a b])
     @lib.mark_missing(track_ids: [ids[0]], folder_ids: [])

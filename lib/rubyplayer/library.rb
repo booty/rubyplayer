@@ -58,16 +58,28 @@ module RubyPlayer
       @db.write { |s| s.execute('DELETE FROM playlists WHERE id = ?', [id]) }
     end
 
-    def add_to_playlist(id, track_id)
+    def add_to_playlist(id, track_id) = add_playlist_entries(id, [track_id])
+
+    # Appends tracks in the given order (repeats allowed) in one transaction:
+    # if any track has left the library, none are added.
+    def add_playlist_entries(id, track_ids)
+      return if track_ids.empty?
+
       @db.write do |s|
         raise PlaylistError, 'Playlist no longer exists' unless s.get_first_value('SELECT 1 FROM playlists WHERE id = ?', [id])
-        raise PlaylistError, 'Track is no longer in the library' unless s.get_first_value('SELECT 1 FROM tracks WHERE id = ?', [track_id])
 
-        pos = s.get_first_value(
+        unique_ids = track_ids.uniq
+        marks = (['?'] * unique_ids.size).join(', ')
+        known = s.get_first_value("SELECT COUNT(*) FROM tracks WHERE id IN (#{marks})", unique_ids)
+        raise PlaylistError, 'Track is no longer in the library' unless known == unique_ids.size
+
+        next_position = s.get_first_value(
           'SELECT COALESCE(MAX(position) + 1, 0) FROM playlist_tracks WHERE playlist_id = ?', [id]
         )
-        s.execute('INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?, ?, ?)',
-                  [id, track_id, pos])
+        track_ids.each_with_index do |track_id, offset|
+          s.execute('INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?, ?, ?)',
+                    [id, track_id, next_position + offset])
+        end
         s.execute('UPDATE playlists SET updated_at = ? WHERE id = ?',
                   [playlist_timestamp, id])
       end

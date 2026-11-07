@@ -951,7 +951,7 @@ module RubyPlayer
       end
 
       def add_tracks_to_playlist(playlist, tracks)
-        tracks.each { |track| @library.add_to_playlist(playlist['id'], track.id) }
+        @library.add_playlist_entries(playlist['id'], tracks.map(&:id))
         @library_pane.rebuild!
         @tracks_pane.reload!
         @status_line.set_message("Added #{track_count_text(tracks.size)} to \"#{playlist['name']}\"")
@@ -962,7 +962,7 @@ module RubyPlayer
       def create_playlist_and_add(name, tracks)
         id = @library.create_playlist(name)
         @playlist_modal = nil
-        tracks.each { |track| @library.add_to_playlist(id, track.id) }
+        @library.add_playlist_entries(id, tracks.map(&:id))
         @library_pane.rebuild!
         @status_line.set_message("Created \"#{name}\" and added #{track_count_text(tracks.size)}")
       rescue Library::PlaylistNameTaken => e
