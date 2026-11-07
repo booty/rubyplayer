@@ -18,7 +18,7 @@ class NowPlayingModalTest < Minitest::Test
       draw.call(1, 1)
     end
     art = modal.render(screen, theme: RubyPlayer::Theme::DEFAULT, frame: frame, min_art_rows: 3)
-    [screen.instance_variable_get(:@back).map { |row| row.map(&:ch).join }.join("\n"), art]
+    [screen.back_lines.join("\n"), art]
   end
 
   def test_sections_show_album_track_total_and_source_technical_information
@@ -170,7 +170,7 @@ class NowPlayingModalTest < Minitest::Test
       captured_hint = hint
     end
     art = modal.render(screen, theme: RubyPlayer::Theme::DEFAULT, frame: frame, min_art_rows: 3)
-    text = screen.instance_variable_get(:@back).map { |row| row.map(&:ch).join }.join("\n")
+    text = screen.back_lines.join("\n")
 
     assert_includes text, 'VGM TRACKER'
     assert_includes captured_hint, '[←/→] Channels'
@@ -183,7 +183,7 @@ class NowPlayingModalTest < Minitest::Test
     frame = ->(**_options, &draw) { draw.call(1, 1) }
 
     art = modal.render(screen, theme: RubyPlayer::Theme::DEFAULT, frame: frame, min_art_rows: 3, art: false)
-    lines = screen.instance_variable_get(:@back).map { |row| row.map(&:ch).join }
+    lines = screen.back_lines
 
     assert_nil art
     assert(lines.any? { |line| line[3..].start_with?('Artist: Artist') }, 'track text starts at the left edge')

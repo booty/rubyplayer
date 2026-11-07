@@ -28,7 +28,7 @@ class BottomLinesTest < Minitest::Test
     output = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 4, cols: width)
     RubyPlayer::UI::HotkeyLine.new(keymap: keymap).render(output, row: 1, w: width, pane: pane,
                                                                   theme: theme, toggle_states: toggle_states)
-    output.instance_variable_get(:@back).drop(1)
+    output.back_cells.drop(1)
   end
 
   def test_hotkeys_have_stable_categories_and_logical_separators

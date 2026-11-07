@@ -322,7 +322,7 @@ class TracksPaneTest < Minitest::Test
     @pane.render(screen, x: 0, y: 0, w: 20, h: 2, active: true,
                          theme: RubyPlayer::Theme::DEFAULT)
 
-    edge = screen.instance_variable_get(:@back).map { |row| row[19].ch }
+    edge = screen.back_cells.map { |row| row[19].ch }
 
     assert_includes edge, '█'
     assert_includes edge, '│'
@@ -333,7 +333,7 @@ class TracksPaneTest < Minitest::Test
     screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 10, cols: 60)
     theme = RubyPlayer::Theme::DEFAULT
     @pane.render(screen, x: 0, y: 0, w: 60, h: 10, active: true, theme: theme)
-    back = screen.instance_variable_get(:@back)
+    back = screen.back_cells
 
     # Row 1 (not the default selection at row 0) so field colors reflect
     # each field's own style rather than being overridden by selection.
@@ -378,7 +378,7 @@ class TracksPaneTest < Minitest::Test
 
       pane.render(screen, x: 0, y: 0, w: 40, h: 5, active: true, theme: theme)
 
-      cell = screen.instance_variable_get(:@back)[0][0]
+      cell = screen.back_cells[0][0]
 
       assert_equal theme[:selection_text], cell.fg
       assert_equal theme[:selection_bg], cell.bg
@@ -815,7 +815,7 @@ class TracksPaneTest < Minitest::Test
     @pane.handle_action(:extend_selection_down)
     screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 5, cols: 40)
     @pane.render(screen, x: 0, y: 0, w: 40, h: 5, active: true, theme: RubyPlayer::Theme::DEFAULT)
-    backgrounds = screen.instance_variable_get(:@back).first(3).map { |row| row.last.bg }
+    backgrounds = screen.back_cells.first(3).map { |row| row.last.bg }
 
     assert_equal [RubyPlayer::Theme::DEFAULT[:surface_alt], RubyPlayer::Theme::DEFAULT[:selection_bg], nil],
                  backgrounds

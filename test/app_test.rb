@@ -310,7 +310,7 @@ class AppTest < Minitest::Test
     @app.handle_key('?')
     @app.render
     screen = @app.instance_variable_get(:@screen)
-    back = screen.instance_variable_get(:@back)
+    back = screen.back_cells
 
     keymap = @app.instance_variable_get(:@keymap)
     bindings = keymap.bindings_for(:library)

@@ -54,7 +54,7 @@ class VgmLiveViewTest < Minitest::Test
       screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: rows + 4, cols: cols + 6)
       @view.render(screen, x: 3, y: 2, width: cols, height: rows, theme: THEME, track_title: 'Song',
                            now_sample: 44_100 * 20)
-      screen.instance_variable_get(:@back).each_with_index do |row, row_index|
+      screen.back_cells.each_with_index do |row, row_index|
         row.each_with_index do |cell, column|
           inside = row_index.between?(2, rows + 1) && column.between?(3, cols + 2)
 
@@ -286,7 +286,7 @@ class VgmLiveViewTest < Minitest::Test
     screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: rows, cols: cols)
     @view.render(screen, x: 0, y: 0, width: cols, height: rows, theme: THEME, track_title: 'Song — Artist',
                          now_sample: now || @view.snapshot&.sample, mute_mask: mute)
-    screen.instance_variable_get(:@back).map { |row| row.map(&:ch).join }
+    screen.back_lines
   end
 
   def fixture_snapshot = self.class.fixture_snapshot

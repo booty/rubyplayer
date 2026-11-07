@@ -155,7 +155,7 @@ class AppNowPlayingTest < Minitest::Test
       use_screen(rows: height, cols: 80)
       screen = @app.instance_variable_get(:@screen)
       modal.render(screen, theme: current_theme, frame: @app.method(:render_modal), min_art_rows: 3)
-      rows = screen.instance_variable_get(:@back).map { |row| row.map(&:ch).join }
+      rows = screen.back_lines
       bitrate_row = rows.index { |row| row.include?('Bit rate: 128 kbps') }
       hint_row = rows.index { |row| row.include?('[o/esc/enter] Close') }
 

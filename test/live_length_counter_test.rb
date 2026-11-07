@@ -62,6 +62,6 @@ class LiveLengthCounterTest < Minitest::Test
     screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 48, cols: 160)
     view.render(screen, x: 0, y: 0, width: 160, height: 48, theme: THEME, track_title: 'Track',
                         now_sample: snapshot.sample)
-    screen.instance_variable_get(:@back).map { |row| row.map(&:ch).join }.join("\n")
+    screen.back_lines.join("\n")
   end
 end

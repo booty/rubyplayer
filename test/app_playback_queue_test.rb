@@ -164,7 +164,7 @@ class AppPlaybackQueueTest < Minitest::Test
     @app.handle_key('p')                # select_queue: show the Playback Queue in tracks pane
     use_screen(cols: 140)
     @app.render
-    title_row = @app.instance_variable_get(:@screen).instance_variable_get(:@back)[0].map(&:ch).join
+    title_row = @app.instance_variable_get(:@screen).back_lines[0]
 
     assert_equal 1, title_row.scan('Playback Queue').size
     refute_includes title_row, 'Queued'

@@ -138,7 +138,7 @@ class VgmRealtimeIntegrationTest < Minitest::Test
     screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 12, cols: 90)
     @widget.render(screen, x: 0, y: 0, width: 90, height: 12,
                            theme: RubyPlayer::Theme::DEFAULT, now_sample: 44_100)
-    rendered = screen.instance_variable_get(:@back).map { |row| row.map(&:ch).join }.join("\n")
+    rendered = screen.back_lines.join("\n")
 
     assert_match(/^1 FM 1 .* key off/, rendered)
   end

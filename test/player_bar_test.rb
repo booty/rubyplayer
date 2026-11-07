@@ -113,5 +113,5 @@ class PlayerBarTest < Minitest::Test
     text(screen)
   end
 
-  def text(screen) = screen.instance_variable_get(:@back).map { |row| row.map(&:ch).join }
+  def text(screen) = screen.back_lines
 end

@@ -198,7 +198,7 @@ module TestSupport
     end
 
     def back_buffer_text
-      back = @app.instance_variable_get(:@screen).instance_variable_get(:@back)
+      back = @app.instance_variable_get(:@screen).back_cells
       back.map { |row| row.map(&:ch).join }.join("\n")
     end
 

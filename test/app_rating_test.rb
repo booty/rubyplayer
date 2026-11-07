@@ -128,7 +128,7 @@ class AppRatingTest < Minitest::Test
   end
 
   def back_buffer_lines
-    @app.instance_variable_get(:@screen).instance_variable_get(:@back).map { |row| row.map(&:ch).join }
+    @app.instance_variable_get(:@screen).back_lines
   end
 
   # The 6-row Now Playing bar above the status and hotkey rows.

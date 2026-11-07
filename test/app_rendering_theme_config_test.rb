@@ -14,14 +14,14 @@ class AppRenderingThemeConfigTest < Minitest::Test
     @app.instance_variable_set(:@screen, RubyPlayer::UI::Screen.new(out: out, rows: 20, cols: 71))
 
     @app.render
-    library_frame = @app.instance_variable_get(:@screen).instance_variable_get(:@back)
+    library_frame = @app.instance_variable_get(:@screen).back_cells
 
     assert_includes library_frame[0].map(&:ch).join, 'Library'
     refute_includes library_frame[0].map(&:ch).join, 'Playback Queue'
 
     @app.handle_key('tab')
     @app.render
-    tracks_frame = @app.instance_variable_get(:@screen).instance_variable_get(:@back)
+    tracks_frame = @app.instance_variable_get(:@screen).back_cells
 
     assert_includes tracks_frame[0].map(&:ch).join, 'Playback Queue · 0'
     refute_includes tracks_frame[0].map(&:ch).join, 'Library'
@@ -33,7 +33,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
     @app.instance_variable_set(:@screen, RubyPlayer::UI::Screen.new(out: out, rows: 20, cols: 72))
 
     @app.render
-    title_row = @app.instance_variable_get(:@screen).instance_variable_get(:@back)[0].map(&:ch).join
+    title_row = @app.instance_variable_get(:@screen).back_lines[0]
 
     assert_includes title_row, 'Library'
     assert_includes title_row, 'Playback Queue · 0'
@@ -45,7 +45,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
 
     @app.render
 
-    title_row = @app.instance_variable_get(:@screen).instance_variable_get(:@back)[0].map(&:ch).join
+    title_row = @app.instance_variable_get(:@screen).back_lines[0]
 
     assert_includes title_row, 'Library'
     assert_includes title_row, 'Tracks'
@@ -113,7 +113,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
 
     @app.render
 
-    title_row = @app.instance_variable_get(:@screen).instance_variable_get(:@back)[0].map(&:ch).join
+    title_row = @app.instance_variable_get(:@screen).back_lines[0]
 
     assert_equal 1, title_row.scan('Playback Queue').size
     refute_includes title_row, 'Queued'
@@ -237,7 +237,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
 
     screen = @app.instance_variable_get(:@screen)
     queued_x = 140 - 36
-    cell = screen.instance_variable_get(:@back)[0][queued_x]
+    cell = screen.back_cells[0][queued_x]
 
     assert_equal RubyPlayer::Theme::DEFAULT[:border_focus], cell.fg
   end
@@ -283,7 +283,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
   def test_footer_reserves_three_command_rows_below_playback_and_status
     use_screen(cols: 140)
     @app.render
-    cells = @app.instance_variable_get(:@screen).instance_variable_get(:@back)
+    cells = @app.instance_variable_get(:@screen).back_cells
     rows = cells.map { |row| row.map(&:ch).join.rstrip }
 
     assert_includes rows[-5], 'Nothing playing'
@@ -864,7 +864,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
     @app.render
 
     screen = @app.instance_variable_get(:@screen)
-    rendered = screen.instance_variable_get(:@back).map { |row| row.map(&:ch).join }.join("\n")
+    rendered = screen.back_lines.join("\n")
 
     assert_includes rendered, 'VISI'
     assert_includes rendered, 'BLE_SUFFIX'
@@ -895,7 +895,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
   # The first cell inside the stacked Queued pane's border, for each row
   # under its title.
   def stacked_queued_backgrounds
-    back = @app.instance_variable_get(:@screen).instance_variable_get(:@back)
+    back = @app.instance_variable_get(:@screen).back_cells
     title_row = back.index { |row| row.map(&:ch).join.include?('Queued') }
     column = back[title_row].map(&:ch).join.index('Queued') - 2
     back.drop(title_row + 1).map { |row| row[column]&.bg }

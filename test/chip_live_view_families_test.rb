@@ -67,6 +67,6 @@ class ChipLiveViewFamiliesTest < Minitest::Test
   def render(view, cols: 160, rows: 48)
     screen = UI::Screen.new(out: StringIO.new, rows: rows, cols: cols)
     view.render(screen, x: 0, y: 0, width: cols, height: rows, theme: THEME, track_title: 'Song', now_sample: 0)
-    screen.instance_variable_get(:@back).map { |row| row.map(&:ch).join }
+    screen.back_lines
   end
 end

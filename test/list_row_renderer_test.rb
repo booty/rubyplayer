@@ -35,7 +35,7 @@ class ListRowRendererTest < Minitest::Test
       screen, row, x: 0, y: 0, w: 8, selected: false, bg: nil,
                    theme: RubyPlayer::Theme::DEFAULT
     )
-    cells = screen.instance_variable_get(:@back)[0]
+    cells = screen.back_cells[0]
 
     assert_equal 'Song 1:0', cells.map(&:ch).join
     assert cells[0].bold
@@ -52,7 +52,7 @@ class ListRowRendererTest < Minitest::Test
       screen, row, x: 0, y: 0, w: 20, selected: true,
                    bg: RubyPlayer::Theme::DEFAULT[:selection_bg], theme: RubyPlayer::Theme::DEFAULT
     )
-    cell = screen.instance_variable_get(:@back)[0][0]
+    cell = screen.back_cells[0][0]
 
     assert_equal RubyPlayer::Theme::DEFAULT[:selection_text], cell.fg
     assert_equal RubyPlayer::Theme::DEFAULT[:selection_bg], cell.bg

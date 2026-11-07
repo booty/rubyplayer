@@ -213,7 +213,7 @@ class QueuedPaneTest < Minitest::Test
     screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 8, cols: 30)
 
     @pane.render(screen, x: 0, y: 0, w: 30, h: 8, theme: RubyPlayer::Theme::DEFAULT)
-    lines = screen.instance_variable_get(:@back).map { |row| row.map(&:ch).join }
+    lines = screen.back_lines
 
     assert_includes lines[0], '--- Upcoming (1/1:00)'
     assert_includes lines[1], 'Song 1:00 Band'
@@ -231,7 +231,7 @@ class QueuedPaneTest < Minitest::Test
     screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 8, cols: 30)
     theme = RubyPlayer::Theme::DEFAULT
     @pane.render(screen, x: 0, y: 0, w: 30, h: 8, theme: theme, active: true)
-    backgrounds = screen.instance_variable_get(:@back).first(4).map { |row| row.first.bg }
+    backgrounds = screen.back_cells.first(4).map { |row| row.first.bg }
 
     assert_equal [nil, theme[:surface_alt], theme[:selection_bg], nil], backgrounds
   end
@@ -248,7 +248,7 @@ class QueuedPaneTest < Minitest::Test
     theme = RubyPlayer::Theme::DEFAULT
 
     @pane.render(screen, x: 0, y: 0, w: 30, h: 8, active: true, theme: theme)
-    back = screen.instance_variable_get(:@back)
+    back = screen.back_cells
 
     selected_bg = theme[:selection_bg]
     selected_row = back[2].any? { |cell| cell.bg == selected_bg }

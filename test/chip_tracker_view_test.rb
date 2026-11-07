@@ -96,7 +96,7 @@ class ChipTrackerViewTest < Minitest::Test
       screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: height + 4, cols: width + 6)
       @view.render(screen, x: 3, y: 2, width: width, height: height, theme: THEME,
                            track_title: 'Song', now_sample: 0)
-      screen.instance_variable_get(:@back).each_with_index do |row, row_index|
+      screen.back_cells.each_with_index do |row, row_index|
         row.each_with_index do |cell, column|
           next if row_index.between?(2, height + 1) && column.between?(3, width + 2)
 
@@ -207,6 +207,6 @@ class ChipTrackerViewTest < Minitest::Test
     screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: height, cols: width)
     view.render(screen, x: 0, y: 0, width: width, height: height, theme: THEME,
                         track_title: 'Song', now_sample: now_sample, position_ms: position_ms)
-    screen.instance_variable_get(:@back).map { |row| row.map(&:ch).join }
+    screen.back_lines
   end
 end

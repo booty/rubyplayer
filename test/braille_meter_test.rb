@@ -8,7 +8,7 @@ class BrailleMeterTest < Minitest::Test
   def render(levels, w: 4, h: 2)
     screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: h, cols: w)
     RubyPlayer::UI::BrailleMeter.render(screen, levels, x: 0, y: 0, w: w, h: h, fg: nil)
-    screen.instance_variable_get(:@back).map { |row| row.map { |cell| cell.ch.ord } }
+    screen.back_cells.map { |row| row.map { |cell| cell.ch.ord } }
   end
 
   def test_silence_renders_blank_braille

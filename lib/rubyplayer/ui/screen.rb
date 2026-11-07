@@ -43,6 +43,14 @@ module RubyPlayer
         @back = blank_buffer
       end
 
+      # The frame being composed, before flush: rows of frozen Cells. Read
+      # by tests (and anything else inspecting a render) to check text and
+      # styling without parsing the escape stream.
+      def back_cells = @back
+
+      # The composed frame's text, one String per row.
+      def back_lines = @back.map { |row| row.map(&:ch).join }
+
       def put(row, col, text, fg: nil, bg: nil, bold: false, italic: false,
               underline: false, dim: false)
         return if row.negative? || row >= @rows

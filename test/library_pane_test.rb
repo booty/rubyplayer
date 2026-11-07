@@ -169,12 +169,12 @@ class LibraryPaneTest < Minitest::Test
     @pane.render(short, x: 0, y: 0, w: 20, h: 12, active: true,
                         theme: RubyPlayer::Theme::DEFAULT)
 
-    refute_includes short.instance_variable_get(:@back).map { |row| row[19].ch }, '█'
+    refute_includes short.back_cells.map { |row| row[19].ch }, '█'
 
     overflowing = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 2, cols: 20)
     @pane.render(overflowing, x: 0, y: 0, w: 20, h: 2, active: true,
                               theme: RubyPlayer::Theme::DEFAULT)
-    edge = overflowing.instance_variable_get(:@back).map { |row| row[19].ch }
+    edge = overflowing.back_cells.map { |row| row[19].ch }
 
     assert_includes edge, '█'
     assert_includes edge, '│'

@@ -91,7 +91,7 @@ class AppQueueMultiSelectTest < Minitest::Test
 
   # The first cell of each Queued pane row, just inside its border.
   def queued_row_backgrounds
-    back = @app.instance_variable_get(:@screen).instance_variable_get(:@back)
+    back = @app.instance_variable_get(:@screen).back_cells
     column = back.first.map(&:ch).join.index('Queued') - 2
     back.map { |row| row[column]&.bg }
   end

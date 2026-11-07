@@ -72,7 +72,7 @@ class NsfLiveViewTest < Minitest::Test
       screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: rows + 4, cols: cols + 6)
       view.render(screen, x: 3, y: 2, width: cols, height: rows, theme: THEME, track_title: 'Song',
                           now_sample: self.class.tracker(:castlevania_3_japan).now_sample)
-      screen.instance_variable_get(:@back).each_with_index do |row, row_index|
+      screen.back_cells.each_with_index do |row, row_index|
         row.each_with_index do |cell, column|
           inside = row_index.between?(2, rows + 1) && column.between?(3, cols + 2)
           assert_equal ' ', cell.ch, "drew at #{row_index},#{column} for #{cols}x#{rows}" unless inside
@@ -172,6 +172,6 @@ class NsfLiveViewTest < Minitest::Test
     screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: rows, cols: cols)
     view.render(screen, x: 0, y: 0, width: cols, height: rows, theme: THEME, track_title: 'Track',
                         now_sample: view.snapshot.sample)
-    screen.instance_variable_get(:@back).map { |row| row.map(&:ch).join }
+    screen.back_lines
   end
 end

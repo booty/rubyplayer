@@ -36,7 +36,7 @@ class ScreenTest < Minitest::Test
 
     assert_operator allocated, :<, 200, 'blank cells should not allocate per column'
     screen.put(0, 0, 'x')
-    cells = screen.instance_variable_get(:@back)
+    cells = screen.back_cells
 
     assert_equal ' ', cells[0][1].ch
     assert_equal ' ', cells[1][0].ch
@@ -145,6 +145,6 @@ class ScreenTest < Minitest::Test
     end
     filled.fill(5, 0, 4)
 
-    assert_equal put.instance_variable_get(:@back), filled.instance_variable_get(:@back)
+    assert_equal put.back_cells, filled.back_cells
   end
 end

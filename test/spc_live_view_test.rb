@@ -51,7 +51,7 @@ class SpcLiveViewTest < Minitest::Test
     screen = RubyPlayer::UI::Screen.new(out: StringIO.new, rows: 50, cols: 160)
     @view.render(screen, x: 5, y: 3, width: 140, height: 40, theme: THEME, state: state_for('earthbound-megaton-walk'),
                          track_title: 'Megaton Walk')
-    back = screen.instance_variable_get(:@back)
+    back = screen.back_cells
 
     back.each_with_index do |row, row_index|
       row.each_with_index do |cell, column|
@@ -169,7 +169,7 @@ class SpcLiveViewTest < Minitest::Test
   end
 
   def text_of(screen)
-    screen.instance_variable_get(:@back).map { |row| row.map(&:ch).join }
+    screen.back_lines
   end
 
   def voice_row(lines, voice) = lines.find { |line| line.start_with?("#{voice}  ") }
