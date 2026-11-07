@@ -6,26 +6,9 @@ require 'fileutils'
 require 'rubyplayer/audio_output'
 require 'rubyplayer/playback_engine'
 require_relative 'support/vgm_builder'
+require_relative 'support/engine_fakes'
 
 class PlaybackEngineVgmTest < Minitest::Test
-  class FakeAudio
-    attr_reader :sample_rate
-    attr_accessor :frames_played
-
-    def initialize(sample_rate: 48_000)
-      @sample_rate = sample_rate
-      @frames_played = 0
-    end
-
-    def start; end
-    def paused=(_value); end
-    def flush; end
-    def write(_data) = 0
-    # A permanently full ring: playback never consumes these fake writes.
-    def writable_frames = 0
-    def buffered_frames = 0
-  end
-
   class FakeHandle
     attr_reader :seeks, :reads
 
@@ -68,19 +51,6 @@ class PlaybackEngineVgmTest < Minitest::Test
     def backend_for(_path) = @backend
   end
 
-  class FakeLibrary
-    def rating_of(_id) = nil
-    def record_history(**); end
-    # Keep this fake method named after the production library API.
-    # rubocop:disable Naming/AccessorMethodName
-    def set_errored(_id); end
-    # rubocop:enable Naming/AccessorMethodName
-  end
-
-  class FakeFocus
-    def stop; end
-  end
-
   class FakeArchiveCache
     attr_reader :calls
 
@@ -102,15 +72,15 @@ class PlaybackEngineVgmTest < Minitest::Test
     @tmp = Dir.mktmpdir
     @path = File.join(@tmp, 'tone.vgm')
     File.binwrite(@path, VgmBuilder.new(ym2612_clock: 7_670_454).wait(100_000).end.bytes)
-    @audio = FakeAudio.new
+    @audio = TestSupport::EngineFakes::FullRing.new
     @backend = FakeBackend.new
     @bus = RubyPlayer::EventBus.new
     @archive_cache = FakeArchiveCache.new(@path)
     @engine = RubyPlayer::PlaybackEngine.new(
       queue: RubyPlayer::PlayQueue.new, registry: Registry.new(@backend), audio: @audio,
-      library: FakeLibrary.new, event_bus: @bus,
+      library: TestSupport::EngineFakes::NullLibrary.new, event_bus: @bus,
       config: RubyPlayer::ConfigStore.new(path: '/nonexistent.rb', create_if_missing: false),
-      archive_cache: @archive_cache, focus_player: FakeFocus.new
+      archive_cache: @archive_cache, focus_player: TestSupport::EngineFakes::NullFocus.new
     )
     @engine.start
   end
@@ -220,9 +190,9 @@ class PlaybackEngineVgmTest < Minitest::Test
   def build_engine
     RubyPlayer::PlaybackEngine.new(
       queue: RubyPlayer::PlayQueue.new, registry: Registry.new(@backend), audio: @audio,
-      library: FakeLibrary.new, event_bus: @bus,
+      library: TestSupport::EngineFakes::NullLibrary.new, event_bus: @bus,
       config: RubyPlayer::ConfigStore.new(path: '/nonexistent.rb', create_if_missing: false),
-      archive_cache: @archive_cache, focus_player: FakeFocus.new
+      archive_cache: @archive_cache, focus_player: TestSupport::EngineFakes::NullFocus.new
     )
   end
 

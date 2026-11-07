@@ -14,26 +14,9 @@ require 'rubyplayer/ui/chip_live_view'
 require 'rubyplayer/ui/vgm_telemetry_controller'
 require_relative 'support/vgm_builder'
 require_relative 'support/vgm_fixtures'
+require_relative 'support/engine_fakes'
 
 class VgmRealtimeIntegrationTest < Minitest::Test
-  class FakeAudio
-    attr_reader :sample_rate
-    attr_accessor :frames_played
-
-    def initialize
-      @sample_rate = 48_000
-      @frames_played = 0
-    end
-
-    def start; end
-    def paused=(_value); end
-    def flush; end
-    def write(_data) = 0
-    # A permanently full ring: playback never consumes these fake writes.
-    def writable_frames = 0
-    def buffered_frames = 0
-  end
-
   class FakeHandle
     def read(frames) = ([0.0] * frames * 2).pack('e*')
     # This fake mirrors the backend's side-effecting seek success result.
@@ -49,19 +32,6 @@ class VgmRealtimeIntegrationTest < Minitest::Test
 
   class FakeRegistry
     def backend_for(_path) = FakeBackend.new
-  end
-
-  class FakeLibrary
-    def rating_of(_id) = nil
-    def record_history(**); end
-    # Keep this fake method named after the production library API.
-    # rubocop:disable Naming/AccessorMethodName
-    def set_errored(_id); end
-    # rubocop:enable Naming/AccessorMethodName
-  end
-
-  class FakeFocus
-    def stop; end
   end
 
   def setup
@@ -154,12 +124,12 @@ class VgmRealtimeIntegrationTest < Minitest::Test
   end
 
   def start_timeline_playback(path)
-    @audio = FakeAudio.new
+    @audio = TestSupport::EngineFakes::FullRing.new
     @bus = RubyPlayer::EventBus.new
     config = RubyPlayer::ConfigStore.new(path: '/nonexistent.rb', create_if_missing: false)
     @engine = RubyPlayer::PlaybackEngine.new(
       queue: RubyPlayer::PlayQueue.new, registry: FakeRegistry.new, audio: @audio,
-      library: FakeLibrary.new, event_bus: @bus, config: config, focus_player: FakeFocus.new
+      library: TestSupport::EngineFakes::NullLibrary.new, event_bus: @bus, config: config, focus_player: TestSupport::EngineFakes::NullFocus.new
     )
     @telemetry = RubyPlayer::Vgm::Telemetry.new(event_bus: @bus, max_bytes: 1_048_576)
     @now = 0.0

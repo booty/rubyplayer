@@ -3,6 +3,7 @@
 require 'test_helper'
 require 'rubyplayer/audio_output'
 require 'rubyplayer/playback_engine'
+require_relative 'support/engine_fakes'
 
 # Decoder-to-ring handoff: EQ levels follow the played frame, and a full ring
 # is refilled in bursts instead of being polled with small writes.
@@ -12,41 +13,6 @@ class PlaybackEngineLevelsTest < Minitest::Test
 
   # Mirrors the native ring: writes are accepted up to free space, and only
   # play! (the device callback) advances the played counter.
-  class FakeRing
-    attr_reader :sample_rate, :frames_played, :writes
-
-    def initialize
-      @sample_rate = RATE
-      @frames_played = 0
-      @buffered = 0
-      @writes = 0
-      @mutex = Mutex.new
-    end
-
-    def start; end
-    def paused=(_value); end
-    def flush = @mutex.synchronize { @buffered = 0 }
-    def buffered_frames = @mutex.synchronize { @buffered }
-    def writable_frames = @mutex.synchronize { CAPACITY - @buffered }
-
-    def write(data)
-      @mutex.synchronize do
-        @writes += 1
-        accepted = [data.bytesize / RubyPlayer::AudioFormat::BYTES_PER_FRAME, CAPACITY - @buffered].min
-        @buffered += accepted
-        accepted
-      end
-    end
-
-    def play!(frames)
-      @mutex.synchronize do
-        frames = [frames, @buffered].min
-        @buffered -= frames
-        @frames_played += frames
-      end
-    end
-  end
-
   # First read is a low tone, every later read a high tone.
   class ToneHandle
     def initialize = @reads = 0
@@ -70,27 +36,14 @@ class PlaybackEngineLevelsTest < Minitest::Test
     def backend_for(_path) = Backend.new
   end
 
-  class FakeLibrary
-    def rating_of(_id) = nil
-    def record_history(**); end
-    # Keep this fake method named after the production library API.
-    # rubocop:disable Naming/AccessorMethodName
-    def set_errored(_id); end
-    # rubocop:enable Naming/AccessorMethodName
-  end
-
-  class FakeFocus
-    def stop; end
-  end
-
   def setup
-    @audio = FakeRing.new
+    @audio = TestSupport::EngineFakes::ManualRing.new(sample_rate: RATE, capacity_frames: CAPACITY)
     @bus = RubyPlayer::EventBus.new
     @engine = RubyPlayer::PlaybackEngine.new(
       queue: RubyPlayer::PlayQueue.new, registry: Registry.new, audio: @audio,
-      library: FakeLibrary.new, event_bus: @bus,
+      library: TestSupport::EngineFakes::NullLibrary.new, event_bus: @bus,
       config: RubyPlayer::ConfigStore.new(path: '/nonexistent.rb', create_if_missing: false),
-      archive_cache: nil, focus_player: FakeFocus.new
+      archive_cache: nil, focus_player: TestSupport::EngineFakes::NullFocus.new
     )
     @engine.start
     @engine.enqueue_now([track])

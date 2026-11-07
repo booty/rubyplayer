@@ -6,6 +6,7 @@ require 'rubyplayer/playback_engine'
 require 'rubyplayer/spc/snapshot'
 require 'rubyplayer/gbs/snapshot'
 require 'rubyplayer/hes/snapshot'
+require_relative 'support/engine_fakes'
 
 # The engine must show the chip state (SPC S-DSP, GBS APU) of the audio being
 # heard, not of the chunk the decoder just produced (up to a ring buffer and
@@ -16,39 +17,6 @@ class PlaybackEngineSpcTest < Minitest::Test
 
   # Mirrors the native ring: writes are accepted up to free space, and only
   # play! (the device callback) advances the played counter.
-  class FakeRing
-    attr_reader :sample_rate, :frames_played
-
-    def initialize
-      @sample_rate = RATE
-      @frames_played = 0
-      @buffered = 0
-      @mutex = Mutex.new
-    end
-
-    def start; end
-    def paused=(_value); end
-    def flush = @mutex.synchronize { @buffered = 0 }
-    def buffered_frames = @mutex.synchronize { @buffered }
-    def writable_frames = @mutex.synchronize { CAPACITY - @buffered }
-
-    def write(data)
-      @mutex.synchronize do
-        accepted = [data.bytesize / RubyPlayer::AudioFormat::BYTES_PER_FRAME, CAPACITY - @buffered].min
-        @buffered += accepted
-        accepted
-      end
-    end
-
-    def play!(frames)
-      @mutex.synchronize do
-        frames = [frames, @buffered].min
-        @buffered -= frames
-        @frames_played += frames
-      end
-    end
-  end
-
   # Each read's single snapshot (at the chunk's first frame) carries the read
   # number in regs[0]; RAM is a distinct string per read.
   class SnapshotHandle
@@ -142,19 +110,6 @@ class PlaybackEngineSpcTest < Minitest::Test
   class Registry
     def initialize(handle_class) = @backend = Backend.new(handle_class)
     def backend_for(_path) = @backend
-  end
-
-  class FakeLibrary
-    def rating_of(_id) = nil
-    def record_history(**); end
-    # Keep this fake method named after the production library API.
-    # rubocop:disable Naming/AccessorMethodName
-    def set_errored(_id); end
-    # rubocop:enable Naming/AccessorMethodName
-  end
-
-  class FakeFocus
-    def stop; end
   end
 
   # Every test calls start, so the engine and bus always exist here.
@@ -302,13 +257,13 @@ class PlaybackEngineSpcTest < Minitest::Test
   end
 
   def build_engine(handle_class)
-    @audio = FakeRing.new
+    @audio = TestSupport::EngineFakes::ManualRing.new(sample_rate: RATE, capacity_frames: CAPACITY)
     @bus = RubyPlayer::EventBus.new
     @engine = RubyPlayer::PlaybackEngine.new(
       queue: RubyPlayer::PlayQueue.new, registry: Registry.new(handle_class), audio: @audio,
-      library: FakeLibrary.new, event_bus: @bus,
+      library: TestSupport::EngineFakes::NullLibrary.new, event_bus: @bus,
       config: RubyPlayer::ConfigStore.new(path: '/nonexistent.rb', create_if_missing: false),
-      archive_cache: nil, focus_player: FakeFocus.new
+      archive_cache: nil, focus_player: TestSupport::EngineFakes::NullFocus.new
     )
   end
 
