@@ -4,6 +4,7 @@ require_relative 'test_helper'
 require 'fileutils'
 require 'json'
 require 'open3'
+require 'rbconfig'
 require 'tmpdir'
 
 class InstallTest < Minitest::Test
@@ -57,6 +58,39 @@ class InstallTest < Minitest::Test
     assert_equal 'rubyplayer', File.readlink(File.join(@destination, 'rp'))
   end
 
+  def test_launcher_runs_without_mise_on_path_after_installation
+    install!
+    stdout, stderr, status = Open3.capture3(
+      { 'PATH' => '/usr/bin:/bin', 'PLAYER_EXIT_STATUS' => '23' },
+      File.join(@destination, 'rp'), 'song.mod', chdir: @caller
+    )
+
+    assert_equal 23, status.exitstatus, stderr
+    assert_equal @caller, JSON.parse(stdout).fetch('cwd')
+  end
+
+  def test_installer_uses_ruby_four_when_mise_is_unavailable
+    ruby_bin_dir = File.dirname(RbConfig.ruby)
+    _stdout, stderr, status = install('PATH' => "#{ruby_bin_dir}:/usr/bin:/bin")
+
+    assert_predicate status, :success?, stderr
+    stdout, stderr, status = Open3.capture3(
+      { 'PATH' => '/usr/bin:/bin', 'PLAYER_EXIT_STATUS' => '23' },
+      File.join(@destination, 'rp'), 'song.mod', chdir: @caller
+    )
+
+    assert_equal 23, status.exitstatus, stderr
+    assert_equal ['song.mod'], JSON.parse(stdout).fetch('args')
+  end
+
+  def test_installer_rejects_system_ruby_without_mise
+    _stdout, stderr, status = install('PATH' => '/usr/bin:/bin')
+
+    refute_predicate status, :success?
+    assert_includes stderr, 'requires Ruby 4'
+    refute_path_exists File.join(@destination, 'rp')
+  end
+
   def test_conflicting_command_is_preserved_without_partial_installation
     existing = File.join(@destination, 'rp')
     File.write(existing, 'existing command')
@@ -70,10 +104,10 @@ class InstallTest < Minitest::Test
 
   private
 
-  def install
+  def install(environment = {})
     # Copy the installer so path quoting is exercised against a real checkout path.
     FileUtils.cp(INSTALLER, File.join(@project, 'bin/install'))
-    Open3.capture3('/bin/bash', File.join(@project, 'bin/install'), '--bin-dir', @destination,
+    Open3.capture3(environment, '/bin/bash', File.join(@project, 'bin/install'), '--bin-dir', @destination,
                    chdir: @caller)
   end
 

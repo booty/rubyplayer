@@ -18,9 +18,23 @@ elif [[ $# -ne 0 ]]; then
 fi
 
 project_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
-mise_bin=$(type -P mise) || { echo 'Install mise before running bin/install.' >&2; exit 1; }
-# Store an absolute executable path so shell activation is unnecessary at launch.
-mise_bin=$(cd "$(dirname "$mise_bin")" && printf '%s/%s' "$(pwd -P)" "$(basename "$mise_bin")")
+read -r ruby_version < "$project_dir/.ruby-version"
+if mise_bin=$(type -P mise); then
+  ruby_bin_dir=$("$mise_bin" where "ruby@$ruby_version")/bin
+else
+  ruby_bin=$(type -P ruby) || { echo 'Install Ruby 4 or mise before running bin/install.' >&2; exit 1; }
+  if ! "$ruby_bin" -e 'exit RUBY_VERSION.start_with?("4.") ? 0 : 1'; then
+    echo 'RubyPlayer requires Ruby 4. Install Ruby 4 or mise before running bin/install.' >&2
+    exit 1
+  fi
+  ruby_bin_dir=$(dirname "$ruby_bin")
+fi
+ruby_bin="$ruby_bin_dir/ruby"
+bundle_bin="$ruby_bin_dir/bundle"
+if [[ ! -x "$bundle_bin" ]]; then
+  echo "Bundler is missing at $bundle_bin. Install Bundler for Ruby 4 first." >&2
+  exit 1
+fi
 marker='# rubyplayer launcher (managed by bin/install)'
 
 mkdir -p "$destination"
@@ -47,21 +61,11 @@ temporary=$(mktemp "$destination/.rubyplayer.XXXXXX")
 trap 'rm -f "$temporary"' EXIT
 {
   printf '#!/bin/bash\n%s\nset -euo pipefail\n' "$marker"
-  printf 'project_dir=%q\nmise_bin=%q\n' "$project_dir" "$mise_bin"
+  printf 'project_dir=%q\nruby_bin=%q\nbundle_bin=%q\n' "$project_dir" "$ruby_bin" "$bundle_bin"
   cat <<'LAUNCHER'
-caller_dir=$(pwd -P)
-read -r ruby_version < "$project_dir/.ruby-version"
-ruby_bin_dir=$("$mise_bin" where "ruby@$ruby_version")/bin
 export BUNDLE_GEMFILE="$project_dir/Gemfile"
 export BUNDLE_LOCKFILE="$project_dir/Gemfile.lock"
-# mise selects this checkout's tools; restore the caller's cwd for relative music paths.
-exec "$mise_bin" exec --cd "$project_dir" "ruby@$ruby_version" -- /bin/bash -c '
-  ruby_bin_dir="$3"
-  player_bin="$2"
-  cd "$1" || exit
-  shift 3
-  exec "$ruby_bin_dir/bundle" exec "$ruby_bin_dir/ruby" --yjit "$player_bin" "$@"
-' rubyplayer "$caller_dir" "$project_dir/bin/rubyplayer" "$ruby_bin_dir" "$@"
+exec "$ruby_bin" "$bundle_bin" exec "$ruby_bin" --yjit "$project_dir/bin/rubyplayer" "$@"
 LAUNCHER
 } > "$temporary"
 chmod 755 "$temporary"

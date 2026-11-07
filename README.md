@@ -11,7 +11,7 @@ Many popular chiptune formats support a live look into what the various sound ch
 
 ## Requirements
 
-- Ruby 4.x (managed via [mise](https://mise.jdx.dev/); see `.ruby-version`)
+- Ruby 4.x (via [mise](https://mise.jdx.dev/) or installed on `PATH`; see `.ruby-version`)
 - Homebrew: `libgme`, `libopenmpt`, `sox`, `ffmpeg`
 - `bsdtar` (ships with macOS; fallback: `brew install libarchive`)
 - Xcode command-line tools (`clang`) to build the native audio shim
@@ -21,15 +21,20 @@ Many popular chiptune formats support a live look into what the various sound ch
 ```sh
 brew install libgme libopenmpt sox ffmpeg
 mise install
-mise exec -- bundle install
+mise exec -- "$(mise which bundle)" install
+bin/install
 ```
+
+Without mise, install Ruby 4 and Bundler for that Ruby, then run `bundle install`
+and `bin/install` from the checkout. The installer rejects macOS's older system
+Ruby. It records the selected Ruby and Bundler paths in the launcher, so `rp`
+does not need mise at runtime.
 
 ## Running
 
 Install commands that work from any directory with YJIT enabled:
 
 ```sh
-bin/install
 rubyplayer [path ...]
 rp [path ...]
 ```
@@ -40,7 +45,7 @@ configuration (usually `~/.zshrc`). Use `bin/install --bin-dir DIR` for another
 location. Existing unrelated commands are preserved. Rerun the installer if
 you move the checkout; remove both installed commands to uninstall.
 
-Both commands use the checkout's mise Ruby version and Gemfile, preserve your
+Both commands use the Ruby selected at installation and the checkout's Gemfile, preserve your
 current directory for relative music paths, and forward all arguments. Install
 the dependencies above before launching.
 

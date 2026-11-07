@@ -3,8 +3,10 @@
 Current as of 2026-11-06. Supplementary implementation notes; AGENTS.md remains
 the authority for workflow and invariants.
 
-- Installed launchers select the checkout's explicit mise Ruby version, then
-  restore the caller's directory so relative music paths retain their meaning.
+- The installer selects the checkout's explicit mise Ruby version, or Ruby 4
+  from PATH when mise is absent. Launchers pin absolute Ruby and Bundler paths,
+  so runtime needs neither mise nor shell activation; they preserve the caller's
+  directory so relative music paths retain their meaning.
   Pin both `BUNDLE_GEMFILE` and `BUNDLE_LOCKFILE`: Bundler 4 exports the latter
   independently, so inheriting another bundle can otherwise modify its lockfile.
 - Startup probes all bundled dylibs before loading the UI. Rebuild only missing
@@ -152,5 +154,4 @@ the authority for workflow and invariants.
   `mise exec -- bundle exec ...` can select `/usr/bin/bundle` when mise's
   managed bin directory follows `/usr/bin` in PATH. For a reliable test run
   in that environment, invoke `mise exec -- "$(mise which bundle)" exec
-  "$(mise which ruby)" -S rake test`. Installed launchers resolve the managed
-  Ruby directory through `mise where` and use its absolute executables.
+  "$(mise which ruby)" -S rake test`.
