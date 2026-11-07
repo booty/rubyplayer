@@ -90,10 +90,13 @@ class AppHesLiveTest < Minitest::Test
   end
 
   # The second `o` opens the Tracker; its clock is the track position, not
-  # the output frames the HES tracker counts since launch.
+  # the output frames the HES tracker counts since launch. Seeking first
+  # pulls the two apart (they nearly agree from a fresh start) and skips the
+  # ~1.4 s of real playback before Air Zonk's first pitched note.
   def test_o_opens_the_tracker_at_the_track_position_and_closes_after
     @app.handle_key('o')
     wait_for_rows
+    @app.engine.seek(20_000)
     @app.handle_key('o')
 
     assert_equal :tracker, @app.now_playing_page
@@ -107,7 +110,10 @@ class AppHesLiveTest < Minitest::Test
     assert_includes text, 'Wave 1'
     minutes, seconds = text[/HES TRACKER · (\d+:\d+\.\d+)/, 1].split(':').map(&:to_f)
 
-    assert_in_delta @app.engine.state[:position_ms] / 1000.0, (minutes * 60) + seconds, 0.5
+    position_ms = @app.engine.state[:position_ms]
+
+    assert_operator position_ms, :>=, 20_000, 'the seek must land before the clock is checked'
+    assert_in_delta position_ms / 1000.0, (minutes * 60) + seconds, 0.5
     @app.handle_key('o')
 
     refute_predicate @app, :show_now_playing?
