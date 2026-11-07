@@ -25,7 +25,7 @@ class KittyImageTest < Minitest::Test
     image = Kitty.new(output: out)
     png = "\x89PNG\r\n\x1a\n".b + ('x' * 7000)
 
-    image.render(png, row: 4, col: 9, width: 20, height: 10)
+    image.render(png, row: 4, col: 9, width_cells: 20, height_cells: 10)
 
     commands = out.string.scan(/\e_G(.*?)\e\\/m).flatten
     uploads = commands.take_while do |command|
@@ -53,12 +53,12 @@ class KittyImageTest < Minitest::Test
     image = Kitty.new(output: out)
     png = "\x89PNG\r\n\x1a\nsmall".b
 
-    image.render(png, row: 0, col: 0, width: 8, height: 4)
+    image.render(png, row: 0, col: 0, width_cells: 8, height_cells: 4)
     first = out.string.dup
-    image.render(png, row: 0, col: 0, width: 8, height: 4)
+    image.render(png, row: 0, col: 0, width_cells: 8, height_cells: 4)
 
     assert_equal first, out.string
-    image.render(png, row: 1, col: 2, width: 8, height: 4)
+    image.render(png, row: 1, col: 2, width_cells: 8, height_cells: 4)
 
     commands = out.string.scan(/\e_G(.*?)\e\\/m).flatten
 
@@ -70,11 +70,11 @@ class KittyImageTest < Minitest::Test
     out = StringIO.new
     image = Kitty.new(output: out)
     png = "\x89PNG\r\n\x1a\nsmall".b
-    image.render(png, row: 1, col: 1, width: 8, height: 4)
+    image.render(png, row: 1, col: 1, width_cells: 8, height_cells: 4)
     out.truncate(0)
     out.rewind
 
-    image.render(png, row: 1, col: 1, width: 8, height: 4, force: true)
+    image.render(png, row: 1, col: 1, width_cells: 8, height_cells: 4, force: true)
 
     assert_equal 1, out.string.scan('a=p,').length
     refute_includes out.string, 'a=t,'
@@ -83,11 +83,11 @@ class KittyImageTest < Minitest::Test
   def test_replacement_frees_old_image_and_hides_are_idempotent
     out = StringIO.new
     image = Kitty.new(output: out)
-    image.render("\x89PNG\r\n\x1a\nfirst".b, row: 0, col: 0, width: 8, height: 4)
+    image.render("\x89PNG\r\n\x1a\nfirst".b, row: 0, col: 0, width_cells: 8, height_cells: 4)
     out.truncate(0)
     out.rewind
 
-    image.render("\x89PNG\r\n\x1a\nsecond".b, row: 0, col: 0, width: 8, height: 4)
+    image.render("\x89PNG\r\n\x1a\nsecond".b, row: 0, col: 0, width_cells: 8, height_cells: 4)
 
     assert_match(/a=d,d=I,i=\d+,q=2/, out.string)
     image.hide
@@ -107,11 +107,11 @@ class KittyImageTest < Minitest::Test
     out = StringIO.new
     image = Kitty.new(output: out)
     png = "\x89PNG\r\n\x1a\nimage".b
-    image.render(png, row: 0, col: 0, width: 8, height: 4)
+    image.render(png, row: 0, col: 0, width_cells: 8, height_cells: 4)
     out.truncate(0)
     out.rewind
 
-    image.render(png, row: 0, col: 0, width: 0, height: 4)
+    image.render(png, row: 0, col: 0, width_cells: 0, height_cells: 4)
 
     assert_match(/a=d,d=i,i=\d+,p=\d+,q=2/, out.string)
     refute_includes out.string, 'a=p,'
@@ -120,16 +120,16 @@ class KittyImageTest < Minitest::Test
   def test_write_uses_current_output_resolver
     out = StringIO.new
     image = Kitty.new(output: -> { out })
-    image.render("\x89PNG\r\n\x1a\nimage".b, row: 0, col: 0, width: 8, height: 4)
+    image.render("\x89PNG\r\n\x1a\nimage".b, row: 0, col: 0, width_cells: 8, height_cells: 4)
 
     refute_empty out.string
   end
 
   def test_fits_wide_region_to_image_aspect_and_centers_horizontally
     out = StringIO.new
-    image = Kitty.new(output: out, cell_size: -> { [10, 20] })
+    image = Kitty.new(output: out, measured_cell_size_px: -> { [10, 20] })
 
-    image.render(png_sized(480, 480), row: 2, col: 3, width: 40, height: 10)
+    image.render(png_sized(480, 480), row: 2, col: 3, width_cells: 40, height_cells: 10)
 
     # 400x200px region holds a 200x200px square: 20 cols x 10 rows.
     assert_match(/a=p,i=\d+,p=\d+,c=20,r=10,C=1,q=2/, out.string)
@@ -138,9 +138,9 @@ class KittyImageTest < Minitest::Test
 
   def test_fits_tall_region_to_image_aspect_and_centers_vertically
     out = StringIO.new
-    image = Kitty.new(output: out, cell_size: -> { [10, 20] })
+    image = Kitty.new(output: out, measured_cell_size_px: -> { [10, 20] })
 
-    image.render(png_sized(480, 480), row: 0, col: 0, width: 10, height: 20)
+    image.render(png_sized(480, 480), row: 0, col: 0, width_cells: 10, height_cells: 20)
 
     assert_match(/c=10,r=5,/, out.string)
     assert_match(/\e\[8;1H/, out.string)
@@ -148,11 +148,11 @@ class KittyImageTest < Minitest::Test
 
   def test_crops_source_to_rounded_cell_box_so_pixels_never_stretch
     out = StringIO.new
-    image = Kitty.new(output: out, cell_size: -> { [10, 20] })
+    image = Kitty.new(output: out, measured_cell_size_px: -> { [10, 20] })
 
     # 150x150px fits as 15 cols x 7.5 rows; 8 rows is a 150x160px box, so
     # the source loses 30px of width instead of the image stretching 7%.
-    image.render(png_sized(480, 480), row: 0, col: 0, width: 15, height: 10)
+    image.render(png_sized(480, 480), row: 0, col: 0, width_cells: 15, height_cells: 10)
 
     assert_match(/a=p,i=\d+,p=\d+,x=15,y=0,w=450,h=480,c=15,r=8,C=1,q=2/, out.string)
   end
@@ -160,21 +160,21 @@ class KittyImageTest < Minitest::Test
   def test_refits_when_cell_size_changes_at_same_region
     cells = [10, 20]
     out = StringIO.new
-    image = Kitty.new(output: out, cell_size: -> { cells })
+    image = Kitty.new(output: out, measured_cell_size_px: -> { cells })
     png = png_sized(480, 480)
-    image.render(png, row: 0, col: 0, width: 40, height: 10)
+    image.render(png, row: 0, col: 0, width_cells: 40, height_cells: 10)
     cells = [20, 20]
 
-    image.render(png, row: 0, col: 0, width: 40, height: 10)
+    image.render(png, row: 0, col: 0, width_cells: 40, height_cells: 10)
 
     assert_match(/c=10,r=10,/, out.string)
   end
 
   def test_unknown_cell_size_fits_with_configured_aspect_in_whole_cells
     out = StringIO.new
-    image = Kitty.new(output: out, cell_size: -> {}, cell_aspect: -> { 2.0 })
+    image = Kitty.new(output: out, measured_cell_size_px: -> {}, cell_aspect: -> { 2.0 })
 
-    image.render(png_sized(320, 240), row: 0, col: 0, width: 16, height: 8, gap: 1.0)
+    image.render(png_sized(320, 240), row: 0, col: 0, width_cells: 16, height_cells: 8, gap_cells: 1.0)
 
     # Guessed cell pixels can't drive sub-cell offsets, so the gap snaps to
     # whole cells: one column each side, centered in the leftover rows.
@@ -185,12 +185,12 @@ class KittyImageTest < Minitest::Test
 
   def test_gap_matches_sides_to_the_bottom_in_whole_cells
     out = StringIO.new
-    image = Kitty.new(output: out, cell_size: -> { [10, 23] })
+    image = Kitty.new(output: out, measured_cell_size_px: -> { [10, 23] })
 
     # A one-cell-width gap is 10px. Below, the border's half row already
     # leaves 11.5px, so no padding row; beside it a padding column makes
     # 15px, nearer 11.5 than the 5px without one.
-    image.render(png_sized(480, 480), row: 0, col: 1, width: 47, height: 20, gap: 1.0, align: :bottom)
+    image.render(png_sized(480, 480), row: 0, col: 1, width_cells: 47, height_cells: 20, gap_cells: 1.0, align: :bottom)
 
     assert_match(/a=p,i=\d+,p=\d+,[^c]*c=45,r=20,C=1,q=2/, out.string)
     assert_match(/\e\[1;3H/, out.string)
@@ -199,12 +199,12 @@ class KittyImageTest < Minitest::Test
 
   def test_bottom_alignment_puts_spare_rows_above_the_art_without_sub_cell_offsets
     out = StringIO.new
-    image = Kitty.new(output: out, cell_size: -> { [10, 20] })
+    image = Kitty.new(output: out, measured_cell_size_px: -> { [10, 20] })
 
     # Below, the border's half row is already the 10px gap; beside it, a
     # padding column each side is the nearest match. 44 cols x 22 rows of
     # a square leaves two spare rows, both above the art.
-    image.render(png_sized(480, 480), row: 3, col: 1, width: 46, height: 24, gap: 1.0, align: :bottom)
+    image.render(png_sized(480, 480), row: 3, col: 1, width_cells: 46, height_cells: 24, gap_cells: 1.0, align: :bottom)
 
     assert_match(/a=p,i=\d+,p=\d+,c=44,r=22,C=1,q=2/, out.string)
     assert_match(/\e\[6;3H/, out.string)
@@ -213,31 +213,34 @@ class KittyImageTest < Minitest::Test
 
   def test_height_limited_art_keeps_spare_columns_even_so_sides_match
     out = StringIO.new
-    image = Kitty.new(output: out, cell_size: -> { [7, 13] })
+    image = Kitty.new(output: out, measured_cell_size_px: -> { [7, 13] })
 
     # 19 rows of 4:3 is 47.05 cols, leaving 3 spare: one side would get a
     # whole extra cell. 48 cols splits the spare evenly; the crop absorbs it.
-    image.render(png_sized(400, 300), row: 20, col: 1, width: 50, height: 19, gap: 1.0, align: :bottom)
+    image.render(png_sized(400, 300), row: 20, col: 1, width_cells: 50, height_cells: 19, gap_cells: 1.0,
+                                      align: :bottom)
 
     assert_match(/c=48,r=19,/, out.string)
     assert_match(/\e\[21;3H/, out.string)
   end
 
   def test_rows_to_fill_sizes_a_region_the_art_spans_edge_to_edge
-    whole_cells = Kitty.new(output: StringIO.new, cell_size: -> { [10, 23] })
-    even = Kitty.new(output: StringIO.new, cell_size: -> { [10, 20] })
+    whole_cells = Kitty.new(output: StringIO.new, measured_cell_size_px: -> { [10, 23] })
+    even = Kitty.new(output: StringIO.new, measured_cell_size_px: -> { [10, 20] })
     png = png_sized(480, 480)
 
-    assert_equal 20, whole_cells.rows_to_fill(png, width: 47, gap: 1.0)
-    assert_equal 22, even.rows_to_fill(png, width: 46, gap: 1.0)
-    assert_nil whole_cells.rows_to_fill("\x89PNG\r\n\x1a\nshort".b, width: 47, gap: 1.0)
+    assert_equal 20, whole_cells.rows_to_fill(png, width_cells: 47, gap_cells: 1.0)
+    assert_equal 22, even.rows_to_fill(png, width_cells: 46, gap_cells: 1.0)
+    assert_nil whole_cells.rows_to_fill("\x89PNG\r\n\x1a\nshort".b, width_cells: 47, gap_cells: 1.0)
   end
 
   def test_exposes_png_size_and_cell_size_for_layout
     assert_equal [320, 240], Kitty.png_size(png_sized(320, 240))
     assert_nil Kitty.png_size("\x89PNG\r\n\x1a\nshort".b)
-    assert_equal [10, 20], Kitty.new(output: StringIO.new, cell_size: -> { [10, 20] }).cell_size
-    assert_equal [1, 2.5], Kitty.new(output: StringIO.new, cell_size: -> {}, cell_aspect: -> { 2.5 }).cell_size
+    assert_equal [10, 20], Kitty.new(output: StringIO.new, measured_cell_size_px: -> { [10, 20] }).cell_size_px
+    assert_equal [1, 2.5], Kitty.new(output: StringIO.new, measured_cell_size_px: -> {}, cell_aspect: lambda {
+      2.5
+    }).cell_size_px
   end
 
   private

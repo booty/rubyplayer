@@ -49,7 +49,7 @@ Thread.new do
     status = {
       cols: screen.cols, rows: screen.rows,
       region: app.instance_variable_get(:@art_region),
-      placement: image.instance_variable_get(:@placement),
+      placement: image.instance_variable_get(:@placement)&.to_h,
       cell_size: RubyPlayer::UI::KittyImage.tty_cell_size,
       settling: app.send(:resize_settling?)
     }

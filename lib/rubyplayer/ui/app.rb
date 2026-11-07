@@ -145,7 +145,7 @@ module RubyPlayer
         @art_supported = KittyImage.supported?(env)
         # Cell pixels are read per placement rather than cached: a font-size
         # change alters them and arrives only as a SIGWINCH-driven repaint.
-        @kitty_image = KittyImage.new(output: -> { @io_out }, cell_size: -> { KittyImage.tty_cell_size },
+        @kitty_image = KittyImage.new(output: -> { @io_out }, measured_cell_size_px: -> { KittyImage.tty_cell_size },
                                       cell_aspect: -> { @config['ui', 'art_cell_aspect'] })
         @art_mode = normalize_art_mode(@config['ui', 'art_mode'])
         @art_bytes = nil
@@ -825,8 +825,8 @@ module RubyPlayer
         end
 
         @art_dirty = false
-        @kitty_image.render(@art_bytes, row: region[:y], col: region[:x], width: region[:w],
-                                        height: region[:h], gap: @config['ui', 'art_gap_cells'],
+        @kitty_image.render(@art_bytes, row: region[:y], col: region[:x], width_cells: region[:w],
+                                        height_cells: region[:h], gap_cells: @config['ui', 'art_gap_cells'],
                                         align: region.fetch(:align, :center), force: true)
       end
 
@@ -1512,7 +1512,7 @@ module RubyPlayer
         limit = [limit, cap].min if cap.positive?
         # Before art arrives (rows_to_fill is nil) a square cover is
         # assumed; the arrival repaints and resizes the inset.
-        fill = @kitty_image.rows_to_fill(@art_bytes, width: lib_w - 2, gap: @config['ui', 'art_gap_cells'])
+        fill = @kitty_image.rows_to_fill(@art_bytes, width_cells: lib_w - 2, gap_cells: @config['ui', 'art_gap_cells'])
         rows = [fill || ((lib_w - 2) / 2), limit].min
         rows >= @config['ui', 'art_min_rows'] ? rows : 0
       end
