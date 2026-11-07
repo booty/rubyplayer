@@ -81,12 +81,4 @@ class AppSpcLiveTest < Minitest::Test
 
     assert_equal 0, @app.engine.spc_live.mute_mask
   end
-
-  private
-
-  def rendered_text
-    @app.handle_events
-    @app.render
-    back_buffer_text
-  end
 end

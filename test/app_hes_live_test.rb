@@ -131,19 +131,5 @@ class AppHesLiveTest < Minitest::Test
     RubyPlayer::Vgm::NoteLog.decode(events).map(&:sample)
   end
 
-  def rendered_text
-    @app.handle_events
-    @app.render
-    back_buffer_text
-  end
-
-  # Snapshots reach the page once the device plays the first chunk.
-  def wait_for_rows
-    text = nil
-    wait_until(timeout: 3, interval: 0.01, failure_message: 'HES voices were not rendered') do
-      text = rendered_text
-      text.include?('1 Wave 1')
-    end
-    text
-  end
+  def wait_for_rows = wait_for_live_rows('1 Wave 1')
 end

@@ -126,6 +126,24 @@ module TestSupport
 
     def library = @app.library
 
+    # Drains events and renders a frame, returning its text.
+    def rendered_text
+      @app.handle_events
+      @app.render
+      back_buffer_text
+    end
+
+    # Live pages fill in once the device plays the first chunk and its
+    # snapshots arrive; first_row_label names the page's first channel row.
+    def wait_for_live_rows(first_row_label)
+      text = nil
+      wait_until(timeout: 3, interval: 0.01, failure_message: "live rows (#{first_row_label}) were not rendered") do
+        text = rendered_text
+        text.include?(first_row_label)
+      end
+      text
+    end
+
     # Swaps in a Screen of the given size writing to out (fresh by default),
     # as a terminal resize would. The only place tests replace App's output.
     def use_screen(rows: 24, cols: 110, out: StringIO.new)
