@@ -144,9 +144,16 @@ Ruby comes from mise. Plain `bundle exec` may select wrong Ruby.
   `test/support/rip_fixtures.rb` names the HES and NSF rips (one per NSF
   expansion chip) and extracts the zipped ones.
 - Scanner tests may use empty fake files; scanner stats only.
-- Engine tests use `null_backend: true`; no audio device.
+- Engine tests use `null_backend: true`; no audio device. Shared engine
+  fakes (rings, no-op library/focus) live in `test/support/engine_fakes.rb`.
 - UI tests render into `Screen.new(out: StringIO.new, ...)`; inspect
-  `screen.flush` or `@back` cells for fg/bg/bold/italic.
+  `screen.flush`, `screen.back_lines` (text) or `screen.back_cells`
+  (fg/bg/bold/italic).
+- Prefer public readers (`app.library`, `app.screen`, `app.now_playing`,
+  `app.art`, ...) over `instance_variable_get`; `AppTestSupport` owns the
+  remaining seams (`use_screen`, `focus_pane`, `rendered_text`,
+  `wait_for_live_rows`). Native libgme-core backend tests include
+  `TestSupport::NativeBackendContract`.
 - Regression tests keep comments explaining original bug.
 
 ## Memories
