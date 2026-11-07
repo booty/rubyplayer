@@ -10,6 +10,7 @@ require 'rubyplayer/vgm/cursor'
 require 'rubyplayer/vgm/chips/ym2612'
 require 'rubyplayer/vgm/chips/sn76489'
 require 'rubyplayer/vgm/chips/ym2413'
+require_relative 'support/vgm_fixtures'
 
 class VgmLiveViewTest < Minitest::Test
   THEME = RubyPlayer::Theme::DEFAULT
@@ -17,10 +18,11 @@ class VgmLiveViewTest < Minitest::Test
   SIZES = [[200, 60], [160, 48], [120, 40], [90, 30], [70, 20], [50, 12]].freeze
   ALWAYS_LISTED = ['1 FM 1', '6 FM 6', '7 PSG 1', 'a Noise'].freeze
 
-  # Replaying 12 s of a DAC-heavy track takes about a second; share it.
+  # One replayed snapshot 12 s into a DAC-heavy track, shared by every test.
+  # The costly part is parsing the file (see TestSupport::VgmFixtures).
   def self.fixture_snapshot
     @fixture_snapshot ||= begin
-      reader = Vgm::Reader.open(File.join(FIXTURES, 'scrap-brean-zone.vgm'), max_bytes: 64 << 20)
+      reader = TestSupport::VgmFixtures.reader('scrap-brean-zone.vgm')
       cursor = Vgm::Cursor.new(reader: reader)
       snapshot = nil
       loop do

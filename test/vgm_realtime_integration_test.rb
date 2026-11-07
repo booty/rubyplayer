@@ -13,6 +13,7 @@ require 'rubyplayer/vgm/telemetry'
 require 'rubyplayer/ui/chip_live_view'
 require 'rubyplayer/ui/vgm_telemetry_controller'
 require_relative 'support/vgm_builder'
+require_relative 'support/vgm_fixtures'
 
 class VgmRealtimeIntegrationTest < Minitest::Test
   class FakeAudio
@@ -83,8 +84,7 @@ class VgmRealtimeIntegrationTest < Minitest::Test
       ['scrap-brean-zone.vgm', 2, :key_off]
     ]
     fixtures.each do |name, channel_index, initial_state|
-      reader = RubyPlayer::Vgm::Reader.open(File.join(FIXTURES, name), max_bytes: 64 * 1024 * 1024)
-      cursor = RubyPlayer::Vgm::Cursor.new(reader: reader)
+      cursor = RubyPlayer::Vgm::Cursor.new(reader: TestSupport::VgmFixtures.reader(name))
       initial = cursor.advance_to(sample: 0)
       later = cursor.advance_to(sample: 44_100)
       chip = ->(snapshot) { snapshot.chips.find { |item| item.id == 'ym2612:0' } }
