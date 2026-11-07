@@ -3,13 +3,14 @@
 Use these files as normative guidance:
 
 - `README.md` — user-facing architecture and configuration.
-- `CLAUDE.md` — workflow, invariants, and gotchas.
-- `AGENTS.md` — agent behavior.
+- `AGENTS.md` — canonical agent guidance: workflow, invariants, gotchas,
+  refactor seams, and testing. `CLAUDE.md` only imports it.
 
 Current supplementary implementation lessons live in [`memories.md`](memories.md).
 They record tested decisions without replacing the guidance above.
 
-Current visual explainers (reviewed 2026-10-10) describe the implementation:
+Current visual explainers describe the implementation (the component map was
+reviewed 2026-11-07, the playback and scan sequences 2026-10-10):
 
 - [Component map](explainers/components.md)
 - [Playback sequence](explainers/playback.md)
@@ -33,7 +34,8 @@ Future docs should state whether they are `current` or `superseded`, with a
 date and a short replacement link when applicable. Do not edit historical
 files to make them current; add or update a current index or document instead.
 
-Verify behavior with `mise exec -- bundle exec rake test`; rebuild native code
+Verify behavior with `mise exec -- bundle exec rake test` (or the faster
+`rake test:parallel` while iterating); rebuild native code
 with `mise exec -- bundle exec rake compile`. Check relevant real files in
 `fixtures/` and shared test setup/helpers in `test/test_helper.rb` and
 `test/support/`.

@@ -26,7 +26,7 @@ sequenceDiagram
     Engine->>Decoder: enqueue play_head command
     Decoder->>Queue: Read head under mutex
     opt Track is inside an archive
-        Decoder->>Cache: materialize(physical_path, archive_entry)
+        Decoder->>Cache: playable_path(track)
         Cache-->>Decoder: Real extracted path
     end
     Decoder->>Backend: backend_for(path), open(path, subtune_index, sample_rate)
@@ -100,7 +100,7 @@ they preserve the finite queue and bypass playback history.
 | Selection and command routing | [UI::App](../../lib/rubyplayer/ui/app.rb): `play_now`, `enqueue`, `handle_events` |
 | Decoder lifecycle | [PlaybackEngine](../../lib/rubyplayer/playback_engine.rb): `enqueue_now`, `run`, `play_head`, `open_and_play`, `pump`, `finish_and_advance`, `record_history` |
 | Ordered tracks | [PlayQueue](../../lib/rubyplayer/play_queue.rb) |
-| Archive path resolution | [ArchiveCache](../../lib/rubyplayer/archive_cache.rb): `materialize` |
+| Archive path resolution | [ArchiveCache](../../lib/rubyplayer/archive_cache.rb): `playable_path`, `materialize` |
 | Format selection and decoding | [Registry](../../lib/rubyplayer/backends/registry.rb), [GME](../../lib/rubyplayer/backends/gme.rb), [OpenMPT](../../lib/rubyplayer/backends/openmpt.rb), [FFmpeg](../../lib/rubyplayer/backends/ffmpeg.rb) |
 | PCM transport and device callback | [AudioOutput](../../lib/rubyplayer/audio_output.rb): `write`, `frames_played`; [C shim](../../ext/rp_audio/rp_audio.c): `rp_write`, `data_callback` |
 | UI wakeup | [EventBus](../../lib/rubyplayer/event_bus.rb): `publish`, `drain` |

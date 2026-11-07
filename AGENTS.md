@@ -55,8 +55,10 @@ Ruby comes from mise. Plain `bundle exec` may select wrong Ruby.
 ## Architecture invariants
 
 - Threads: main UI, scanner, extractor pool, PlaybackEngine decoder, native
-  miniaudio callback. UI calls engine public API. Events return through
-  `EventBus` self-pipe so `IO.select` waits on stdin and events.
+  miniaudio callback, the `ArtFetcher` worker, the `MediaKeys` pipe reader,
+  and short-lived Now Playing metadata probes. UI calls engine public API.
+  Events return through `EventBus` self-pipe so `IO.select` waits on stdin
+  and events; background threads never mutate UI state directly.
 - Scan has two sequential phases. `Scanner#reconcile` stats only; never opens
   files. `ExtractorPool` opens/decodes. Archive missing/restore logic depends
   on phase order.
@@ -70,7 +72,7 @@ Ruby comes from mise. Plain `bundle exec` may select wrong Ruby.
 - FFI calls use `blocking: true`; extractor pool needs GVL release.
 - Archives: `physical_path` is on-disk archive; `archive_entry` is inner path,
   including nested chains. Scanner diffs archive folder rows, not track rows.
-  Backends read real files; `ArchiveCache#materialize` resolves cache paths.
+  Backends read real files; `ArchiveCache#playable_path(track)` resolves them.
 - Audio contract: little-endian float32, interleaved stereo. Use
   `AudioFormat::CHANNELS`, `BYTES_PER_FRAME`, and related constants.
 
@@ -156,6 +158,10 @@ Ruby comes from mise. Plain `bundle exec` may select wrong Ruby.
   `wait_for_live_rows`). Native libgme-core backend tests include
   `TestSupport::NativeBackendContract`.
 - Regression tests keep comments explaining original bug.
+- Tests write only under their own temp dirs (`AppTestSupport` injects an
+  `ArchiveCache` there): `rake test:parallel` runs files in separate
+  processes at once, and the native audio shim allows one device per
+  process, so tests in one process still run one at a time.
 
 ## Memories
 

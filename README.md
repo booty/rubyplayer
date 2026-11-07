@@ -277,7 +277,7 @@ Visual walkthroughs (current implementation, with links to source):
 - [Playback sequence](docs/explainers/playback.md) — selection, decoding, native audio, and UI updates.
 - [Library scan sequence](docs/explainers/scanning.md) — reconciliation, metadata extraction, and archive restoration.
 
-rubyplayer runs in **one Ruby process with UI, decoder, scan, and native audio threads**, coordinated through a small set of thread-safe primitives. FFmpeg, SoX, and archive extraction use subprocesses:
+rubyplayer runs in **one Ruby process with UI, decoder, scan, and native audio threads**, coordinated through a small set of thread-safe primitives. FFmpeg, SoX, archive extraction, and the macOS media-controls helper (`RubyPlayerMedia.app`) run as subprocesses:
 
 - **Main thread** — runs the terminal UI loop (`UI::App#run`): waits for keyboard input, events, or a timeout; drains events; and renders when something visible changes. Active playback uses the configured frame rate; idle rendering skips unchanged frames.
 - **Scan orchestration thread** — reconciles filesystem state against the database without opening music files, then waits for metadata extraction to finish before processing the next root. Created for each scan request.
@@ -285,7 +285,9 @@ rubyplayer runs in **one Ruby process with UI, decoder, scan, and native audio t
 - **Progressive scan display** — workers publish completed/total progress through the event bus. The UI reloads panes at most every 250 ms during extraction, then performs a final refresh after folder counts are recomputed.
 - **Decoder thread** — owned by `PlaybackEngine`. Opens the play-queue head via a backend, decodes audio, and pumps PCM into the native ring buffer. Focus playback reads SoX-generated PCM through the same thread and audio output, preserving the finite queue. Idle or paused decoding blocks until a command arrives.
 - **miniaudio's own callback thread** — native (C), drains the ring buffer at the audio device's pace. It never touches Ruby.
-- **Artwork threads** — load and process cover images off the UI thread, returning results through EventBus.
+- **Artwork worker** — one `ArtFetcher` thread loads and downscales cover images off the UI thread and returns them through EventBus. A request made while it is busy replaces any still-pending one, so skipping through tracks never queues stale fetches.
+- **Now Playing probe threads** — opening Now Playing reads fresh technical metadata for backends that report it (`technical_metadata?`) on a short-lived thread, answered through EventBus.
+- **Media keys reader** — reads command names from the media-controls helper's stdout and publishes them to EventBus, so playback actions still run on the UI thread. If the helper dies, media keys are disabled instead of the app stopping.
 
 Threads talk to each other through:
 
@@ -336,6 +338,8 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | `vgm/reader.rb`, `vgm/cursor.rb`, `vgm/chips.rb`, `vgm/telemetry.rb` | Bounded plain/gzip VGM command reader, state-carrying loop/checkpoint replay, chip capability routing, and a lazy coalescing worker that publishes immutable snapshots. Chip adapters live under `vgm/chips/`. |
 | `vgm/note_log.rb`, `vgm/envelope.rb` | Per-chip packed history of note starts, stops, and pitch changes recorded during replay; closed-form estimates of YM2612/YM2413 envelope levels from register rates and key timing. |
 | `audio_output.rb` | `AudioOutput`: thin FFI wrapper around the native shim (`RpAudio`) — init/start/stop the device, write float32 stereo frames into its ring buffer, query playback position, pause. One instance per process (the C side holds module-level state). |
+| `effects_rack.rb` | `EffectsRack`: session-only on/off and intensity per output effect (names and order come from the native rack via `AudioOutput.effect_names`) plus master bypass; forwards each change to the callback through `AudioOutput`. |
+| `media_keys.rb` | `MediaKeys`: runs the bundled `RubyPlayerMedia.app` helper, sends it Now Playing facts as JSON lines (position only on a track/state change, seek, or drift), and publishes the play/pause/next/previous commands it reads back. |
 | `audio_format.rb` | `AudioFormat`: canonical little-endian float32 interleaved-stereo constants and frame sizes shared by audio producers and consumers. |
 | `focus_sounds.rb` | `FocusSound` and `FocusSounds`: immutable catalog of infinite SoX noise recipes, separate from finite library tracks. |
 | `focus_player.rb` | `FocusPlayer`: manages the SoX subprocess and reads complete PCM frames from its output pipe for PlaybackEngine. |
@@ -376,7 +380,7 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 
 | File | Purpose |
 |---|---|
-| `app.rb` | `UI::App`: wires every other component together and owns the main loop — key dispatch, event handling, config hot-reload, and the top-level `render`. This is the natural place to look first to see how a keypress becomes an action and how state changes reach the screen. |
+| `app.rb` | `UI::App`: wires every other component together and owns the main loop — key dispatch, event handling, config hot-reload, and the top-level `render`. `MODAL_LAYERS` lists every input-capturing modal topmost first and drives key routing, drawing order, and `modal_active?`; Now Playing state lives in `NowPlayingController` and album-art placement in `ArtPresenter`. This is the natural place to look first to see how a keypress becomes an action and how state changes reach the screen. |
 | `spc_live_view.rb` | `SpcLiveView`: the full-modal SPC live page. Renders a `Spc::LiveState` into a rectangle, choosing three-column, two-column, or stacked panels by size; graphs are memoized per input. |
 | `chip_live_view.rb`, `gb_live_panels.rb`, `nes_live_panels.rb`, `vgm_telemetry_controller.rb` | `ChipLiveView`: the full-modal VGM (and GBS, NSF, and HES, through the Game Boy, NES, and HES panel modules, registered in `NATIVE_PANEL_FAMILIES`) live page, rendering snapshots into a rectangle with three-column, two-column, or stacked panels by size; and the visible-consumer refresh controller. The view does not read files, query the engine, or depend on the Now Playing modal. |
 | `chip_tracker_view.rb` | `ChipTrackerView`: the Tracker page (VGM and HES). Buckets the snapshot's packed note history into 50 ms rows of track time and renders a scrolling time grid with a horizontal channel window. Like `ChipLiveView`, it reads only snapshots. |
@@ -388,6 +392,7 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | `screen.rb` | `Screen`: the double-buffered renderer described above (`put`/`clear_back`/`flush`), plus truecolor and named ANSI color support. Has no knowledge of panes, tracks, or layout — purely a drawing primitive. |
 | `library_pane.rb` | `LibraryPane`: left-hand source tree with queue/history/favorites/Focus, five smart views, and folder hierarchy. Owns folder breadcrumbs, selection, scrolling, and overflow indicator. |
 | `list_row_renderer.rb` | Shared stateless track-row construction, styled segment drawing, clipping, theme-color resolution, and section-header text. |
+| `effects_modal.rb` | `EffectsModal`: the Effects panel (D): select, toggle, and adjust effects and master bypass; drawing through App's shared modal frame. |
 | `playlist_modal.rb` | Snapshot-backed add-to-playlist picker. Owns filtering, selection, duplicate confirmation, and drawing; returns intents to `App` for database mutations. Playlist lists refresh when the picker opens, without queries during redraws. |
 | `tracks_pane.rb` | `TracksPane`: interactive item list for every source. Owns filtering, cursor/scroll memory, grouping/sorting, and queue identity while delegating individual track-row drawing. Queue remains flat and ordered. |
 | `queued_pane.rb` | `QueuedPane`: snapshot-backed upcoming/history overview with selectable upcoming tracks, queue actions routed through App, cumulative duration, and overflow allocation. History rows are informational. |
@@ -404,6 +409,8 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 | File | Purpose |
 |---|---|
 | `rp_audio.c` | A minimal playback shim over vendored miniaudio: owns a lock-free SPSC ring buffer of float32 interleaved stereo frames. The Ruby decoder thread produces PCM via `rp_write`, which retains the GVL for its bounded memory copy; miniaudio's own native callback consumes it and never touches Ruby. Compiled to `lib/rubyplayer/native/librp_audio.dylib` by `mise exec -- bundle exec rake compile`. |
+| `effects.c`, `effects.h` | The output effects rack run by the callback on consumed frames: per-effect state and delay lines, smoothing between levels, and master bypass. `enum rp_effect_id` and `rp_effect_name` are the one list of effects; the callback passes levels in a typed `rp_effect_controls`. |
+| `ring_cursor.h` | Ring-buffer cursor arithmetic shared by the shim and its C tests. |
 | `miniaudio.h` | Vendored single-header [miniaudio](https://miniaudio.docs/) library — the actual cross-platform audio device backend. Not modified. |
 
 ### Native SPC player (`ext/rp_spc/`, `ext/snes_spc/`)
@@ -427,7 +434,7 @@ The TUI is a custom **double-buffered renderer** (`UI::Screen`), not a curses wr
 
 | Path | Purpose |
 |---|---|
-| `test/` | Minitest suite, one file per class above plus `test_helper.rb` (fixture path constant, requires); shared test support is split under `test/support/` (`AppTestSupport` and `AsyncWait`). Run with `mise exec -- bundle exec rake test`. |
+| `test/` | Minitest suite, one file per class above plus `test_helper.rb` (fixture path constant, requires); shared test support is split under `test/support/` (`AppTestSupport`, `AsyncWait`, `EngineFakes`, `NativeBackendContract`, `VgmFixtures`, `RipFixtures`, and the opt-in `FileTimingReporter`). Run with `mise exec -- bundle exec rake test`, or `rake test:parallel` across processes (see [Testing](#testing)). |
 | `fixtures/` | Real sample files in every supported format, used by the test suite and for manual verification. |
 | `examples/config.rb` | Packaged executable-config starter. First run copies it to `~/.config/rubyplayer/config.rb`; settings remain commented so future built-in default changes still apply. |
 | `docs/superpowers/` | Historical design specs and plans; see [`docs/README.md`](docs/README.md) for current documentation guidance. |

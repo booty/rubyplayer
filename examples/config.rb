@@ -22,6 +22,8 @@ RubyPlayer.configure do |config|
   # Audio and scanning
   # config.audio.sample_rate = "auto" # or 48_000
   # config.audio.ring_buffer_ms = 500
+  # config.audio.effect_default_percent = 50  # starting intensity of each output effect
+  # config.audio.effect_step_percent = 5      # Left/Right step in the Effects panel
   # config.scanner.thread_count = 0   # 0 uses CPU count
 
   # Key and backend maps
