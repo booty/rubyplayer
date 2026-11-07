@@ -55,7 +55,9 @@ int main(int argc, const char *argv[]) {
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
             char line[65536];
             while (fgets(line, sizeof(line), stdin)) {
-                NSData *data = [[NSString stringWithUTF8String:line] dataUsingEncoding:NSUTF8StringEncoding];
+                /* Hand raw bytes to the JSON parser: it rejects bad UTF-8 by
+                 * returning nil, where a nil NSData would throw instead. */
+                NSData *data = [NSData dataWithBytes:line length:strlen(line)];
                 NSDictionary *state = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
                 if ([state isKindOfClass:[NSDictionary class]]) {
                     dispatch_async(dispatch_get_main_queue(), ^{ update_playback(state); });
