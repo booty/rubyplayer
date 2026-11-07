@@ -8,35 +8,16 @@ require 'zlib'
 require 'rubyplayer/backends/registry'
 require 'rubyplayer/backends/gme'
 require 'rubyplayer/backends/gbs_native'
+require_relative 'support/native_backend_contract'
 
 class GbsNativeBackendTest < Minitest::Test
+  include TestSupport::NativeBackendContract
+
+  BACKEND_CLASS = RubyPlayer::Backends::GbsNative
+  BACKEND_NAME = :gbs_native
+  EXTENSIONS = %w[.gbs].freeze
   GBS = File.join(FIXTURES, 'shantae.gbs')
   RATE = 48_000
-
-  def setup
-    @backend = RubyPlayer::Backends::GbsNative.new
-  end
-
-  def teardown
-    @handle&.close
-  end
-
-  def test_registry_routes_gbs_to_the_native_player_by_default
-    registry = RubyPlayer::Backends::Registry.new
-
-    assert_equal :gbs_native, registry.backend_name_for('/x/a.gbs')
-    assert_equal 'gbs_native', registry.backend_for('/x/a.gbs').name
-  end
-
-  def test_backends_config_override_restores_libgme_playback
-    assert_equal 'gme', RubyPlayer::Backends::Registry.new('.gbs' => 'gme').backend_for('/x/a.gbs').name
-  end
-
-  def test_missing_native_library_falls_back_to_libgme
-    RubyPlayer::Backends::GbsNative.stub(:available?, false) do
-      assert_equal 'gme', RubyPlayer::Backends::Registry.new.backend_for('/x/a.gbs').name
-    end
-  end
 
   # Scanning stays on libgme: tags, lengths, and hardware extras must not change.
   def test_metadata_is_libgmes

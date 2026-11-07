@@ -9,37 +9,16 @@ require 'rubyplayer/backends/gme'
 require 'rubyplayer/backends/nsf_native'
 require_relative 'support/rip_fixtures'
 require_relative 'support/nsf_builder'
+require_relative 'support/native_backend_contract'
 
 class NsfNativeBackendTest < Minitest::Test
+  include TestSupport::NativeBackendContract
+
+  BACKEND_CLASS = RubyPlayer::Backends::NsfNative
+  BACKEND_NAME = :nsf_native
+  EXTENSIONS = %w[.nsf .nsfe].freeze
   Rips = TestSupport::RipFixtures
   RATE = 48_000
-
-  def setup
-    @backend = RubyPlayer::Backends::NsfNative.new
-  end
-
-  def teardown
-    @handle&.close
-  end
-
-  def test_registry_routes_nsf_and_nsfe_to_the_native_player_by_default
-    registry = RubyPlayer::Backends::Registry.new
-
-    %w[/x/a.nsf /x/a.nsfe].each do |path|
-      assert_equal :nsf_native, registry.backend_name_for(path)
-      assert_equal 'nsf_native', registry.backend_for(path).name
-    end
-  end
-
-  def test_backends_config_override_restores_libgme_playback
-    assert_equal 'gme', RubyPlayer::Backends::Registry.new('.nsf' => 'gme').backend_for('/x/a.nsf').name
-  end
-
-  def test_missing_native_library_falls_back_to_libgme
-    RubyPlayer::Backends::NsfNative.stub(:available?, false) do
-      assert_equal 'gme', RubyPlayer::Backends::Registry.new.backend_for('/x/a.nsf').name
-    end
-  end
 
   # Scanning stays on libgme: tags, lengths, and hardware extras must not change.
   def test_metadata_is_libgmes

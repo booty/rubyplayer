@@ -6,35 +6,16 @@ require 'rubyplayer/backends/registry'
 require 'rubyplayer/backends/gme'
 require 'rubyplayer/backends/hes_native'
 require_relative 'support/rip_fixtures'
+require_relative 'support/native_backend_contract'
 
 class HesNativeBackendTest < Minitest::Test
+  include TestSupport::NativeBackendContract
+
+  BACKEND_CLASS = RubyPlayer::Backends::HesNative
+  BACKEND_NAME = :hes_native
+  EXTENSIONS = %w[.hes].freeze
   Rips = TestSupport::RipFixtures
   RATE = 48_000
-
-  def setup
-    @backend = RubyPlayer::Backends::HesNative.new
-  end
-
-  def teardown
-    @handle&.close
-  end
-
-  def test_registry_routes_hes_to_the_native_player_by_default
-    registry = RubyPlayer::Backends::Registry.new
-
-    assert_equal :hes_native, registry.backend_name_for('/x/a.hes')
-    assert_equal 'hes_native', registry.backend_for('/x/a.hes').name
-  end
-
-  def test_backends_config_override_restores_libgme_playback
-    assert_equal 'gme', RubyPlayer::Backends::Registry.new('.hes' => 'gme').backend_for('/x/a.hes').name
-  end
-
-  def test_missing_native_library_falls_back_to_libgme
-    RubyPlayer::Backends::HesNative.stub(:available?, false) do
-      assert_equal 'gme', RubyPlayer::Backends::Registry.new.backend_for('/x/a.hes').name
-    end
-  end
 
   # Scanning stays on libgme, including the playlist an archived rip ships
   # beside its .hes: track count, titles, and lengths must not change.

@@ -7,40 +7,16 @@ require 'zlib'
 require 'rubyplayer/backends/registry'
 require 'rubyplayer/backends/gme'
 require 'rubyplayer/backends/snes_spc'
+require_relative 'support/native_backend_contract'
 
 class SnesSpcBackendTest < Minitest::Test
+  include TestSupport::NativeBackendContract
+
+  BACKEND_CLASS = RubyPlayer::Backends::SnesSpc
+  BACKEND_NAME = :snes_spc
+  EXTENSIONS = %w[.spc].freeze
   SPC = File.join(FIXTURES, 'spc', 'earthbound-megaton-walk.spc')
   RATE = 48_000
-
-  def setup
-    @backend = RubyPlayer::Backends::SnesSpc.new
-  end
-
-  def teardown
-    @handle&.close
-  end
-
-  def test_registry_routes_spc_to_the_native_player_by_default
-    registry = RubyPlayer::Backends::Registry.new
-
-    assert_equal :snes_spc, registry.backend_name_for('/x/a.spc')
-    assert_equal 'snes_spc', registry.backend_for('/x/a.spc').name
-    assert_equal 'gme', registry.backend_for('/x/a.vgm').name
-  end
-
-  def test_backends_config_override_restores_libgme_playback
-    registry = RubyPlayer::Backends::Registry.new('.spc' => 'gme')
-
-    assert_equal 'gme', registry.backend_for('/x/a.spc').name
-  end
-
-  def test_missing_native_library_falls_back_to_libgme
-    RubyPlayer::Backends::SnesSpc.stub(:available?, false) do
-      registry = RubyPlayer::Backends::Registry.new
-
-      assert_equal 'gme', registry.backend_for('/x/a.spc').name
-    end
-  end
 
   # Scanning stays on libgme: tags, lengths, and hardware extras must not change.
   def test_metadata_is_libgmes
