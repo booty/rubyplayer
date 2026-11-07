@@ -104,11 +104,16 @@ class PlaybackEngineTest < Minitest::Test
     @lib.find_track(id)
   end
 
+  # Drains every queued event per poll: popping one and then sleeping a
+  # whole interval made each unrelated event (positions, playback state)
+  # cost 20 ms before the awaited one was even looked at.
   def wait_for_event(type, timeout = 5)
     wait_until(timeout: timeout, interval: 0.02,
                failure_message: "timed out waiting for #{type}") do
-      ev = @bus.events.pop(true)
-      ev if ev[0] == type
+      loop do
+        ev = @bus.events.pop(true)
+        break ev if ev[0] == type
+      end
     rescue ThreadError
       nil
     end
