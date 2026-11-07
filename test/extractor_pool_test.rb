@@ -3,40 +3,42 @@ require 'tmpdir'
 require 'fileutils'
 require_relative 'support/rip_fixtures'
 
-# Minimal stand-ins for Backends::Registry / a backend instance so album
-# fallback and KV-persistence tests can control #metadata precisely without
-# depending on what real fixture files happen to tag.
-class FakeBackend
-  attr_reader :name
-
-  def initialize(name, metadata: {}, track_counts: {})
-    @name = name
-    @metadata = metadata
-    @track_counts = track_counts
-  end
-
-  def track_count(path) = @track_counts.fetch(path, 1)
-
-  def metadata(path, subtune_index)
-    @metadata.fetch([path, subtune_index]) { @metadata.fetch(path, {}) }
-  end
-end
-
-class FakeRegistry
-  def initialize(backend:, multitrack_paths: [], archive_paths: [])
-    @backend = backend
-    @multitrack_paths = multitrack_paths
-    @archive_paths = archive_paths
-  end
-
-  def archive?(path) = @archive_paths.include?(path)
-  def multitrack?(path) = @multitrack_paths.include?(path)
-  def supported?(_path) = true
-  def backend_for(_path) = @backend
-  def backend_name_for(_path) = @backend.name
-end
-
 class ExtractorPoolTest < Minitest::Test
+  # Minimal stand-ins for Backends::Registry / a backend instance so album
+  # fallback and KV-persistence tests can control #metadata precisely without
+  # depending on what real fixture files happen to tag. Nested in the test
+  # class: as top-level constants, a later file defining the same names
+  # would silently reopen these classes.
+  class FakeBackend
+    attr_reader :name
+
+    def initialize(name, metadata: {}, track_counts: {})
+      @name = name
+      @metadata = metadata
+      @track_counts = track_counts
+    end
+
+    def track_count(path) = @track_counts.fetch(path, 1)
+
+    def metadata(path, subtune_index)
+      @metadata.fetch([path, subtune_index]) { @metadata.fetch(path, {}) }
+    end
+  end
+
+  class FakeRegistry
+    def initialize(backend:, multitrack_paths: [], archive_paths: [])
+      @backend = backend
+      @multitrack_paths = multitrack_paths
+      @archive_paths = archive_paths
+    end
+
+    def archive?(path) = @archive_paths.include?(path)
+    def multitrack?(path) = @multitrack_paths.include?(path)
+    def supported?(_path) = true
+    def backend_for(_path) = @backend
+    def backend_name_for(_path) = @backend.name
+  end
+
   def setup
     @tmp = Dir.mktmpdir
     @music = File.join(@tmp, 'music')
