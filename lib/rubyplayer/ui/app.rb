@@ -1196,16 +1196,18 @@ module RubyPlayer
         elsif refresh_scan_progress_if_due != :refreshed && refresh_queued
           @queued_pane.reload!
         end
-        close_now_playing if @show_now_playing && @engine.state[:track].nil?
-        @media_keys.update(@engine.state)
+        state = @engine.state
+        close_now_playing if @show_now_playing && state[:track].nil?
+        @media_keys.update(state)
       end
 
       def handle_media_command(action)
+        actively_playing = PlaybackState.actively_playing?(@engine.state)
         case action
         when :play
-          dispatch(:toggle_play) unless PlaybackState.actively_playing?(@engine.state)
+          dispatch(:toggle_play) unless actively_playing
         when :pause
-          dispatch(:toggle_play) if PlaybackState.actively_playing?(@engine.state)
+          dispatch(:toggle_play) if actively_playing
         when :toggle_play, :next_track, :previous_track
           dispatch(action)
         end
@@ -1219,8 +1221,9 @@ module RubyPlayer
 
       def handle_track_started(payload)
         track = payload[:track]
-        set_art(nil) if @engine.state[:track]&.id == track.id
-        if @show_now_playing && @engine.state[:track]&.id == track.id
+        current = @engine.state[:track]&.id == track.id
+        set_art(nil) if current
+        if @show_now_playing && current
           prepare_now_playing(track, preferred_page: @now_playing_page)
         else
           fetch_art(track)
@@ -1350,10 +1353,13 @@ module RubyPlayer
       # turns 30 full frame builds per second into zero.
       def render_if_needed
         message_active = @status_line.active?
-        return unless @needs_render || animating? || message_active != @message_was_active ||
+        # One engine snapshot per frame: each #state call takes the engine
+        # mutex and builds a hash, and a frame used to ask up to nine times.
+        state = @engine.state
+        return unless @needs_render || animating?(state) || message_active != @message_was_active ||
                       pending_art_emit?
 
-        render
+        render(state)
         @needs_render = false
         @message_was_active = message_active
       end
@@ -1367,8 +1373,7 @@ module RubyPlayer
            !modal_active? && !resize_settling?)
       end
 
-      def animating?
-        state = @engine.state
+      def animating?(state = @engine.state)
         !!state[:focus_sound] || PlaybackState.actively_playing?(state)
       end
 
@@ -1384,7 +1389,7 @@ module RubyPlayer
         [@idle_poll, @status_line.time_remaining, @vgm_telemetry_controller.seconds_until_due].compact.min
       end
 
-      def render
+      def render(playback_state = @engine.state)
         if resize_settling?
           withdraw_art unless art_placeable?
           return
@@ -1397,9 +1402,8 @@ module RubyPlayer
         bar_h = @player_bar.height(rows)
         content_h = content_height
         render_panes(cols, content_h)
-        playback_state = @engine.state
         render_player_bar(content_h, cols, bar_h, playback_state)
-        render_art_placeholder
+        render_art_placeholder(playback_state)
         status_row = content_h + bar_h
         if @filter_buffer
           @screen.put(status_row, 0, "Filter: #{@filter_buffer}_"[0, cols], fg: @theme[:accent])
@@ -1418,7 +1422,7 @@ module RubyPlayer
         @hotkey_line.render(@screen, row: status_row + 1, w: cols, pane: @active_pane, theme: @theme,
                                      toggle_states: { toggle_skip_disliked: playback_state[:skip_disliked],
                                                       toggle_group: @tracks_pane.grouped? })
-        render_now_playing_modal if @show_now_playing
+        render_now_playing_modal(playback_state) if @show_now_playing
         render_playlist_modal if @playlist_modal
         render_name_prompt_modal if @name_prompt
         render_playlist_delete_modal if @pending_playlist_delete
@@ -1605,8 +1609,8 @@ module RubyPlayer
       # which is also why modal_active? (the emit gate) deliberately
       # excludes @show_now_playing. Live pages leave @art_region nil, hiding
       # the placement while keeping the same track's upload available.
-      def render_now_playing_modal
-        track = @engine.state[:track]
+      def render_now_playing_modal(playback_state)
+        track = playback_state[:track]
         # Track ended while the modal was open: nothing to show anymore.
         return @show_now_playing = false unless track
 
@@ -1614,21 +1618,21 @@ module RubyPlayer
 
         case @now_playing_modal.live_kind
         when :spc
-          @now_playing_modal.update_spc(state: @engine.spc_live, position_ms: @engine.state[:position_ms])
+          @now_playing_modal.update_spc(state: @engine.spc_live, position_ms: playback_state[:position_ms])
         when :vgm
           @now_playing_modal.update_chip(now_sample: @engine.vgm_telemetry_request&.sample,
                                          mute_mask: @engine.voice_mute_mask)
-        when *@chip_pages.keys then update_chip_live(@now_playing_modal.live_kind)
+        when *@chip_pages.keys then update_chip_live(@now_playing_modal.live_kind, playback_state[:position_ms])
         end
         @art_region = @now_playing_modal.render(@screen, theme: @theme, frame: method(:render_modal),
                                                          min_art_rows: @config['ui', 'art_min_rows'],
                                                          art: art_loaded?)
-        render_art_placeholder
+        render_art_placeholder(playback_state)
       end
 
       # Feeds every chip snapshot heard since the last frame to the page's
       # tracker, even on the Info page, so note history stays continuous.
-      def update_chip_live(kind)
+      def update_chip_live(kind, position_ms)
         live = @engine.chip_live
         return unless live
 
@@ -1638,16 +1642,16 @@ module RubyPlayer
         [page.live_view, page.tracker_view].each { |view| view.update(tracker.snapshot) if changed || view.snapshot.nil? }
         page.live_view.paused = live.paused
         @now_playing_modal.update_chip(now_sample: tracker.now_sample, mute_mask: live.mute_mask,
-                                       position_ms: @engine.state[:position_ms])
+                                       position_ms: position_ms)
       end
 
       # The inset is the one art region kept without a cover: while audio is
       # animating it holds a braille spectrum (pure cells, so it works in any
       # terminal); idle, it stays blank. Corner and modal regions only exist
       # once art has loaded.
-      def render_art_placeholder
+      def render_art_placeholder(playback_state)
         region = @art_region
-        return unless region && !art_loaded? && animating?
+        return unless region && !art_loaded? && animating?(playback_state)
 
         BrailleMeter.render(@screen, @engine.levels, x: region[:x], y: region[:y],
                                                      w: region[:w], h: region[:h], fg: @theme[:success])
