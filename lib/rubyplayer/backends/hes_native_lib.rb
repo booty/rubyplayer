@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'ffi'
+require_relative '../native_paths'
 require_relative 'native_gme_lib'
 
 module RubyPlayer
@@ -11,7 +12,7 @@ module RubyPlayer
     module HesNativeLib
       extend FFI::Library
 
-      ffi_lib File.expand_path('../native/librp_hes.dylib', __dir__)
+      ffi_lib NativePaths.absolute(NativePaths::HES_DYLIB)
 
       NativeGmeLib.attach_player_api(self, 'rp_hes')
     end

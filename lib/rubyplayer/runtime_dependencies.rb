@@ -3,6 +3,7 @@
 require 'ffi'
 require 'fileutils'
 require 'rbconfig'
+require_relative 'native_paths'
 
 module RubyPlayer
   # Runs before UI/audio requires so installation problems become one concise
@@ -14,7 +15,7 @@ module RubyPlayer
                               '/opt/homebrew/lib/libgme.dylib'].freeze
     OPENMPT_LIBRARY_CANDIDATES = ['openmpt', 'libopenmpt.dylib',
                                   '/opt/homebrew/lib/libopenmpt.dylib'].freeze
-    PROJECT_ROOT = File.expand_path('../..', __dir__)
+    PROJECT_ROOT = NativePaths::PROJECT_ROOT
     NATIVE_BUILD_DIR = File.join(PROJECT_ROOT, 'tmp/native')
 
     Library = Data.define(:name, :candidates, :formula)
@@ -22,9 +23,7 @@ module RubyPlayer
     # kind :dylib must dlopen; kind :executable (the media-keys helper app)
     # must be runnable.
     NativeArtifact = Data.define(:name, :target, :kind) do
-      def path
-        File.join(PROJECT_ROOT, target)
-      end
+      def path = NativePaths.absolute(target)
 
       def executable? = kind == :executable
     end
@@ -40,13 +39,12 @@ module RubyPlayer
       Command.new('bsdtar', 'libarchive')
     ].freeze
     NATIVE_ARTIFACTS = [
-      NativeArtifact.new('native audio shim', 'lib/rubyplayer/native/librp_audio.dylib', :dylib),
-      NativeArtifact.new('native media keys', 'lib/rubyplayer/native/RubyPlayerMedia.app/Contents/MacOS/RubyPlayerMedia',
-                         :executable),
-      NativeArtifact.new('native SPC player', 'lib/rubyplayer/native/librp_spc.dylib', :dylib),
-      NativeArtifact.new('native GBS player', 'lib/rubyplayer/native/librp_gbs.dylib', :dylib),
-      NativeArtifact.new('native NSF player', 'lib/rubyplayer/native/librp_nsf.dylib', :dylib),
-      NativeArtifact.new('native HES player', 'lib/rubyplayer/native/librp_hes.dylib', :dylib)
+      NativeArtifact.new('native audio shim', NativePaths::AUDIO_DYLIB, :dylib),
+      NativeArtifact.new('native media keys', NativePaths::MEDIA_KEYS_HELPER, :executable),
+      NativeArtifact.new('native SPC player', NativePaths::SPC_DYLIB, :dylib),
+      NativeArtifact.new('native GBS player', NativePaths::GBS_DYLIB, :dylib),
+      NativeArtifact.new('native NSF player', NativePaths::NSF_DYLIB, :dylib),
+      NativeArtifact.new('native HES player', NativePaths::HES_DYLIB, :dylib)
     ].freeze
 
     def self.verify!

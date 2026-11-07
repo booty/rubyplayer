@@ -1,16 +1,17 @@
 # frozen_string_literal: true
 
 require 'rake/testtask'
+require_relative 'lib/rubyplayer/native_paths'
 
 Rake::TestTask.new(:test) do |t|
   t.libs << 'test' << 'lib'
   t.pattern = 'test/**/*_test.rb'
 end
 
-NATIVE_DYLIB = 'lib/rubyplayer/native/librp_audio.dylib'
+NATIVE_DYLIB = RubyPlayer::NativePaths::AUDIO_DYLIB
 
-MEDIA_KEYS_APP_DIR = 'lib/rubyplayer/native/RubyPlayerMedia.app/Contents'
-MEDIA_KEYS_APP = "#{MEDIA_KEYS_APP_DIR}/MacOS/RubyPlayerMedia".freeze
+MEDIA_KEYS_APP_DIR = RubyPlayer::NativePaths::MEDIA_KEYS_APP_CONTENTS
+MEDIA_KEYS_APP = RubyPlayer::NativePaths::MEDIA_KEYS_HELPER
 file MEDIA_KEYS_APP => ['ext/rp_media_keys/rp_media_keys.m', 'ext/rp_media_keys/Info.plist'] do
   mkdir_p "#{MEDIA_KEYS_APP_DIR}/MacOS"
   cp 'ext/rp_media_keys/Info.plist', "#{MEDIA_KEYS_APP_DIR}/Info.plist"
@@ -20,19 +21,19 @@ end
 
 file NATIVE_DYLIB => %w[ext/rp_audio/rp_audio.c ext/rp_audio/effects.c ext/rp_audio/effects.h
                         ext/rp_audio/ring_cursor.h ext/rp_audio/miniaudio.h] do
-  mkdir_p 'lib/rubyplayer/native'
+  mkdir_p RubyPlayer::NativePaths::DIR
   sh "clang -O2 -dynamiclib -o #{NATIVE_DYLIB} ext/rp_audio/rp_audio.c ext/rp_audio/effects.c " \
      '-framework CoreFoundation -framework CoreAudio -framework AudioToolbox ' \
      '-lpthread -lm'
 end
 
-SPC_DYLIB = 'lib/rubyplayer/native/librp_spc.dylib'
+SPC_DYLIB = RubyPlayer::NativePaths::SPC_DYLIB
 SPC_SOURCES = ['ext/rp_spc/rp_spc.cpp', *Dir['ext/snes_spc/*.cpp']].freeze
 SPC_HEADERS = ['ext/rp_spc/rp_spc.h', *Dir['ext/snes_spc/*.h']].freeze
 
 # Vendored libgme snes_spc core (see ext/snes_spc/VENDOR.md for the flags).
 file SPC_DYLIB => SPC_SOURCES + SPC_HEADERS do
-  mkdir_p 'lib/rubyplayer/native'
+  mkdir_p RubyPlayer::NativePaths::DIR
   sh 'clang++ -std=c++11 -O2 -DNDEBUG -DBLARGG_LITTLE_ENDIAN=1 -dynamiclib -I ext/snes_spc ' \
      "-o #{SPC_DYLIB} #{SPC_SOURCES.join(' ')}"
 end
@@ -51,13 +52,13 @@ def gme_player(dylib, sources:, hooks:, types:, objects: [])
   headers = [*GME_HEADERS, hooks, *Dir["#{File.dirname(hooks)}/*.h"], *Dir['ext/rp_gme/*.h']]
   defines = types.map { |type| "-DUSE_GME_#{type}" }.join(' ')
   file dylib => sources + objects + headers do
-    mkdir_p 'lib/rubyplayer/native'
+    mkdir_p RubyPlayer::NativePaths::DIR
     sh "clang++ -std=c++11 #{GME_FLAGS} -fvisibility-inlines-hidden #{defines} -include #{hooks} -dynamiclib " \
        "-I ext/gme -I ext/rp_gme -I #{File.dirname(hooks)} -o #{dylib} #{(sources + objects).join(' ')}"
   end
 end
 
-GBS_DYLIB = 'lib/rubyplayer/native/librp_gbs.dylib'
+GBS_DYLIB = RubyPlayer::NativePaths::GBS_DYLIB
 gme_player GBS_DYLIB, hooks: 'ext/rp_gbs/rp_gbs_hooks.h', types: %w[GBS],
                       sources: ['ext/rp_gbs/rp_gbs.cpp', *GME_FRAMEWORK,
                                 *%w[Gb_Apu Gb_Cpu Gb_Oscs Gbs_Emu].map { |name| "ext/gme/#{name}.cpp" }]
@@ -69,13 +70,13 @@ file EMU2413_OBJECT => ['ext/gme/ext/emu2413.c', 'ext/gme/ext/emu2413.h'] do
   sh "clang #{GME_FLAGS} -c -o #{EMU2413_OBJECT} ext/gme/ext/emu2413.c"
 end
 
-NSF_DYLIB = 'lib/rubyplayer/native/librp_nsf.dylib'
+NSF_DYLIB = RubyPlayer::NativePaths::NSF_DYLIB
 gme_player NSF_DYLIB, hooks: 'ext/rp_nsf/rp_nsf_hooks.h', types: %w[NSF NSFE], objects: [EMU2413_OBJECT],
                       sources: ['ext/rp_nsf/rp_nsf.cpp', *GME_FRAMEWORK,
                                 *%w[Nes_Apu Nes_Cpu Nes_Oscs Nes_Fme7_Apu Nes_Namco_Apu Nes_Vrc6_Apu Nes_Fds_Apu
                                     Nes_Vrc7_Apu Nsf_Emu Nsfe_Emu].map { |name| "ext/gme/#{name}.cpp" }]
 
-HES_DYLIB = 'lib/rubyplayer/native/librp_hes.dylib'
+HES_DYLIB = RubyPlayer::NativePaths::HES_DYLIB
 gme_player HES_DYLIB, hooks: 'ext/rp_hes/rp_hes_hooks.h', types: %w[HES],
                       sources: ['ext/rp_hes/rp_hes.cpp', *GME_FRAMEWORK,
                                 *%w[Hes_Apu Hes_Apu_Adpcm Hes_Cpu Hes_Emu].map { |name| "ext/gme/#{name}.cpp" }]

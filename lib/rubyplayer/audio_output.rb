@@ -2,6 +2,7 @@
 
 require 'ffi'
 require_relative 'audio_format'
+require_relative 'native_paths'
 
 module RubyPlayer
   # FFI turns these Ruby method calls into calls to functions exported by the
@@ -12,7 +13,7 @@ module RubyPlayer
   module RpAudio
     extend FFI::Library
 
-    ffi_lib File.expand_path('native/librp_audio.dylib', __dir__)
+    ffi_lib NativePaths.absolute(NativePaths::AUDIO_DYLIB)
     attach_function :rp_init, %i[uint uint int], :int
     attach_function :rp_sample_rate, [], :uint
     attach_function :rp_start, [], :int

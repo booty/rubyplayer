@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'ffi'
+require_relative '../native_paths'
 require_relative 'native_gme_lib'
 
 module RubyPlayer
@@ -11,7 +12,7 @@ module RubyPlayer
     module NsfNativeLib
       extend FFI::Library
 
-      ffi_lib File.expand_path('../native/librp_nsf.dylib', __dir__)
+      ffi_lib NativePaths.absolute(NativePaths::NSF_DYLIB)
 
       NativeGmeLib.attach_player_api(self, 'rp_nsf')
       # NSF's voice count depends on which expansion chips the file uses.

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'ffi'
+require_relative '../native_paths'
 
 module RubyPlayer
   module Backends
@@ -10,7 +11,7 @@ module RubyPlayer
     module SnesSpcLib
       extend FFI::Library
 
-      ffi_lib File.expand_path('../native/librp_spc.dylib', __dir__)
+      ffi_lib NativePaths.absolute(NativePaths::SPC_DYLIB)
 
       attach_function :rp_spc_open, %i[pointer long int], :pointer
       attach_function :rp_spc_close, [:pointer], :void

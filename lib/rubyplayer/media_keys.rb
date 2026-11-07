@@ -1,12 +1,13 @@
 # frozen_string_literal: true
 
 require 'json'
+require_relative 'native_paths'
 
 module RubyPlayer
   # The bundled macOS helper owns the Now Playing app identity. Its stdout
   # commands enter EventBus so only the UI thread dispatches playback actions.
   class MediaKeys
-    HELPER_PATH = File.expand_path('native/RubyPlayerMedia.app/Contents/MacOS/RubyPlayerMedia', __dir__)
+    HELPER_PATH = NativePaths.absolute(NativePaths::MEDIA_KEYS_HELPER)
     # Line protocol, both directions by name so neither side depends on the
     # other's ordering. The helper writes one command name per line
     # (ext/rp_media_keys/rp_media_keys.m); unknown names are ignored.
