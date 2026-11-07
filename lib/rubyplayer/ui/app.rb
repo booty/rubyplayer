@@ -827,16 +827,9 @@ module RubyPlayer
       # so damaged art must be placed again. Modals hide the placement while
       # keeping pixels resident for the closing repaint.
       def emit_art
-        region = @art_region
-        unless @art_supported && @art_bytes
-          @kitty_image.clear
-          return
-        end
-        unless region && art_should_show? && valid_art_region?(region)
-          @kitty_image.hide
-          return
-        end
+        return withdraw_art unless art_placeable?
 
+        region = @art_region
         rows = region[:y]..(region[:y] + region[:h] - 1)
         cols = region[:x]..(region[:x] + region[:w] - 1)
         return unless @art_dirty || @screen.region_damaged?(rows: rows, cols: cols)
@@ -852,6 +845,20 @@ module RubyPlayer
         @kitty_image.render(@art_bytes, row: region[:y], col: region[:x], width: region[:w],
                                         height: region[:h], gap: @config['ui', 'art_gap_cells'],
                                         align: region.fetch(:align, :center), force: true)
+      end
+
+      def art_placeable? = art_should_show? && valid_art_region?(@art_region)
+
+      # Frees the image when there is none to show; otherwise only hides the
+      # placement (a modal, live page or bad region rules it out for now) so
+      # the pixels stay resident for the next placement.
+      def withdraw_art
+        if @art_supported && @art_bytes
+          @kitty_image.hide
+        else
+          @kitty_image.clear
+        end
+        nil
       end
 
       def art_should_show?
@@ -1396,8 +1403,7 @@ module RubyPlayer
 
       def render
         if resize_settling?
-          @kitty_image.clear unless @art_supported && @art_bytes
-          @kitty_image.hide unless art_should_show? && valid_art_region?(@art_region)
+          withdraw_art unless art_placeable?
           return
         end
 
