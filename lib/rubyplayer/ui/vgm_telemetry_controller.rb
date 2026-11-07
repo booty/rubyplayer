@@ -19,6 +19,8 @@ module RubyPlayer
         clear_session
       end
 
+      def visible? = @visible
+
       def visible=(visible)
         visible = visible == true
         return if @visible == visible

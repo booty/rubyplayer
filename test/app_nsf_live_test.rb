@@ -10,7 +10,7 @@ class AppNsfLiveTest < Minitest::Test
     super
     FileUtils.cp(File.join(FIXTURES, 'nsf', 'castlevania-3-japan.nsf'), @music)
     @app.scan_paths([@music], wait: true)
-    library = @app.instance_variable_get(:@library)
+    library = @app.library
     track = library.all_tracks.find { |entry| entry.format == 'nsf' && entry.subtune_index.zero? }
     @app.engine.enqueue_now([track])
     wait_until { @app.engine.state[:track]&.id == track.id }
@@ -26,7 +26,7 @@ class AppNsfLiveTest < Minitest::Test
     # A chip live page is not VGM: it must leave the telemetry worker asleep.
     @app.send(:tick_vgm_telemetry)
 
-    refute @app.instance_variable_get(:@vgm_telemetry_controller).instance_variable_get(:@visible)
+    refute_predicate @app.vgm_telemetry_controller, :visible?
     text = wait_for_rows
 
     assert_includes text, 'NSF LIVE'

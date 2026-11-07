@@ -5,7 +5,7 @@ class AppPlaylistModalTest < Minitest::Test
   include TestSupport::AppTestSupport
 
   def test_modal_queries_playlists_only_when_opened
-    library = @app.instance_variable_get(:@library)
+    library = @app.library
     library.create_playlist('Mix')
     select_tracks_for(:all)
     use_screen
@@ -26,7 +26,7 @@ class AppPlaylistModalTest < Minitest::Test
   end
 
   def test_reopening_modal_refreshes_its_snapshot
-    library = @app.instance_variable_get(:@library)
+    library = @app.library
     select_tracks_for(:all)
     @app.handle_key('l')
     @app.handle_key('escape')
@@ -40,7 +40,7 @@ class AppPlaylistModalTest < Minitest::Test
   end
 
   def test_name_conflict_stays_open_and_renders_error_until_edit
-    library = @app.instance_variable_get(:@library)
+    library = @app.library
     library.create_playlist('Mix')
     select_tracks_for(:all)
     use_screen
@@ -60,7 +60,7 @@ class AppPlaylistModalTest < Minitest::Test
   end
 
   def test_deleted_snapshot_playlist_reports_failure_without_crashing
-    library = @app.instance_variable_get(:@library)
+    library = @app.library
     id = library.create_playlist('Mix')
     select_tracks_for(:all)
     use_screen

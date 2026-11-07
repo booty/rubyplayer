@@ -33,7 +33,7 @@ CONFIG
 app = RubyPlayer::UI::App.new(config_path: config_path, data_path: File.join(work_dir, 'library.sqlite3'),
                               null_audio: true)
 app.scan_paths([music], wait: true)
-track = app.instance_variable_get(:@library).all_tracks.first
+track = app.library.all_tracks.first
 app.engine.enqueue_now([track])
 
 status_path = File.join(work_dir, 'status.json')
@@ -44,7 +44,7 @@ trap('HUP') { app.instance_variable_set(:@quit, true) }
 Thread.new do
   last = nil
   loop do
-    screen = app.instance_variable_get(:@screen)
+    screen = app.screen
     image = app.art.kitty_image
     status = {
       cols: screen.cols, rows: screen.rows,

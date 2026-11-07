@@ -12,7 +12,7 @@ class AppTest < Minitest::Test
   end
 
   def test_selecting_all_songs_displays_every_present_track
-    expected_ids = @app.instance_variable_get(:@library).all_tracks.map(&:id)
+    expected_ids = @app.library.all_tracks.map(&:id)
 
     select_tracks_for(:all)
 
@@ -148,7 +148,7 @@ class AppTest < Minitest::Test
     @app.render
 
     assert_nil @app.pending_missing_purge
-    assert_includes @app.instance_variable_get(:@io_out).string,
+    assert_includes @app.io_out.string,
                     'Select Missing view to purge tracks'
   end
 
@@ -170,7 +170,7 @@ class AppTest < Minitest::Test
     @app.handle_key('escape')
 
     assert_nil @app.pending_missing_purge
-    refute_nil @app.instance_variable_get(:@library).find_track(missing.first.id)
+    refute_nil @app.library.find_track(missing.first.id)
   end
 
   def test_confirm_missing_purge_deletes_captured_tracks_and_queue_entries
@@ -182,7 +182,7 @@ class AppTest < Minitest::Test
 
     @app.handle_key('y')
 
-    library = @app.instance_variable_get(:@library)
+    library = @app.library
 
     assert_nil library.find_track(missing.first.id)
     refute_nil library.find_track(missing.last.id)
@@ -255,7 +255,7 @@ class AppTest < Minitest::Test
     @app.handle_key('i')
     @app.render
 
-    assert_includes @app.instance_variable_get(:@io_out).string,
+    assert_includes @app.io_out.string,
                     'Select a track to view info'
   end
 
@@ -265,7 +265,7 @@ class AppTest < Minitest::Test
     @app.handle_key('1')
     @app.render
 
-    assert_includes @app.instance_variable_get(:@io_out).string,
+    assert_includes @app.io_out.string,
                     'Tab to Now Playing to rate the playing track'
   end
 
@@ -275,7 +275,7 @@ class AppTest < Minitest::Test
     @app.handle_key('Y')
     @app.render
 
-    assert_includes @app.instance_variable_get(:@io_out).string,
+    assert_includes @app.io_out.string,
                     'Queue order cannot be sorted or grouped'
   end
 
@@ -300,7 +300,7 @@ class AppTest < Minitest::Test
   def test_help_modal_lists_bindings_for_the_active_pane
     @app.handle_key('?')
     @app.render
-    out = @app.instance_variable_get(:@io_out).string
+    out = @app.io_out.string
 
     assert_includes out, 'Hotkeys (library)'
     assert_includes out, 'Space'
@@ -309,7 +309,7 @@ class AppTest < Minitest::Test
   def test_help_modal_lays_out_bindings_in_two_columns
     @app.handle_key('?')
     @app.render
-    screen = @app.instance_variable_get(:@screen)
+    screen = @app.screen
     back = screen.back_cells
 
     keymap = @app.instance_variable_get(:@keymap)
@@ -343,26 +343,26 @@ class AppTest < Minitest::Test
   end
 
   def test_selected_tracks_for_sidebar_playlist_child
-    lib = @app.instance_variable_get(:@library)
+    lib = @app.library
     tid = seed_playlist_tracks(%w[a]).first
     pid = lib.create_playlist('P')
     lib.add_to_playlist(pid, tid)
     @app.library_pane.rebuild!
 
     assert @app.library_pane.select_playlist(pid)
-    @app.instance_variable_set(:@active_pane, :library)
+    focus_pane(:library)
 
     assert_equal ['A'], @app.selected_tracks.map(&:title)
   end
 
   def test_enter_on_playlist_list_row_jumps_into_playlist
-    lib = @app.instance_variable_get(:@library)
+    lib = @app.library
     pid = lib.create_playlist('P')
     pane = @app.library_pane
     pane.rebuild!
     pane.instance_variable_set(:@selection, pane.rows.index { |r| r.kind == :playlists })
     @app.send(:show_selected_tracks)
-    @app.instance_variable_set(:@active_pane, :tracks)
+    focus_pane(:tracks)
     @app.handle_key('enter')
 
     assert_equal :playlist, pane.selected.kind
@@ -371,7 +371,7 @@ class AppTest < Minitest::Test
   end
 
   def test_ctrl_down_moves_playlist_entry_and_selection_follows
-    lib = @app.instance_variable_get(:@library)
+    lib = @app.library
     ids = seed_playlist_tracks(%w[a b])
     pid = lib.create_playlist('P')
     ids.each { |t| lib.add_to_playlist(pid, t) }
@@ -384,7 +384,7 @@ class AppTest < Minitest::Test
   end
 
   def test_x_removes_playlist_entry
-    lib = @app.instance_variable_get(:@library)
+    lib = @app.library
     tid = seed_playlist_tracks(%w[a]).first
     pid = lib.create_playlist('P')
     lib.add_to_playlist(pid, tid)
@@ -395,7 +395,7 @@ class AppTest < Minitest::Test
   end
 
   def test_move_refused_while_filter_active
-    lib = @app.instance_variable_get(:@library)
+    lib = @app.library
     ids = seed_playlist_tracks(%w[a b])
     pid = lib.create_playlist('P')
     ids.each { |t| lib.add_to_playlist(pid, t) }
@@ -407,7 +407,7 @@ class AppTest < Minitest::Test
   end
 
   def test_l_opens_add_modal_and_typing_a_name_creates_playlist_with_track
-    lib = @app.instance_variable_get(:@library)
+    lib = @app.library
     tid = seed_playlist_tracks(%w[a]).first
     show_all_songs_in_tracks_pane
     @app.handle_key('l')
@@ -426,7 +426,7 @@ class AppTest < Minitest::Test
   end
 
   def test_add_modal_picks_existing_playlist
-    lib = @app.instance_variable_get(:@library)
+    lib = @app.library
     seed_playlist_tracks(%w[a])
     pid = lib.create_playlist('Mix')
     show_all_songs_in_tracks_pane
@@ -439,7 +439,7 @@ class AppTest < Minitest::Test
   end
 
   def test_add_modal_confirms_duplicates
-    lib = @app.instance_variable_get(:@library)
+    lib = @app.library
     seed_playlist_tracks(%w[a])
     pid = lib.create_playlist('Mix')
     show_all_songs_in_tracks_pane
@@ -469,14 +469,14 @@ class AppTest < Minitest::Test
   end
 
   def test_l_without_selected_track_shows_message_not_modal
-    @app.instance_variable_set(:@active_pane, :library)
+    focus_pane(:library)
     @app.handle_key('l')
 
     assert_nil @app.playlist_modal
   end
 
   def test_r_renames_selected_playlist
-    lib = @app.instance_variable_get(:@library)
+    lib = @app.library
     pid = lib.create_playlist('Old')
     select_playlist_child(pid)
     @app.handle_key('r')
@@ -491,7 +491,7 @@ class AppTest < Minitest::Test
   end
 
   def test_rename_to_taken_name_shows_error_and_keeps_prompt
-    lib = @app.instance_variable_get(:@library)
+    lib = @app.library
     lib.create_playlist('Taken')
     pid = lib.create_playlist('Mine')
     select_playlist_child(pid)
@@ -505,7 +505,7 @@ class AppTest < Minitest::Test
   end
 
   def test_c_duplicates_playlist_with_entries
-    lib = @app.instance_variable_get(:@library)
+    lib = @app.library
     tid = seed_playlist_tracks(%w[a]).first
     pid = lib.create_playlist('Mix')
     lib.add_to_playlist(pid, tid)
@@ -523,7 +523,7 @@ class AppTest < Minitest::Test
   end
 
   def test_x_on_playlist_child_asks_then_deletes
-    lib = @app.instance_variable_get(:@library)
+    lib = @app.library
     pid = lib.create_playlist('Doomed')
     select_playlist_child(pid)
     @app.handle_key('x')
@@ -536,7 +536,7 @@ class AppTest < Minitest::Test
   end
 
   def test_x_on_playlist_delete_can_cancel
-    lib = @app.instance_variable_get(:@library)
+    lib = @app.library
     lib.create_playlist('Kept')
     select_playlist_child(lib.playlists.first['id'])
     @app.handle_key('x')
@@ -549,14 +549,14 @@ class AppTest < Minitest::Test
   def test_rename_on_non_playlist_row_is_message_only
     @app.library_pane.rebuild!
     @app.library_pane.handle_action(:select_queue)
-    @app.instance_variable_set(:@active_pane, :library)
+    focus_pane(:library)
     @app.handle_key('r')
 
     assert_nil @app.name_prompt
   end
 
   def test_info_modal_shows_album_artist_year_and_extras
-    lib = @app.instance_variable_get(:@library)
+    lib = @app.library
     root = lib.upsert_folder(parent_id: nil, name: 'MM', path: '/mm', kind: 'dir')
     tid = lib.upsert_track(folder_id: root, physical_path: '/mm/a.mp3', backend: 'ffmpeg',
                            format: 'mp3', title: 'A', album: 'Al', artist: 'Ar',
@@ -576,7 +576,7 @@ class AppTest < Minitest::Test
   end
 
   def test_info_modal_labels_planned_length_and_provenance
-    lib = @app.instance_variable_get(:@library)
+    lib = @app.library
     root = lib.upsert_folder(parent_id: nil, name: 'Loops', path: '/loops', kind: 'dir')
     id = lib.upsert_track(
       folder_id: root, physical_path: '/loops/a.vgm', backend: 'gme', format: 'vgm',

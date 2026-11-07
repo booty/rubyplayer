@@ -111,8 +111,6 @@ class AppMultiSelectTest < Minitest::Test
 
   private
 
-  def library = @app.instance_variable_get(:@library)
-
   def duplicate_playlist(*tracks)
     id = library.create_playlist('Dupes')
     tracks.each { |track| library.add_to_playlist(id, track.id) }

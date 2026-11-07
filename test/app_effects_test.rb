@@ -20,7 +20,7 @@ class AppEffectsTest < Minitest::Test
     @app.render
 
     assert_includes back_buffer_text, 'BYPASS'
-    rack = @app.instance_variable_get(:@effects_rack)
+    rack = @app.effects_rack
 
     assert_equal [true, 55], [rack.effects[0].enabled, rack.effects[0].intensity_percent]
     assert rack.effects[1].enabled
@@ -41,20 +41,20 @@ class AppEffectsTest < Minitest::Test
     assert_includes back_buffer_text, 'Echo Chamber'
     @app.handle_key('enter')
 
-    assert @app.instance_variable_get(:@effects_rack).effects[7].enabled
+    assert @app.effects_rack.effects[7].enabled
     @app.handle_key('escape')
 
-    refute @app.instance_variable_get(:@effects_modal)
+    refute @app.effects_modal
   end
 
   def test_effect_shortcuts_are_case_insensitive
     @app.handle_key('D')
     @app.handle_key('B')
 
-    assert_predicate @app.instance_variable_get(:@effects_rack), :bypassed?
+    assert_predicate @app.effects_rack, :bypassed?
     @app.handle_key('D')
 
-    refute @app.instance_variable_get(:@effects_modal)
+    refute @app.effects_modal
   end
 
   def test_effects_survive_switching_between_music_and_focus
@@ -71,7 +71,7 @@ class AppEffectsTest < Minitest::Test
     @app.handle_key('down')
     @app.handle_key('enter')
     @app.handle_key('escape')
-    rack = @app.instance_variable_get(:@effects_rack)
+    rack = @app.effects_rack
 
     @app.engine.play_focus(RubyPlayer::FocusSounds::ALL.first)
 
@@ -81,7 +81,7 @@ class AppEffectsTest < Minitest::Test
 
     prior_flush_count = flush_count
     @app.engine.stop_focus
-    @app.engine.enqueue_now([@app.instance_variable_get(:@library).all_tracks.first])
+    @app.engine.enqueue_now([@app.library.all_tracks.first])
     wait_until { @app.engine.state[:playing] && !@app.engine.state[:focus_sound] }
 
     assert rack.effects.first(2).all?(&:enabled)
@@ -93,7 +93,7 @@ class AppEffectsTest < Minitest::Test
     @app.handle_key('o')
     @app.handle_key('d')
 
-    assert @app.instance_variable_get(:@effects_modal)
+    assert @app.effects_modal
     @app.handle_key('space')
     wait_until { @app.engine.state[:paused] }
     @app.handle_key('escape')
@@ -108,7 +108,7 @@ class AppEffectsTest < Minitest::Test
     @app.handle_key('j')
     wait_until { @app.engine.state[:paused] }
 
-    assert @app.instance_variable_get(:@effects_modal)
+    assert @app.effects_modal
   end
 
   # Regression: the modal closed on a hardcoded 'd' too, so rebinding
@@ -118,11 +118,11 @@ class AppEffectsTest < Minitest::Test
     @app.handle_key('e')
     @app.handle_key('d')
 
-    assert @app.instance_variable_get(:@effects_modal)
+    assert @app.effects_modal
 
     @app.handle_key('e')
 
-    assert_nil @app.instance_variable_get(:@effects_modal)
+    assert_nil @app.effects_modal
   end
 
   def test_effect_step_and_starting_level_come_from_config
@@ -137,6 +137,6 @@ class AppEffectsTest < Minitest::Test
     @app.handle_key('d')
     @app.handle_key('right')
 
-    assert_equal 40, @app.instance_variable_get(:@effects_rack).effects[0].intensity_percent
+    assert_equal 40, @app.effects_rack.effects[0].intensity_percent
   end
 end

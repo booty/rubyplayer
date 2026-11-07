@@ -6,7 +6,7 @@ class AppNowPlayingTest < Minitest::Test
   include TestSupport::AppTestSupport
 
   def test_existing_chiptune_track_refreshes_hardware_details_without_a_rescan
-    library = @app.instance_variable_get(:@library)
+    library = @app.library
     track = library.all_tracks.find { |entry| entry.format == 'gbs' }
     # Existing libraries have no cached hardware extras from older scans.
     library.replace_track_metadata(track.id, {})
@@ -52,7 +52,7 @@ class AppNowPlayingTest < Minitest::Test
 
   # Formats without a live page keep the plain Info popup.
   def test_tracks_without_live_state_have_no_live_page
-    library = @app.instance_variable_get(:@library)
+    library = @app.library
     track = library.all_tracks.find { |entry| entry.format == 'mod' }
     @app.engine.enqueue_now([track])
     wait_until { @app.engine.state[:track]&.id == track.id }
@@ -72,7 +72,7 @@ class AppNowPlayingTest < Minitest::Test
   def test_spc_track_refreshes_hardware_details_without_a_rescan
     FileUtils.cp(File.join(FIXTURES, 'spc', 'earthbound-megaton-walk.spc'), @music)
     @app.scan_paths([@music], wait: true)
-    library = @app.instance_variable_get(:@library)
+    library = @app.library
     track = library.all_tracks.find { |entry| entry.format == 'spc' }
 
     assert_equal 'snes_spc', track.backend
@@ -98,7 +98,7 @@ class AppNowPlayingTest < Minitest::Test
            '-f', 'lavfi', '-i', 'sine=frequency=440:duration=10', '-b:a', '128k',
            '-metadata', 'title=Fresh title', '-metadata', 'artist=Tagged Artist',
            '-metadata', 'album=Tagged Album', '-metadata', 'track=3/12', path, exception: true)
-    library = @app.instance_variable_get(:@library)
+    library = @app.library
     folder = library.upsert_folder(parent_id: nil, name: 'tagged', path: @tmp, kind: 'dir')
     id = library.upsert_track(folder_id: folder, physical_path: path, backend: 'ffmpeg',
                               format: 'mp3', title: 'Old title')
@@ -126,13 +126,13 @@ class AppNowPlayingTest < Minitest::Test
     @app.handle_key('o')
     old_modal = @app.now_playing.modal
     old_id = @app.engine.state[:track].id
-    next_track = @app.instance_variable_get(:@library).all_tracks.find { |track| track.id != old_id }
+    next_track = @app.library.all_tracks.find { |track| track.id != old_id }
     @app.engine.enqueue_end([next_track])
     @app.engine.skip
     wait_until { @app.engine.state[:track] && @app.engine.state[:track].id != old_id }
     @app.handle_events
-    @app.instance_variable_get(:@bus).publish(:now_playing_metadata_ready, modal: old_modal,
-                                                                           metadata: { title: 'Stale metadata' })
+    @app.bus.publish(:now_playing_metadata_ready, modal: old_modal,
+                                                  metadata: { title: 'Stale metadata' })
     @app.handle_events
     use_screen
     @app.render
@@ -153,7 +153,7 @@ class AppNowPlayingTest < Minitest::Test
                                                 })
     [10, 8].each do |height|
       use_screen(rows: height, cols: 80)
-      screen = @app.instance_variable_get(:@screen)
+      screen = @app.screen
       modal.render(screen, theme: current_theme, frame: @app.method(:render_modal), min_art_rows: 3)
       rows = screen.back_lines
       bitrate_row = rows.index { |row| row.include?('Bit rate: 128 kbps') }
@@ -173,18 +173,18 @@ class AppNowPlayingTest < Minitest::Test
     @app.handle_key('o')
 
     assert_equal :live, @app.now_playing_page
-    assert @app.instance_variable_get(:@vgm_telemetry_controller).instance_variable_get(:@visible)
+    assert_predicate @app.vgm_telemetry_controller, :visible?
     before_selection = @app.tracks_pane.selection
     @app.handle_key('down')
 
     assert_equal before_selection, @app.tracks_pane.selection
 
-    controller = @app.instance_variable_get(:@vgm_telemetry_controller)
+    controller = @app.vgm_telemetry_controller
     wait_for_live_vgm_rows(controller)
     @app.handle_key('tab')
 
     assert_equal :info, @app.now_playing_page
-    refute controller.instance_variable_get(:@visible)
+    refute_predicate controller, :visible?
     @app.handle_key('tab')
 
     assert_equal :live, @app.now_playing_page
@@ -195,7 +195,7 @@ class AppNowPlayingTest < Minitest::Test
     @app.handle_key('o')
 
     refute_predicate @app, :show_now_playing?
-    refute controller.instance_variable_get(:@visible)
+    refute_predicate controller, :visible?
   end
 
   def test_vgm_page_cycle_and_info_return
@@ -238,14 +238,14 @@ class AppNowPlayingTest < Minitest::Test
     start_live_vgm_track
     use_screen(rows: 32, cols: 110)
     @app.handle_key('o')
-    controller = @app.instance_variable_get(:@vgm_telemetry_controller)
+    controller = @app.vgm_telemetry_controller
     wait_for_live_vgm_rows(controller)
     snapshot = controller.snapshot
     @app.handle_key('o')
     @app.send(:tick_vgm_telemetry)
     @app.render
 
-    assert controller.instance_variable_get(:@visible)
+    assert_predicate controller, :visible?
     assert_same snapshot, controller.snapshot
     assert_same snapshot, @app.now_playing.vgm_tracker_view.snapshot
     assert_includes back_buffer_text, 'VGM TRACKER'
@@ -255,18 +255,18 @@ class AppNowPlayingTest < Minitest::Test
     @app.handle_key('tab')
     @app.send(:tick_vgm_telemetry)
 
-    refute controller.instance_variable_get(:@visible)
+    refute_predicate controller, :visible?
     assert_nil @app.now_playing.vgm_tracker_view.snapshot
     @app.handle_key('tab')
 
     assert_equal :tracker, @app.now_playing_page
-    assert controller.instance_variable_get(:@visible)
+    assert_predicate controller, :visible?
   end
 
   # A playback kind that records live state but has no page yet must open a
   # plain Info page: artwork, no Tab hint, nothing for Tab to return to.
   def test_live_kind_without_pages_opens_plain_info
-    library = @app.instance_variable_get(:@library)
+    library = @app.library
     track = library.all_tracks.find { |entry| entry.format == 'mod' }
     @app.engine.enqueue_now([track])
     wait_until { @app.engine.state[:track]&.id == track.id }
@@ -278,11 +278,11 @@ class AppNowPlayingTest < Minitest::Test
     assert_equal :info, @app.now_playing_page
     assert_nil @app.now_playing.instance_variable_get(:@last_live_page)
     refute_includes back_buffer_text, 'Info / Live'
-    refute @app.instance_variable_get(:@vgm_telemetry_controller).instance_variable_get(:@visible)
+    refute_predicate @app.vgm_telemetry_controller, :visible?
   end
 
   def test_o_closes_info_for_a_track_without_live_pages
-    library = @app.instance_variable_get(:@library)
+    library = @app.library
     track = library.all_tracks.find { |entry| entry.format == 'mod' }
     @app.engine.enqueue_now([track])
     wait_until { @app.engine.state[:track]&.id == track.id }
@@ -301,7 +301,7 @@ class AppNowPlayingTest < Minitest::Test
     start_live_vgm_track
     use_screen(rows: 40, cols: 160)
     @app.handle_key('o')
-    wait_for_live_vgm_rows(@app.instance_variable_get(:@vgm_telemetry_controller))
+    wait_for_live_vgm_rows(@app.vgm_telemetry_controller)
     @app.handle_key('m')
 
     assert_equal 0b1, @app.engine.voice_mute_mask
@@ -323,7 +323,7 @@ class AppNowPlayingTest < Minitest::Test
     start_live_vgm_track
     use_screen(rows: 32, cols: 110)
     @app.handle_key('o')
-    controller = @app.instance_variable_get(:@vgm_telemetry_controller)
+    controller = @app.vgm_telemetry_controller
     wait_for_live_vgm_rows(controller)
     channels = @app.now_playing.vgm_live_view
     previous_snapshot = channels.instance_variable_get(:@snapshot)
@@ -343,7 +343,7 @@ class AppNowPlayingTest < Minitest::Test
     start_live_vgm_track
     use_screen(rows: 32, cols: 110)
     @app.handle_key('o')
-    controller = @app.instance_variable_get(:@vgm_telemetry_controller)
+    controller = @app.vgm_telemetry_controller
     wait_for_live_vgm_rows(controller)
     @app.handle_key('o')
     old_snapshot = @app.now_playing.vgm_tracker_view.snapshot
@@ -361,13 +361,13 @@ class AppNowPlayingTest < Minitest::Test
     start_live_vgm_track
     use_screen(rows: 32, cols: 110)
     @app.handle_key('o')
-    controller = @app.instance_variable_get(:@vgm_telemetry_controller)
+    controller = @app.vgm_telemetry_controller
     wait_for_live_vgm_rows(controller)
     @app.handle_key('o')
     @app.instance_variable_set(:@config_error, 'configuration error')
     @app.send(:tick_vgm_telemetry)
 
-    refute controller.instance_variable_get(:@visible)
+    refute_predicate controller, :visible?
     assert_nil @app.now_playing.vgm_tracker_view.snapshot
   end
 
@@ -375,11 +375,11 @@ class AppNowPlayingTest < Minitest::Test
     start_live_vgm_track
     use_screen(rows: 32, cols: 110)
     @app.handle_key('o')
-    controller = @app.instance_variable_get(:@vgm_telemetry_controller)
+    controller = @app.vgm_telemetry_controller
     wait_for_live_vgm_rows(controller)
     @app.handle_key('o')
     old_snapshot = controller.snapshot
-    library = @app.instance_variable_get(:@library)
+    library = @app.library
     gbs = library.all_tracks.find { |track| track.format == 'gbs' }
     @app.engine.enqueue_end([gbs])
     @app.engine.skip
@@ -397,7 +397,7 @@ class AppNowPlayingTest < Minitest::Test
     use_screen(rows: 32, cols: 110)
     @app.handle_key('o')
     @app.handle_key('o')
-    library = @app.instance_variable_get(:@library)
+    library = @app.library
     path = File.join(@music, 'next.vgm')
     File.binwrite(path, VgmBuilder.new(ym2612_clock: 7_670_454).ym2612(0, 0x28, 0xf0).wait(500_000).end.bytes)
     next_id = library.upsert_track(folder_id: library.all_tracks.first.folder_id, physical_path: path,
@@ -419,7 +419,7 @@ class AppNowPlayingTest < Minitest::Test
     start_live_vgm_track
     use_screen(rows: 32, cols: 110)
     @app.handle_key('o')
-    controller = @app.instance_variable_get(:@vgm_telemetry_controller)
+    controller = @app.vgm_telemetry_controller
     wait_for_live_vgm_rows(controller)
     channels = @app.now_playing.vgm_live_view
 
@@ -428,12 +428,12 @@ class AppNowPlayingTest < Minitest::Test
 
     @app.send(:tick_vgm_telemetry)
 
-    refute controller.instance_variable_get(:@visible)
+    refute_predicate controller, :visible?
     assert_nil channels.snapshot
   end
 
   def start_live_vgm_track
-    library = @app.instance_variable_get(:@library)
+    library = @app.library
     existing = library.all_tracks.first
     path = File.join(@music, 'live.vgm')
     File.binwrite(path, VgmBuilder.new(ym2612_clock: 7_670_454)
@@ -458,7 +458,7 @@ class AppNowPlayingTest < Minitest::Test
   private
 
   def open_now_playing_on_two_gbs_tracks
-    library = @app.instance_variable_get(:@library)
+    library = @app.library
     tracks = library.all_tracks.select { |entry| entry.format == 'gbs' }.first(2)
     @app.engine.enqueue_now(tracks)
     wait_until { @app.engine.state[:track]&.id == tracks.first.id }

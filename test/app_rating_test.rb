@@ -32,7 +32,7 @@ class AppRatingTest < Minitest::Test
     @app.handle_key('n') # queue it last
     @app.handle_events
     focus_pane(:queued)
-    highlighted = @app.instance_variable_get(:@queued_pane).selected_track
+    highlighted = @app.queued_pane.selected_track
     @app.handle_key('2')
 
     refute_nil highlighted
@@ -61,12 +61,12 @@ class AppRatingTest < Minitest::Test
 
   def test_library_pane_rates_nothing_and_says_where_to_rate
     start_normal_playback
-    @app.instance_variable_set(:@active_pane, :library)
+    focus_pane(:library)
     @app.handle_key('3')
     @app.render
 
     assert_nil library.rating_of(@app.engine.state[:track].id)
-    assert_includes @app.instance_variable_get(:@io_out).string, 'Tab to Now Playing to rate the playing track'
+    assert_includes @app.io_out.string, 'Tab to Now Playing to rate the playing track'
   end
 
   def test_now_playing_pane_rating_without_playback_explains_why
@@ -74,14 +74,14 @@ class AppRatingTest < Minitest::Test
     @app.handle_key('1')
     @app.render
 
-    assert_includes @app.instance_variable_get(:@io_out).string, 'Play a library track before rating'
+    assert_includes @app.io_out.string, 'Play a library track before rating'
   end
 
   # The bar is the last Tab stop; navigation keys there leave the lists
   # alone.
   def test_now_playing_bar_is_the_last_tab_stop
     start_normal_playback
-    @app.instance_variable_set(:@active_pane, :library)
+    focus_pane(:library)
     visited = Array.new(4) do
       @app.handle_key('tab')
       @app.active_pane
@@ -113,9 +113,7 @@ class AppRatingTest < Minitest::Test
 
   private
 
-  def library = @app.instance_variable_get(:@library)
-
-  def star = @app.instance_variable_get(:@config)['glyphs', 'star']
+  def star = @app.config['glyphs', 'star']
 
   def focus_pane(pane)
     4.times do
@@ -128,7 +126,7 @@ class AppRatingTest < Minitest::Test
   end
 
   def back_buffer_lines
-    @app.instance_variable_get(:@screen).back_lines
+    @app.screen.back_lines
   end
 
   # The 6-row Now Playing bar above the status and hotkey rows.

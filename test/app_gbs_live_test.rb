@@ -8,7 +8,7 @@ class AppGbsLiveTest < Minitest::Test
 
   def setup
     super
-    library = @app.instance_variable_get(:@library)
+    library = @app.library
     track = library.all_tracks.find { |entry| entry.format == 'gbs' && entry.subtune_index == 1 }
     @app.engine.enqueue_now([track])
     wait_until { @app.engine.state[:track]&.id == track.id }
@@ -24,7 +24,7 @@ class AppGbsLiveTest < Minitest::Test
     # A chip live page is not VGM: it must leave the telemetry worker asleep.
     @app.send(:tick_vgm_telemetry)
 
-    refute @app.instance_variable_get(:@vgm_telemetry_controller).instance_variable_get(:@visible)
+    refute_predicate @app.vgm_telemetry_controller, :visible?
     text = wait_for_rows
 
     assert_includes text, 'GBS LIVE'

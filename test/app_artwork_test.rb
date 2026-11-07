@@ -43,14 +43,14 @@ class AppArtworkTest < Minitest::Test
     out = use_screen(rows: 40, cols: 138)
     @app.render_if_needed
 
-    @app.instance_variable_set(:@screen, RubyPlayer::UI::Screen.new(out: out, rows: 24, cols: 60))
+    use_screen(rows: 24, cols: 60, out: out)
     @app.send(:invalidate_screen!)
     @app.render_if_needed
 
     assert_nil art_region
     assert_equal 1, out.string.scan("\e_Ga=d,d=i,").size
 
-    @app.instance_variable_set(:@screen, RubyPlayer::UI::Screen.new(out: out, rows: 40, cols: 138))
+    use_screen(rows: 40, cols: 138, out: out)
     @app.send(:invalidate_screen!)
     @app.render_if_needed
 
@@ -197,7 +197,7 @@ class AppArtworkTest < Minitest::Test
 
   def start_paused_gbs_with_art
     File.binwrite(File.join(@music, 'cover.jpg'), File.binread(File.join(FIXTURES, 'warrior.jpg')))
-    track = @app.instance_variable_get(:@library).all_tracks.find do |entry|
+    track = @app.library.all_tracks.find do |entry|
       entry.format == 'gbs' && entry.subtune_index == 1
     end
     @app.engine.enqueue_now([track])

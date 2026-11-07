@@ -108,7 +108,7 @@ module TestSupport
     end
 
     def select_library_kind(kind)
-      @app.instance_variable_set(:@active_pane, :library)
+      focus_pane(:library)
       20.times { @app.handle_key('up') }
       index = @app.library_pane.rows.index { |row| row.kind == kind }
       index.times { @app.handle_key('down') }
@@ -124,11 +124,20 @@ module TestSupport
 
     def art_region = @app.art.region
 
-    def use_screen(rows: 24, cols: 110)
-      out = StringIO.new
+    def library = @app.library
+
+    # Swaps in a Screen of the given size writing to out (fresh by default),
+    # as a terminal resize would. The only place tests replace App's output.
+    def use_screen(rows: 24, cols: 110, out: StringIO.new)
       @app.instance_variable_set(:@io_out, out)
       @app.instance_variable_set(:@screen, RubyPlayer::UI::Screen.new(out: out, rows: rows, cols: cols))
       out
+    end
+
+    # Moves focus straight to a pane, skipping the Tab cycle. The only place
+    # tests set App's focus directly.
+    def focus_pane(pane)
+      @app.instance_variable_set(:@active_pane, pane)
     end
 
     def play_with_cover_art
@@ -147,7 +156,7 @@ module TestSupport
     def base_theme = @app.instance_variable_get(:@base_theme)
 
     def seed_playlist_tracks(names)
-      lib = @app.instance_variable_get(:@library)
+      lib = @app.library
       root = lib.upsert_folder(parent_id: nil, name: 'PM', path: '/pm', kind: 'dir')
       names.map do |n|
         lib.upsert_track(folder_id: root, physical_path: "/pm/#{n}.vgm", backend: 'gme',
@@ -160,7 +169,7 @@ module TestSupport
       @app.library_pane.rebuild!
       @app.library_pane.select_playlist(pid)
       @app.send(:show_selected_tracks)
-      @app.instance_variable_set(:@active_pane, :tracks)
+      focus_pane(:tracks)
     end
 
     def show_all_songs_in_tracks_pane
@@ -168,14 +177,14 @@ module TestSupport
       pane.rebuild!
       pane.instance_variable_set(:@selection, pane.rows.index { |r| r.kind == :all })
       @app.send(:show_selected_tracks)
-      @app.instance_variable_set(:@active_pane, :tracks)
+      focus_pane(:tracks)
     end
 
     def select_playlist_child(pid)
       @app.library_pane.rebuild!
       @app.library_pane.select_playlist(pid)
       @app.send(:show_selected_tracks)
-      @app.instance_variable_set(:@active_pane, :library)
+      focus_pane(:library)
     end
 
     private
@@ -189,7 +198,7 @@ module TestSupport
     end
 
     def mark_two_tracks_missing
-      library = @app.instance_variable_get(:@library)
+      library = @app.library
       tracks = library.recently_added.first(2)
       library.mark_missing(track_ids: tracks.map(&:id), folder_ids: [])
       library.recompute_counts!
@@ -198,13 +207,13 @@ module TestSupport
     end
 
     def back_buffer_text
-      back = @app.instance_variable_get(:@screen).back_cells
+      back = @app.screen.back_cells
       back.map { |row| row.map(&:ch).join }.join("\n")
     end
 
     def instrument_flushes
       count = { n: 0 }
-      screen = @app.instance_variable_get(:@screen)
+      screen = @app.screen
       screen.define_singleton_method(:flush) do
         count[:n] += 1
         super()

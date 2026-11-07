@@ -21,7 +21,7 @@ class AppPlaybackQueueTest < Minitest::Test
   end
 
   def test_enqueue_all_songs_adds_every_present_track
-    expected_ids = @app.instance_variable_get(:@library).all_tracks.map(&:id)
+    expected_ids = @app.library.all_tracks.map(&:id)
     select_library_kind(:all)
 
     @app.handle_key('n')
@@ -129,7 +129,7 @@ class AppPlaybackQueueTest < Minitest::Test
     @app.render
 
     assert_equal before, @app.engine.queue_items
-    assert_includes @app.instance_variable_get(:@io_out).string, 'Focus sounds cannot be queued'
+    assert_includes @app.io_out.string, 'Focus sounds cannot be queued'
 
     @app.handle_key('n')
 
@@ -164,7 +164,7 @@ class AppPlaybackQueueTest < Minitest::Test
     @app.handle_key('p')                # select_queue: show the Playback Queue in tracks pane
     use_screen(cols: 140)
     @app.render
-    title_row = @app.instance_variable_get(:@screen).back_lines[0]
+    title_row = @app.screen.back_lines[0]
 
     assert_equal 1, title_row.scan('Playback Queue').size
     refute_includes title_row, 'Queued'
@@ -235,7 +235,7 @@ class AppPlaybackQueueTest < Minitest::Test
   end
 
   def test_sorting_a_folder_then_viewing_queue_removes_the_right_track
-    library = @app.instance_variable_get(:@library)
+    library = @app.library
     folder_id = library.upsert_folder(parent_id: nil, name: 'synth', path: '/synth', kind: 'dir')
     ids = %w[Charlie Alpha Bravo].each_with_index.map do |title, i|
       library.upsert_track(folder_id: folder_id, physical_path: "/synth/#{i}.vgm",

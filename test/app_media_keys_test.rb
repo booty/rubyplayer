@@ -6,7 +6,7 @@ class AppMediaKeysTest < Minitest::Test
 
   def test_remote_commands_follow_existing_playback_actions
     start_normal_playback
-    bus = @app.instance_variable_get(:@bus)
+    bus = @app.bus
     bus.publish(:media_command, action: :toggle_play)
     @app.handle_events
     wait_until(timeout: 2, interval: 0.01, failure_message: 'pause command was lost') do

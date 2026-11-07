@@ -59,8 +59,10 @@ module RubyPlayer
       attr_reader :engine, :library_pane, :tracks_pane, :queued_pane, :active_pane, :input_buffer,
                   :pending_delete, :info_track, :show_help, :theme_id, :theme_picker,
                   :focus_player, :filter_buffer, :pending_missing_purge, :config_error,
-                  :playlist_modal, :name_prompt,
-                  :pending_playlist_delete, :now_playing, :art, :effects_modal
+                  :playlist_modal, :name_prompt, :pending_playlist_delete, :now_playing, :art, :effects_modal,
+                  # Collaborators exposed for inspection (tests, scripts); App
+                  # remains the only caller that changes them.
+                  :library, :config, :bus, :vgm_telemetry_controller, :screen, :io_out, :effects_rack
 
       def initialize(argv: [], config_path: nil, data_path: nil, null_audio: false,
                      io_out: $stdout, focus_player: nil, media_keys: nil, env: ENV)

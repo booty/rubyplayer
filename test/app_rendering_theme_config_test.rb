@@ -9,31 +9,27 @@ class AppRenderingThemeConfigTest < Minitest::Test
   end
 
   def test_narrow_layout_renders_only_active_pane
-    out = StringIO.new
-    @app.instance_variable_set(:@io_out, out)
-    @app.instance_variable_set(:@screen, RubyPlayer::UI::Screen.new(out: out, rows: 20, cols: 71))
+    use_screen(rows: 20, cols: 71)
 
     @app.render
-    library_frame = @app.instance_variable_get(:@screen).back_cells
+    library_frame = @app.screen.back_cells
 
     assert_includes library_frame[0].map(&:ch).join, 'Library'
     refute_includes library_frame[0].map(&:ch).join, 'Playback Queue'
 
     @app.handle_key('tab')
     @app.render
-    tracks_frame = @app.instance_variable_get(:@screen).back_cells
+    tracks_frame = @app.screen.back_cells
 
     assert_includes tracks_frame[0].map(&:ch).join, 'Playback Queue · 0'
     refute_includes tracks_frame[0].map(&:ch).join, 'Library'
   end
 
   def test_two_pane_layout_starts_at_72_columns
-    out = StringIO.new
-    @app.instance_variable_set(:@io_out, out)
-    @app.instance_variable_set(:@screen, RubyPlayer::UI::Screen.new(out: out, rows: 20, cols: 72))
+    use_screen(rows: 20, cols: 72)
 
     @app.render
-    title_row = @app.instance_variable_get(:@screen).back_lines[0]
+    title_row = @app.screen.back_lines[0]
 
     assert_includes title_row, 'Library'
     assert_includes title_row, 'Playback Queue · 0'
@@ -45,7 +41,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
 
     @app.render
 
-    title_row = @app.instance_variable_get(:@screen).back_lines[0]
+    title_row = @app.screen.back_lines[0]
 
     assert_includes title_row, 'Library'
     assert_includes title_row, 'Tracks'
@@ -69,7 +65,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
   # A stacked Queued pane is short; with full history its selected
   # upcoming track must still show (it takes the rating and X keys).
   def test_stacked_queued_keeps_the_selected_track_in_view
-    library = @app.instance_variable_get(:@library)
+    library = @app.library
     tracks = library.all_tracks.first(4)
     tracks.first(3).each do |track|
       library.record_history(track_id: track.id, started_at: Time.now.utc.iso8601, ended_at: Time.now.utc.iso8601)
@@ -113,7 +109,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
 
     @app.render
 
-    title_row = @app.instance_variable_get(:@screen).back_lines[0]
+    title_row = @app.screen.back_lines[0]
 
     assert_equal 1, title_row.scan('Playback Queue').size
     refute_includes title_row, 'Queued'
@@ -134,7 +130,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
   end
 
   def test_folder_stats_query_runs_once_across_frames
-    library = @app.instance_variable_get(:@library)
+    library = @app.library
     calls = 0
     library.define_singleton_method(:folder_stats) do
       calls += 1
@@ -151,7 +147,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
   end
 
   def test_status_track_count_refreshes_after_library_change
-    library = @app.instance_variable_get(:@library)
+    library = @app.library
     before = library.folder_stats
     @app.render
 
@@ -185,7 +181,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
   def test_bus_events_mark_frame_dirty
     flushes = instrument_flushes
     @app.render_if_needed
-    @app.instance_variable_get(:@bus).publish(:queue_changed, items: [])
+    @app.bus.publish(:queue_changed, items: [])
     @app.handle_events
     2.times { @app.render_if_needed }
 
@@ -193,7 +189,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
   end
 
   def test_queued_pane_loads_upcoming_and_three_history_events
-    library = @app.instance_variable_get(:@library)
+    library = @app.library
     tracks = library.recently_added.first(2)
     @app.engine.enqueue_end(tracks)
     4.times do |index|
@@ -235,7 +231,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
     2.times { @app.handle_key('tab') }
     @app.render
 
-    screen = @app.instance_variable_get(:@screen)
+    screen = @app.screen
     queued_x = 140 - 36
     cell = screen.back_cells[0][queued_x]
 
@@ -283,7 +279,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
   def test_footer_reserves_three_command_rows_below_playback_and_status
     use_screen(cols: 140)
     @app.render
-    cells = @app.instance_variable_get(:@screen).back_cells
+    cells = @app.screen.back_cells
     rows = cells.map { |row| row.map(&:ch).join.rstrip }
 
     assert_includes rows[-5], 'Nothing playing'
@@ -332,7 +328,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
   end
 
   def test_hot_reload_updates_queued_preference_width_and_formatter
-    track = @app.instance_variable_get(:@library).recently_added.first
+    track = @app.library.recently_added.first
     @app.engine.enqueue_end([track])
     @app.refresh_panes
     path = File.join(@tmp, 'config.rb')
@@ -345,7 +341,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
 
     force_config_reload
 
-    assert_equal 44, @app.instance_variable_get(:@config)['ui', 'queued_pane_width']
+    assert_equal 44, @app.config['ui', 'queued_pane_width']
     queued_track = @app.queued_pane.display_rows(8).find { |row| row[:type] == :track }
 
     assert_equal "RELOADED #{track.title}", queued_track[:text]
@@ -363,17 +359,17 @@ class AppRenderingThemeConfigTest < Minitest::Test
     force_config_reload
 
     telemetry = @app.instance_variable_get(:@vgm_telemetry)
-    controller = @app.instance_variable_get(:@vgm_telemetry_controller)
+    controller = @app.vgm_telemetry_controller
 
     assert_equal 1_048_576, telemetry.instance_variable_get(:@max_bytes)
     assert_in_delta 0.125, controller.instance_variable_get(:@request_interval_seconds), 0.0001
   end
 
   def test_invalid_queued_formatter_hot_reload_keeps_active_config_and_rows
-    track = @app.instance_variable_get(:@library).recently_added.first
+    track = @app.library.recently_added.first
     @app.engine.enqueue_end([track])
     @app.refresh_panes
-    config = @app.instance_variable_get(:@config)
+    config = @app.config
     previous_formatter = config['ui', 'format_track_queued']
     previous_text = @app.queued_pane.display_rows(8).find { |row| row[:type] == :track }[:text]
     path = File.join(@tmp, 'config.rb')
@@ -405,7 +401,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
     @app.render
 
     refute_includes back_buffer_text.lines.first, 'Queued'
-    assert_equal 1, @app.instance_variable_get(:@config)['ui', 'queued_pane_width']
+    assert_equal 1, @app.config['ui', 'queued_pane_width']
   end
 
   def test_idle_frames_do_not_reload_queued_snapshots
@@ -432,7 +428,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
       original_reload.call
     end
 
-    @app.instance_variable_get(:@bus).publish(:playback_state, playing: false, paused: false)
+    @app.bus.publish(:playback_state, playing: false, paused: false)
     @app.handle_events
 
     assert_equal 1, reloads
@@ -601,7 +597,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
     @app.art.instance_variable_set(:@bytes, 'IMG'.b)
     @app.render
 
-    out = @app.instance_variable_get(:@io_out)
+    out = @app.io_out
 
     refute_includes out.string, '1337;File'
   end
@@ -696,7 +692,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
 
   def test_accent_reverts_when_playback_stops
     play_with_cover_art
-    @app.instance_variable_get(:@bus).publish(:playback_state, playing: false, paused: false)
+    @app.bus.publish(:playback_state, playing: false, paused: false)
     @app.handle_events
     use_screen
     @app.render
@@ -755,7 +751,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
 
     refute_equal before, @app.theme_id # live preview changed the active theme
     assert @app.theme_picker # still open -- nothing persisted yet
-    assert_equal 'default', @app.instance_variable_get(:@config)['ui', 'theme']
+    assert_equal 'default', @app.config['ui', 'theme']
   end
 
   def test_confirming_the_theme_picker_persists_the_previewed_theme
@@ -766,7 +762,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
 
     refute @app.theme_picker
     assert_equal previewed, @app.theme_id
-    assert_equal previewed.to_s, @app.instance_variable_get(:@config)['ui', 'theme']
+    assert_equal previewed.to_s, @app.config['ui', 'theme']
   end
 
   def test_cancelling_the_theme_picker_reverts_the_preview
@@ -785,12 +781,12 @@ class AppRenderingThemeConfigTest < Minitest::Test
     # StringIO#string returns the live internal buffer, not a copy -- capture
     # the length now (an Integer, immune to later mutation) rather than the
     # string object itself, or "before" would grow along with "after".
-    before_len = @app.instance_variable_get(:@io_out).string.size
+    before_len = @app.io_out.string.size
 
     @app.handle_key('t')
     @app.handle_key('down') # preview the first named (hex) theme
     @app.render
-    themed_out = @app.instance_variable_get(:@io_out).string[before_len..]
+    themed_out = @app.io_out.string[before_len..]
 
     border_hex = RubyPlayer::Theme[@app.theme_id][:border_focus].delete('#').scan(/../).map { |h| h.to_i(16) }
 
@@ -825,7 +821,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
     assert_equal before, @app.active_pane
 
     @app.render
-    output = @app.instance_variable_get(:@io_out).string
+    output = @app.io_out.string
 
     assert_includes output, 'Configuration Error'
     assert_includes output, 'SyntaxError'
@@ -863,7 +859,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
 
     @app.render
 
-    screen = @app.instance_variable_get(:@screen)
+    screen = @app.screen
     rendered = screen.back_lines.join("\n")
 
     assert_includes rendered, 'VISI'
@@ -895,7 +891,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
   # The first cell inside the stacked Queued pane's border, for each row
   # under its title.
   def stacked_queued_backgrounds
-    back = @app.instance_variable_get(:@screen).back_cells
+    back = @app.screen.back_cells
     title_row = back.index { |row| row.map(&:ch).join.include?('Queued') }
     column = back[title_row].map(&:ch).join.index('Queued') - 2
     back.drop(title_row + 1).map { |row| row[column]&.bg }

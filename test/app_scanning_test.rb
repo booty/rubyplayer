@@ -25,7 +25,7 @@ class AppScanningTest < Minitest::Test
   def test_scan_progress_reloads_tracks_before_completion
     @app.handle_events
     select_tracks_for(:all)
-    library = @app.instance_variable_get(:@library)
+    library = @app.library
     root = library.roots.first
     library.upsert_track(
       folder_id: root['id'], physical_path: File.join(@music, 'new.vgm'),
@@ -35,7 +35,7 @@ class AppScanningTest < Minitest::Test
       :@last_scan_refresh_at,
       Process.clock_gettime(Process::CLOCK_MONOTONIC) - 1
     )
-    @app.instance_variable_get(:@bus).publish(:scan_progress, processed: 1, total: 2)
+    @app.bus.publish(:scan_progress, processed: 1, total: 2)
 
     @app.handle_events
 
@@ -44,7 +44,7 @@ class AppScanningTest < Minitest::Test
 
   def test_scan_progress_reveals_a_new_root_before_final_counts
     @app.handle_events
-    library = @app.instance_variable_get(:@library)
+    library = @app.library
     root = library.upsert_folder(parent_id: nil, name: 'New root', path: '/new-root', kind: 'dir')
     library.upsert_track(
       folder_id: root, physical_path: '/new-root/new.vgm',
@@ -54,7 +54,7 @@ class AppScanningTest < Minitest::Test
       :@last_scan_refresh_at,
       Process.clock_gettime(Process::CLOCK_MONOTONIC) - 1
     )
-    @app.instance_variable_get(:@bus).publish(:scan_progress, processed: 1, total: 2)
+    @app.bus.publish(:scan_progress, processed: 1, total: 2)
 
     @app.handle_events
 
@@ -71,7 +71,7 @@ class AppScanningTest < Minitest::Test
       refreshes += 1 unless queued
       original.call(queued: queued)
     end
-    bus = @app.instance_variable_get(:@bus)
+    bus = @app.bus
     @app.instance_variable_set(
       :@last_scan_refresh_at,
       Process.clock_gettime(Process::CLOCK_MONOTONIC) - 1
@@ -106,7 +106,7 @@ class AppScanningTest < Minitest::Test
       :@last_scan_refresh_at,
       Process.clock_gettime(Process::CLOCK_MONOTONIC) - 1
     )
-    @app.instance_variable_get(:@bus).publish(:scan_progress, processed: 1, total: 2)
+    @app.bus.publish(:scan_progress, processed: 1, total: 2)
 
     @app.handle_events
 
