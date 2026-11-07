@@ -137,8 +137,7 @@ static void test_flush_discards_callback_echo(void) {
     atomic_store(&g_flush_epoch, 0);
     atomic_store(&g_frames_played, 0);
     g_applied_epoch = 0;
-    g_accepted_controls = 0;
-    g_accepted_bypass = 0;
+    memset(&g_accepted_controls, 0, sizeof(g_accepted_controls));
     for (int i = 0; i < RP_EFFECT_COUNT; i++) atomic_store(&g_effect_controls[i], 0);
     atomic_store(&g_effect_bypass, 0);
     rp_set_effect(RP_EFFECT_ECHO, 100, 0);

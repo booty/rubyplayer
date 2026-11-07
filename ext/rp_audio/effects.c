@@ -5,9 +5,6 @@
 #include <string.h>
 
 #define RP_CHANNELS 2
-#define RP_EFFECT_VALUE_BITS 7
-#define RP_EFFECT_VALUE_MASK 127u
-#define RP_EFFECT_BYPASS_BIT 56
 #define RP_TRANSITION_SECONDS 0.01f
 #define RP_PI 3.14159265358979323846f
 #define RP_DELAY_SECONDS 2u
@@ -221,13 +218,14 @@ static void process_effect(rp_effect_state *state, int effect, float intensity,
 }
 
 void rp_effects_process(rp_effects *rack, float *interleaved_stereo,
-                        unsigned int frame_count, uint64_t controls, uint32_t reset_mask) {
-    if (!rack || !interleaved_stereo) return;
+                        unsigned int frame_count, const rp_effect_controls *controls,
+                        uint32_t reset_mask) {
+    if (!rack || !interleaved_stereo || !controls) return;
     for (int i = 0; i < RP_EFFECT_COUNT; i++) {
         if (reset_mask & (UINT32_C(1) << i)) rack->effects[i].resetting = 1;
     }
-    int bypass = (controls >> RP_EFFECT_BYPASS_BIT) & 1u;
-    if (!bypass && reset_mask == ((1u << RP_EFFECT_COUNT) - 1)) rack->bypass_waiting = 1;
+    int bypass = controls->bypass;
+    if (!bypass && reset_mask == RP_EFFECT_RESET_ALL) rack->bypass_waiting = 1;
     for (unsigned int frame = 0; frame < frame_count; frame++) {
         float *samples = interleaved_stereo + (size_t)frame * RP_CHANNELS;
         float original[RP_CHANNELS] = {samples[0], samples[1]};
@@ -239,8 +237,7 @@ void rp_effects_process(rp_effects *rack, float *interleaved_stereo,
                                       rack->transition_step);
         for (int i = 0; i < RP_EFFECT_COUNT; i++) {
             rp_effect_state *state = &rack->effects[i];
-            unsigned int encoded = (unsigned int)((controls >> (i * RP_EFFECT_VALUE_BITS)) & RP_EFFECT_VALUE_MASK);
-            float target = fminf((float)encoded / 100.0f, 1.0f);
+            float target = fminf((float)controls->intensity_percent[i] / 100.0f, 1.0f);
             state->level = approach(state->level, state->resetting ? 0.0f : target, rack->transition_step);
             if (state->resetting && state->level == 0.0f) {
                 effect_reset(state);

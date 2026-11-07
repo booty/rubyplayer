@@ -17,10 +17,21 @@ enum rp_effect_id {
     RP_EFFECT_COUNT
 };
 
+/* Every reset bit set: the whole rack fades out and clears together. */
+#define RP_EFFECT_RESET_ALL ((UINT32_C(1) << RP_EFFECT_COUNT) - 1)
+
+/* Controls the output callback has accepted: each effect's target level,
+ * 0 (off) to 100 percent, and whether the whole rack is bypassed. */
+typedef struct {
+    uint8_t intensity_percent[RP_EFFECT_COUNT];
+    int bypass;
+} rp_effect_controls;
+
 rp_effects *rp_effects_create(unsigned int sample_rate_hz);
 void rp_effects_destroy(rp_effects *rack);
 void rp_effects_reset(rp_effects *rack);
 void rp_effects_process(rp_effects *rack, float *interleaved_stereo,
-                        unsigned int frame_count, uint64_t controls, uint32_t reset_mask);
+                        unsigned int frame_count, const rp_effect_controls *controls,
+                        uint32_t reset_mask);
 
 #endif

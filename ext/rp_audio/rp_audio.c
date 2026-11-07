@@ -31,8 +31,7 @@ static _Atomic uint64_t g_frames_played;
 static _Atomic uint64_t g_effect_controls[RP_EFFECT_COUNT];
 static _Atomic uint64_t g_effect_bypass;
 static _Atomic uint64_t g_flush_epoch;
-static uint64_t g_accepted_controls;
-static uint64_t g_accepted_bypass;
+static rp_effect_controls g_accepted_controls;
 static uint64_t g_applied_epoch;
 static rp_effects *g_effects;
 static int g_initialized = 0;
@@ -97,17 +96,15 @@ static void data_callback(ma_device *dev, void *output, const void *input, ma_ui
         }
         uint32_t reset_mask = 0;
         for (unsigned int i = 0; i < RP_EFFECT_COUNT; i++) {
-            uint64_t previous = (g_accepted_controls >> (7 * i)) & RP_EFFECT_VALUE_MASK;
-            uint64_t value = claim_control(&g_effect_controls[i], previous, &reset_mask, 1u << i);
-            g_accepted_controls &= ~(RP_EFFECT_VALUE_MASK << (7 * i));
-            g_accepted_controls |= (value & RP_EFFECT_VALUE_MASK) << (7 * i);
+            g_accepted_controls.intensity_percent[i] = (uint8_t)claim_control(
+                &g_effect_controls[i], g_accepted_controls.intensity_percent[i], &reset_mask, UINT32_C(1) << i);
         }
-        g_accepted_bypass = claim_control(&g_effect_bypass, g_accepted_bypass,
-                                           &reset_mask, (1u << RP_EFFECT_COUNT) - 1);
+        g_accepted_controls.bypass = (int)claim_control(&g_effect_bypass, (uint64_t)g_accepted_controls.bypass,
+                                                        &reset_mask, RP_EFFECT_RESET_ALL);
 #ifdef RP_AUDIO_TEST_HOOKS
         test_before_process();
 #endif
-        rp_effects_process(g_effects, out, n, g_accepted_controls | (g_accepted_bypass << 56), reset_mask);
+        rp_effects_process(g_effects, out, n, &g_accepted_controls, reset_mask);
     }
     if (n < frame_count)  /* underrun or paused: emit silence */
         memset(out + (size_t)n * RP_CHANNELS, 0,
@@ -152,8 +149,7 @@ int rp_init(unsigned int sample_rate, unsigned int buffer_ms, int use_null) {
     atomic_store(&g_flush_epoch, 0);
     atomic_store(&g_effect_bypass, 0);
     for (unsigned int i = 0; i < RP_EFFECT_COUNT; i++) atomic_store(&g_effect_controls[i], 0);
-    g_accepted_controls = 0;
-    g_accepted_bypass = 0;
+    memset(&g_accepted_controls, 0, sizeof(g_accepted_controls));
     g_applied_epoch = 0;
     g_initialized = 1;
     return 0;
