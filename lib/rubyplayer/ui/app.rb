@@ -62,10 +62,10 @@ module RubyPlayer
                   :playlist_modal, :name_prompt, :pending_playlist_delete, :now_playing, :art, :effects_modal,
                   # Collaborators exposed for inspection (tests, scripts); App
                   # remains the only caller that changes them.
-                  :library, :config, :bus, :vgm_telemetry_controller, :screen, :io_out, :effects_rack
+                  :library, :config, :bus, :vgm_telemetry_controller, :screen, :io_out, :effects_rack, :archive_cache
 
       def initialize(argv: [], config_path: nil, data_path: nil, null_audio: false,
-                     io_out: $stdout, focus_player: nil, media_keys: nil, env: ENV)
+                     io_out: $stdout, focus_player: nil, media_keys: nil, archive_cache: nil, env: ENV)
         @argv = argv
         @io_out = io_out
         @config = ConfigStore.new(path: config_path || RubyPlayer.config_path)
@@ -84,8 +84,8 @@ module RubyPlayer
         @effects_rack = EffectsRack.new(audio: @audio,
                                         default_intensity_percent: @config['audio', 'effect_default_percent'],
                                         step_percent: @config['audio', 'effect_step_percent'])
-        @archive_cache = ArchiveCache.new(root: @config['library', 'archive_cache_dir'],
-                                          tar: @config['library', 'archive_tool'])
+        @archive_cache = archive_cache || ArchiveCache.new(root: @config['library', 'archive_cache_dir'],
+                                                           tar: @config['library', 'archive_tool'])
         @focus_player = focus_player || FocusPlayer.new
         @engine = PlaybackEngine.new(
           queue: PlayQueue.new(undo_depth: @config['library', 'undo_depth']),

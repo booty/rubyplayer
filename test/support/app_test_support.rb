@@ -93,7 +93,10 @@ module TestSupport
         config_path: config_path,
         data_path: File.join(@tmp, 'library.sqlite3'),
         null_audio: true, io_out: StringIO.new, focus_player: @focus_player,
-        media_keys: @media_keys, env: env
+        media_keys: @media_keys, env: env,
+        # Never the user's ~/.cache: tests must not write there, and parallel
+        # test processes would race extracting into one shared directory.
+        archive_cache: RubyPlayer::ArchiveCache.new(root: File.join(@tmp, 'archive-cache'))
       )
     end
 

@@ -27,6 +27,7 @@ File.write(config_path, <<~CONFIG)
   RubyPlayer.configure do |config|
     config.ui.art_mode = #{art_mode.inspect}
     config.ui.art_accent = false
+    config.library.archive_cache_dir = #{File.join(work_dir, 'archive-cache').inspect}
   end
 CONFIG
 

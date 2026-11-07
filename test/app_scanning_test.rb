@@ -4,6 +4,17 @@ require_relative 'support/app_test_support'
 class AppScanningTest < Minitest::Test
   include TestSupport::AppTestSupport
 
+  # Regression: app tests built App's ArchiveCache from the default config,
+  # extracting test archives into the user's real ~/.cache/rubyplayer, a
+  # directory concurrent test processes would also race on.
+  def test_app_tests_extract_archives_under_their_own_temp_dir
+    FileUtils.cp(File.join(FIXTURES, 'musha.zip'), @music)
+    @app.scan_paths([@music], wait: true)
+
+    assert @app.archive_cache.root.start_with?(@tmp)
+    refute_empty Dir.children(@app.archive_cache.root)
+  end
+
   def test_deletion_only_scan_refreshes_counts_and_panes
     select_tracks_for(:all)
     @app.handle_events
