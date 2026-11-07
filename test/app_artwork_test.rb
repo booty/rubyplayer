@@ -26,7 +26,7 @@ class AppArtworkTest < Minitest::Test
     out = use_screen(rows: 40, cols: 138)
 
     %i[inset pane corner].each do |mode|
-      @app.instance_variable_set(:@art_mode, mode)
+      @app.art.mode = mode
       @app.send(:invalidate_screen!)
       @app.render_if_needed
 
@@ -62,7 +62,7 @@ class AppArtworkTest < Minitest::Test
     play_with_cover_art
     @app.handle_key('v')
     out = use_screen
-    @app.instance_variable_set(:@art_region, nil)
+    @app.art.region = nil
     @app.instance_variable_set(:@last_resize_at, Process.clock_gettime(Process::CLOCK_MONOTONIC))
     @app.send(:invalidate_screen!)
 
@@ -85,7 +85,7 @@ class AppArtworkTest < Minitest::Test
 
     overlay_flags.each do |flag|
       @app.instance_variable_set("@#{flag}", true)
-      @app.instance_variable_set(:@art_dirty, true)
+      @app.art.mark_dirty!
       @app.send(:emit_art)
       hide_commands += 1
 
@@ -93,7 +93,7 @@ class AppArtworkTest < Minitest::Test
       assert_equal hide_commands, out.string.scan("\e_Ga=d,d=i,").size, "one hide for #{flag}"
 
       @app.instance_variable_set("@#{flag}", nil)
-      @app.instance_variable_set(:@art_dirty, true)
+      @app.art.mark_dirty!
       @app.send(:emit_art)
       placement_commands += 1
     end
@@ -117,7 +117,7 @@ class AppArtworkTest < Minitest::Test
     @app.shutdown
     @app = make_app(env: { 'TERM' => 'xterm-kitty' })
 
-    assert @app.instance_variable_get(:@art_supported)
+    assert_predicate @app.art, :supported?
   end
 
   def test_live_page_hides_then_info_and_close_reuse_same_track_upload
@@ -160,7 +160,7 @@ class AppArtworkTest < Minitest::Test
 
   def test_art_placement_keeps_cover_aspect_using_configured_cell_shape
     play_with_cover_art
-    @app.instance_variable_set(:@art_mode, :corner)
+    @app.art.mode = :corner
     out = use_screen(rows: 40, cols: 138)
 
     RubyPlayer::UI::KittyImage.stub(:tty_cell_size, nil) { @app.render_if_needed }
@@ -176,7 +176,7 @@ class AppArtworkTest < Minitest::Test
 
   def test_inset_grows_with_library_width_to_fill_it
     play_with_cover_art
-    @app.instance_variable_set(:@art_mode, :inset)
+    @app.art.mode = :inset
     out = use_screen(rows: 80, cols: 200)
 
     RubyPlayer::UI::KittyImage.stub(:tty_cell_size, [10, 20]) { @app.render_if_needed }
@@ -210,7 +210,7 @@ class AppArtworkTest < Minitest::Test
     end
     wait_until(timeout: 2, interval: 0.01, failure_message: 'cover art did not load') do
       @app.handle_events
-      @app.instance_variable_get(:@art_bytes)
+      @app.art.bytes
     end
   end
 

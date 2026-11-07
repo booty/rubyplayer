@@ -14,6 +14,7 @@ require_relative '../playback_state'
 require_relative '../vgm/telemetry'
 require_relative 'vgm_telemetry_controller'
 require_relative 'now_playing_controller'
+require_relative 'art_presenter'
 require_relative 'effects_modal'
 
 module RubyPlayer
@@ -28,7 +29,6 @@ module RubyPlayer
       MIN_STACKED_QUEUED_ROWS = 7
       RATE_ACTIONS = { rate_0: nil, rate_1: 1, rate_2: 2, rate_3: 3,
                        rate_4: 4, rate_5: 5, rate_6: 6 }.freeze
-      ART_MODES = %i[off inset pane corner].freeze
       SCAN_REFRESH_INTERVAL_SECONDS = 0.25
       # Config hot-reload stats the file at most this often; edits land
       # within a second without a stat on every loop pass.
@@ -38,8 +38,8 @@ module RubyPlayer
       attr_reader :engine, :library_pane, :tracks_pane, :queued_pane, :active_pane, :input_buffer,
                   :pending_delete, :info_track, :show_help, :theme_id, :theme_picker,
                   :focus_player, :filter_buffer, :pending_missing_purge, :config_error,
-                  :art_mode, :playlist_modal, :name_prompt,
-                  :pending_playlist_delete, :now_playing
+                  :playlist_modal, :name_prompt,
+                  :pending_playlist_delete, :now_playing, :art
 
       def initialize(argv: [], config_path: nil, data_path: nil, null_audio: false,
                      io_out: $stdout, focus_player: nil, media_keys: nil, env: ENV)
@@ -124,15 +124,12 @@ module RubyPlayer
           artwork: Artwork.new(names: @config['ui', 'art_filenames'], archive_cache: @archive_cache),
           event_bus: @bus, display_max_px: -> { @config['ui', 'art_display_max_px'] }
         )
-        @art_supported = KittyImage.supported?(env)
         # Cell pixels are read per placement rather than cached: a font-size
         # change alters them and arrives only as a SIGWINCH-driven repaint.
-        @kitty_image = KittyImage.new(output: -> { @io_out }, measured_cell_size_px: -> { KittyImage.tty_cell_size },
-                                      cell_aspect: -> { @config['ui', 'art_cell_aspect'] })
-        @art_mode = normalize_art_mode(@config['ui', 'art_mode'])
-        @art_bytes = nil
-        @art_region = nil
-        @art_dirty = false
+        kitty_image = KittyImage.new(output: -> { @io_out }, measured_cell_size_px: -> { KittyImage.tty_cell_size },
+                                     cell_aspect: -> { @config['ui', 'art_cell_aspect'] })
+        @art = ArtPresenter.new(screen: -> { @screen }, config: @config, kitty_image: kitty_image,
+                                supported: KittyImage.supported?(env), mode: @config['ui', 'art_mode'])
         @quit = false
         @resized = false
         # Dirty-flag rendering: the loop paints only when something visual
@@ -149,6 +146,7 @@ module RubyPlayer
       def quit? = @quit
       def show_now_playing? = @now_playing.shown?
       def now_playing_page = @now_playing.page
+      def art_mode = @art.mode
 
       # Scans paths on a background thread; wait: true blocks (tests, startup
       # ordering). Progress arrives via the EventBus either way.
@@ -187,7 +185,7 @@ module RubyPlayer
         # Shutdown is best-effort across independent resources. Focus process
         # failure must not leave decoder thread, native audio, or SQLite open;
         # preserve the first error so callers still learn cleanup was incomplete.
-        [-> { @media_keys.stop }, -> { @art_fetcher.stop }, -> { @kitty_image.clear }, lambda {
+        [-> { @media_keys.stop }, -> { @art_fetcher.stop }, -> { @art.clear }, lambda {
           @vgm_telemetry_controller.shutdown
         },
          -> { @engine.shutdown },
@@ -575,7 +573,7 @@ module RubyPlayer
       # frame — stable objects keep the cell diff from seeing phantom
       # changes.
       def tinted_base_theme
-        accent = @art_accent
+        accent = @art.accent
         return @base_theme unless accent
 
         key = [@base_theme.object_id, accent]
@@ -588,11 +586,6 @@ module RubyPlayer
 
       # ---- album art ----
 
-      def normalize_art_mode(value)
-        mode = value.to_s.to_sym
-        ART_MODES.include?(mode) ? mode : :off
-      end
-
       def request_show_now_playing
         track = @engine.state[:track]
         unless track
@@ -600,7 +593,7 @@ module RubyPlayer
           return
         end
         @now_playing.open(track)
-        fetch_art(track) if @art_bytes.nil?
+        fetch_art(track) if @art.bytes.nil?
         invalidate_screen!
       end
 
@@ -623,26 +616,26 @@ module RubyPlayer
 
       # Leaving the live pages brings the art back into the modal.
       def after_now_playing_page_change
-        fetch_art(@engine.state[:track]) if !@now_playing.live_page? && @art_bytes.nil?
+        fetch_art(@engine.state[:track]) if !@now_playing.live_page? && @art.bytes.nil?
         invalidate_screen!
       end
 
       def close_now_playing
         @now_playing.close
         track = @engine.state[:track]
-        fetch_art(track) if track && @art_bytes.nil?
+        fetch_art(track) if track && @art.bytes.nil?
         invalidate_screen!
       end
 
       def cycle_art_mode
-        @art_mode = ART_MODES[(ART_MODES.index(@art_mode) + 1) % ART_MODES.size]
+        mode = @art.cycle_mode
         begin
-          @config.persist_art_mode(@art_mode)
+          @config.persist_art_mode(mode)
         rescue ConfigError => e
           @config_error = e
         end
-        message = "Album art: #{@art_mode}"
-        message += ' (requires Kitty or iTerm2 3.5.4)' if @art_mode != :off && !@art_supported
+        message = "Album art: #{mode}"
+        message += ' (requires Kitty or iTerm2 3.5.4)' if mode != :off && !@art.supported?
         @status_line.set_message(message)
         invalidate_screen!
       end
@@ -655,13 +648,9 @@ module RubyPlayer
       end
 
       def set_art(bytes, accent: nil)
-        @art_accent = @config['ui', 'art_accent'] ? accent : nil
-        return if bytes == @art_bytes
-
-        @art_bytes = bytes
         # A full repaint keeps text and terminal placements synchronized on
         # rare track boundaries and art changes.
-        invalidate_screen!
+        invalidate_screen! if @art.show(bytes, accent: accent)
       end
 
       # Screen#resize with unchanged dimensions is the existing "repaint
@@ -670,7 +659,7 @@ module RubyPlayer
       def invalidate_screen!
         @screen.resize(@screen.rows, @screen.cols)
         @needs_render = true
-        @art_dirty = true
+        @art.mark_dirty!
       end
 
       def modal_active?
@@ -679,62 +668,16 @@ module RubyPlayer
            @name_prompt || @pending_playlist_delete)
       end
 
-      # Called after Screen#flush: placements live outside Screen's buffer,
-      # so damaged art must be placed again. Modals hide the placement while
-      # keeping pixels resident for the closing repaint.
-      def emit_art
-        return withdraw_art unless art_placeable?
+      # Called after Screen#flush, which the art placement lives outside of.
+      def emit_art = @art.emit(art_view_open?, settling: resize_settling?)
 
-        region = @art_region
-        rows = region[:y]..(region[:y] + region[:h] - 1)
-        cols = region[:x]..(region[:x] + region[:w] - 1)
-        return unless @art_dirty || @screen.region_damaged?(rows: rows, cols: cols)
-
-        # A window drag is a SIGWINCH storm. Remember placement damage and
-        # repair it once after the existing resize debounce settles.
-        if resize_settling?
-          @art_dirty = true
-          return
-        end
-
-        @art_dirty = false
-        @kitty_image.render(@art_bytes, row: region[:y], col: region[:x], width_cells: region[:w],
-                                        height_cells: region[:h], gap_cells: @config['ui', 'art_gap_cells'],
-                                        align: region.fetch(:align, :center), force: true)
-      end
-
-      def art_placeable? = art_should_show? && valid_art_region?(@art_region)
-
-      # Frees the image when there is none to show; otherwise only hides the
-      # placement (a modal, live page or bad region rules it out for now) so
-      # the pixels stay resident for the next placement.
-      def withdraw_art
-        if @art_supported && @art_bytes
-          @kitty_image.hide
-        else
-          @kitty_image.clear
-        end
-        nil
-      end
-
-      def art_should_show?
-        return false unless @art_supported && @art_bytes
+      # Whether the current view has a place for art: an open Now Playing on
+      # its Info page, or the persistent mode, never beneath another modal.
+      def art_view_open?
         return false if modal_active?
-        return false if @now_playing.shown? && @now_playing.live_page?
-        return true if @now_playing.shown?
+        return !@now_playing.live_page? if @now_playing.shown?
 
-        @art_mode != :off
-      end
-
-      def valid_art_region?(region)
-        return false unless region.is_a?(Hash)
-
-        x = region[:x]
-        y = region[:y]
-        w = region[:w]
-        h = region[:h]
-        [x, y, w, h].all?(Integer) && x >= 0 && y >= 0 &&
-          w.positive? && h.positive? && x + w <= @screen.cols && y + h <= @screen.rows
+        @art.mode != :off
       end
 
       def route_to_pane(action)
@@ -1210,20 +1153,11 @@ module RubyPlayer
         # mutex and builds a hash, and a frame used to ask up to nine times.
         state = @engine.state
         return unless @needs_render || animating?(state) || message_active != @message_was_active ||
-                      pending_art_emit?
+                      @art.emit_pending?(!modal_active?, settling: resize_settling?)
 
         render(state)
         @needs_render = false
         @message_was_active = message_active
-      end
-
-      # Art emission deferred by a resize storm still owes the terminal one
-      # image after the storm settles — without this the debt would only be
-      # paid on the next unrelated repaint (never, if the app is idle). The
-      # idle poll (0.25s) is the wake-up source, matching the settle window.
-      def pending_art_emit?
-        !!(@art_dirty && @art_bytes && @art_region && @art_supported &&
-           !modal_active? && !resize_settling?)
       end
 
       def animating?(state = @engine.state)
@@ -1244,7 +1178,7 @@ module RubyPlayer
 
       def render(playback_state = @engine.state)
         if resize_settling?
-          withdraw_art unless art_placeable?
+          @art.withdraw unless @art.placeable?(art_view_open?)
           return
         end
 
@@ -1291,7 +1225,7 @@ module RubyPlayer
       end
 
       def render_panes(cols, content_h)
-        @art_region = nil
+        @art.region = nil
         normalize_active_pane!
         placement = queued_placement(cols, content_h)
         queued_rows = placement == :stacked ? stacked_queued_rows(content_h) : 0
@@ -1320,7 +1254,7 @@ module RubyPlayer
         tracks_h = content_h - queued_rows
         lib_w = usable * @config['ui', 'library_pane_percent'] / 100
         tracks_w = usable - lib_w
-        inset_h = @art_mode == :inset ? art_inset_rows(lib_w, content_h) : 0
+        inset_h = @art.mode == :inset ? @art.inset_rows(lib_w, content_h) : 0
         draw_box(0, 0, lib_w, content_h, active: @active_pane == :library, title: 'Library')
         draw_box(lib_w, 0, tracks_w, tracks_h, active: @active_pane == :tracks,
                                                title: @tracks_pane.title(max_width: tracks_w - 6))
@@ -1331,11 +1265,11 @@ module RubyPlayer
         if inset_h.positive?
           # Bottom-aligned: the gap to the pane border below matches the
           # sides, and any spare row sits between the list and the art.
-          @art_region = { x: 1, y: content_h - 1 - inset_h, w: lib_w - 2, h: inset_h, align: :bottom }
-        elsif @art_mode == :corner
+          @art.region = { x: 1, y: content_h - 1 - inset_h, w: lib_w - 2, h: inset_h, align: :bottom }
+        elsif @art.mode == :corner
           # Unlike the inset, the corner has no spectrum fallback: without a
           # cover it would only be an empty rectangle over the track list.
-          place_art_corner(usable, tracks_h) if art_loaded?
+          @art.place_corner(usable, tracks_h, backing_bg: @base_theme[:surface]) if @art.loaded?
         end
         if placement == :column
           render_queued_pane(usable, 0, queued_cols, content_h)
@@ -1354,20 +1288,6 @@ module RubyPlayer
       def content_height
         rows = @screen.rows
         rows - @player_bar.height(rows) - 1 - HotkeyLine::ROWS
-      end
-
-      # Cells are roughly twice as tall as wide, so a visually square image
-      # spans about half as many rows as columns — that ratio drives every
-      # region height below.
-      def art_inset_rows(lib_w, content_h)
-        limit = (content_h - 2) / 2 # leave at least half the pane for the list
-        cap = @config['ui', 'art_inset_max_rows']
-        limit = [limit, cap].min if cap.positive?
-        # Before art arrives (rows_to_fill is nil) a square cover is
-        # assumed; the arrival repaints and resizes the inset.
-        fill = @kitty_image.rows_to_fill(@art_bytes, width_cells: lib_w - 2, gap_cells: @config['ui', 'art_gap_cells'])
-        rows = [fill || ((lib_w - 2) / 2), limit].min
-        rows >= @config['ui', 'art_min_rows'] ? rows : 0
       end
 
       # Where the Queued pane goes: its own right-hand column when Library
@@ -1423,9 +1343,9 @@ module RubyPlayer
         return @player_bar.render(@screen, x: 0, y: row, w: cols, h: 1, active: active, **options) if height == 1
 
         draw_box(0, row, cols, height, active: active, title: 'Now Playing')
-        art = @art_mode == :pane && @art_bytes && @art_supported && height - 2 >= @config['ui', 'art_min_rows']
+        art = @art.mode == :pane && @art.loaded? && height - 2 >= @config['ui', 'art_min_rows']
         region = @player_bar.render(@screen, x: 1, y: row + 1, w: cols - 2, h: height - 2, art: art, **options)
-        @art_region = region if region
+        @art.region = region if region
       end
 
       # The bar's slower facts, read once per track and again after it is
@@ -1439,28 +1359,11 @@ module RubyPlayer
         details
       end
 
-      def place_art_corner(cols, content_h)
-        h = @config['ui', 'art_corner_rows']
-        w = h * 2
-        return if h + 2 >= content_h || w + 4 >= cols
-
-        x = cols - w - 2
-        y = content_h - 1 - h
-        # Paint a stable backing rectangle: these cells must be identical
-        # every frame so the diff never repaints beneath the image while the
-        # track list scrolls elsewhere. Deliberately the *base* surface
-        # color — any per-frame theme variation here would damage this
-        # region and re-emit the image (same flood class as the resize
-        # storm).
-        h.times { |i| @screen.put(y + i, x, ' ' * w, bg: @base_theme[:surface]) }
-        @art_region = { x: x, y: y, w: w, h: h }
-      end
-
       # Drawn before the other modals so a delete-confirm or config-error
-      # modal can still cover it. While open it owns @art_region — the image
+      # modal can still cover it. While open it owns the art region — the image
       # belongs inside the modal, not wherever the persistent mode had it —
       # which is also why modal_active? (the emit gate) deliberately
-      # excludes an open Now Playing. Live pages leave @art_region nil, hiding
+      # excludes an open Now Playing. Live pages leave the region nil, hiding
       # the placement while keeping the same track's upload available.
       def render_now_playing_modal(playback_state)
         track = playback_state[:track]
@@ -1471,9 +1374,9 @@ module RubyPlayer
         return unless modal&.matches?(track)
 
         @now_playing.update_live(playback_state[:position_ms])
-        @art_region = modal.render(@screen, theme: @theme, frame: method(:render_modal),
+        @art.region = modal.render(@screen, theme: @theme, frame: method(:render_modal),
                                             min_art_rows: @config['ui', 'art_min_rows'],
-                                            art: art_loaded?)
+                                            art: @art.loaded?)
         render_art_placeholder(playback_state)
       end
 
@@ -1482,14 +1385,12 @@ module RubyPlayer
       # terminal); idle, it stays blank. Corner and modal regions only exist
       # once art has loaded.
       def render_art_placeholder(playback_state)
-        region = @art_region
-        return unless region && !art_loaded? && animating?(playback_state)
+        region = @art.region
+        return unless region && !@art.loaded? && animating?(playback_state)
 
         BrailleMeter.render(@screen, @engine.levels, x: region[:x], y: region[:y],
                                                      w: region[:w], h: region[:h], fg: @theme[:success])
       end
-
-      def art_loaded? = !!(@art_bytes && @art_supported)
 
       def show_selected_tracks
         row = @library_pane.selected
@@ -1741,7 +1642,7 @@ module RubyPlayer
       end
 
       def restore_terminal
-        @kitty_image.clear
+        @art.clear
         @io_out.write("\e[?2004l\e[?25h\e[?1049l")
         $stdin.cooked! if $stdin.tty?
       end

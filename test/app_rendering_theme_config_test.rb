@@ -121,8 +121,8 @@ class AppRenderingThemeConfigTest < Minitest::Test
 
   def test_corner_art_stays_out_of_queued_column
     select_library_kind(:folder)
-    @app.instance_variable_set(:@art_mode, :corner)
-    @app.instance_variable_set(:@art_bytes, "\x89PNG\r\n\x1a\nart".b) # corner exists only with art
+    @app.art.mode = :corner
+    @app.art.instance_variable_set(:@bytes, "\x89PNG\r\n\x1a\nart".b) # corner exists only with art
     use_screen(cols: 120)
 
     @app.render
@@ -598,7 +598,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
     @app = make_app(env: {}, config_path: File.join(@tmp, 'plain-config.rb'))
     @app.scan_paths([@music], wait: true)
     @app.handle_key('v')
-    @app.instance_variable_set(:@art_bytes, 'IMG'.b)
+    @app.art.instance_variable_set(:@bytes, 'IMG'.b)
     @app.render
 
     out = @app.instance_variable_get(:@io_out)
@@ -621,7 +621,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
       @app.handle_key('tab')
       wait_until(timeout: 2, interval: 0.01, failure_message: 'art did not reload') do
         @app.handle_events
-        @app.instance_variable_get(:@art_bytes)
+        @app.art.bytes
       end
     end
 
@@ -676,7 +676,7 @@ class AppRenderingThemeConfigTest < Minitest::Test
 
   def test_corner_without_art_reserves_nothing
     start_normal_playback # @music has no cover image
-    @app.instance_variable_set(:@art_mode, :corner)
+    @app.art.mode = :corner
     use_screen(rows: 40, cols: 138)
     @app.render
 

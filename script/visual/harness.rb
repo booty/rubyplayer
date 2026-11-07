@@ -45,10 +45,10 @@ Thread.new do
   last = nil
   loop do
     screen = app.instance_variable_get(:@screen)
-    image = app.instance_variable_get(:@kitty_image)
+    image = app.art.kitty_image
     status = {
       cols: screen.cols, rows: screen.rows,
-      region: app.instance_variable_get(:@art_region),
+      region: app.art.region,
       placement: image.instance_variable_get(:@placement)&.to_h,
       cell_size: RubyPlayer::UI::KittyImage.tty_cell_size,
       settling: app.send(:resize_settling?)

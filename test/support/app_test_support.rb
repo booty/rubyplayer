@@ -104,7 +104,7 @@ module TestSupport
       end
     end
 
-    def art_region = @app.instance_variable_get(:@art_region)
+    def art_region = @app.art.region
 
     def use_screen(rows: 24, cols: 110)
       out = StringIO.new
@@ -119,7 +119,7 @@ module TestSupport
       # Art resolves on a background thread and lands as an :art_ready event.
       wait_until(timeout: 2, interval: 0.01, failure_message: 'timed out waiting for condition') do
         @app.handle_events
-        @app.instance_variable_get(:@art_bytes)
+        @app.art.bytes
       end
     end
 
