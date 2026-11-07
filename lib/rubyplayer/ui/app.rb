@@ -34,7 +34,10 @@ module RubyPlayer
                        rate_4: 4, rate_5: 5, rate_6: 6 }.freeze
       ART_MODES = %i[off inset pane corner].freeze
       SCAN_REFRESH_INTERVAL_SECONDS = 0.25
-      private_constant :SCAN_REFRESH_INTERVAL_SECONDS
+      # Config hot-reload stats the file at most this often; edits land
+      # within a second without a stat on every loop pass.
+      CONFIG_CHECK_INTERVAL_SECONDS = 1.0
+      private_constant :SCAN_REFRESH_INTERVAL_SECONDS, :CONFIG_CHECK_INTERVAL_SECONDS
       # One chip format's Now Playing pages, fed by native chip snapshots
       # (GBS, NSF, HES): the Live page view, the format's ChipTracker that
       # turns snapshots into their model, and the Tracker page view (shown
@@ -94,7 +97,7 @@ module RubyPlayer
         @vgm_telemetry_controller = VgmTelemetryController.new(
           engine: @engine, telemetry: @vgm_telemetry,
           refresh_hz: [@config['ui', 'vgm_telemetry_fps'], @config['ui', 'frame_fps']].min,
-          clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) }
+          clock: -> { monotonic_time }
         )
         @scanner = Scanner.new(library: @library, registry: @registry)
         @pool = ExtractorPool.new(library: @library, registry: @registry,
@@ -1308,9 +1311,9 @@ module RubyPlayer
       end
 
       def reload_config_if_changed
-        now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        now = monotonic_time
         @last_config_check ||= now
-        return if now - @last_config_check < 1.0
+        return if now - @last_config_check < CONFIG_CHECK_INTERVAL_SECONDS
 
         @last_config_check = now
         prepared_queued_config = nil
@@ -1921,7 +1924,7 @@ module RubyPlayer
       def handle_resize
         @resized = false
         @needs_render = true
-        @last_resize_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        @last_resize_at = monotonic_time
         rows, cols = TTY::Screen.size
         @screen.resize(rows, cols)
         normalize_active_pane!
@@ -1930,8 +1933,7 @@ module RubyPlayer
       def resize_settling?
         return false unless @last_resize_at
 
-        now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-        now - @last_resize_at < @config['ui', 'resize_settle_seconds']
+        monotonic_time - @last_resize_at < @config['ui', 'resize_settle_seconds']
       end
     end
   end
