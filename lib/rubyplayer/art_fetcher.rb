@@ -11,6 +11,8 @@ module RubyPlayer
     # worker to die with the process.
     STOP_TIMEOUT_SECONDS = 1
 
+    attr_reader :artwork
+
     # display_max_px is read per fetch so config hot-reload applies.
     def initialize(artwork:, event_bus:, display_max_px:)
       @artwork = artwork

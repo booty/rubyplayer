@@ -52,6 +52,24 @@ module TestSupport
       def stop = @stop_calls += 1
     end
 
+    # Every app test with art plays the same fixture cover, and its two
+    # ffmpeg transforms (~0.1 s each) gave the same answer each time. One
+    # process-wide memo pays for them once; artwork_test.rb exercises the
+    # real transforms on its own Artwork instances.
+    module SharedCoverTransforms
+      STORE = {} # rubocop:disable Style/MutableConstant -- filled lazily, test process only
+
+      def average_color(bytes)
+        key = [:accent, bytes.hash]
+        STORE.fetch(key) { STORE[key] = super }
+      end
+
+      def display_bytes(bytes, max_px:)
+        key = [:display, bytes.hash, max_px]
+        STORE.fetch(key) { STORE[key] = super }
+      end
+    end
+
     def self.included(test_class)
       test_class.const_set(:FakeFocusPlayer, FakeFocusPlayer)
       test_class.const_set(:FakeMediaKeys, FakeMediaKeys)
@@ -115,6 +133,7 @@ module TestSupport
 
     def play_with_cover_art
       File.binwrite(File.join(@music, 'cover.jpg'), File.binread(File.join(FIXTURES, 'warrior.jpg')))
+      @app.instance_variable_get(:@art_fetcher).artwork.extend(SharedCoverTransforms)
       start_normal_playback
       # Art resolves on a background thread and lands as an :art_ready event.
       wait_until(timeout: 2, interval: 0.01, failure_message: 'timed out waiting for condition') do
