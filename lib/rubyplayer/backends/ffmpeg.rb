@@ -20,6 +20,8 @@ module RubyPlayer
       CONSUMED_TAGS = %w[title album artist album_artist albumartist composer track tracknumber].freeze
 
       def name = 'ffmpeg'
+      # metadata includes :extra technical facts (codec, bit rate, ...).
+      def technical_metadata? = true
 
       def track_count(_path) = 1
 

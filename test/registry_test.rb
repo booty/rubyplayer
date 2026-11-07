@@ -20,6 +20,16 @@ class RegistryTest < Minitest::Test
     assert_nil @reg.backend_name_for('/x/a.jpg')
   end
 
+  # Now Playing re-probes technical details (bit rate, chips) only for
+  # backends that report them. A hardcoded backend-name list once skipped
+  # every newly added chiptune backend until someone remembered to extend it.
+  def test_every_backend_states_whether_it_reports_technical_metadata
+    reporters = %w[a.mp3 a.vgm a.spc a.gbs a.nsf a.hes].map { |file| @reg.backend_for("/x/#{file}") }
+
+    assert(reporters.all?(&:technical_metadata?))
+    refute_predicate @reg.backend_for('/x/a.mod'), :technical_metadata?
+  end
+
   def test_multitrack_detection
     assert @reg.multitrack?('/x/a.nsf')
     assert @reg.multitrack?('/x/a.gbs')

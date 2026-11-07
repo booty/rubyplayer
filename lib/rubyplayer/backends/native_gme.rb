@@ -36,6 +36,7 @@ module RubyPlayer
 
       def track_count(path) = @gme.track_count(path)
       def metadata(path, subtune_index) = @gme.metadata(path, subtune_index)
+      def technical_metadata? = @gme.technical_metadata?
 
       def each_metadata(path, &)
         return enum_for(__method__, path) unless block_given?

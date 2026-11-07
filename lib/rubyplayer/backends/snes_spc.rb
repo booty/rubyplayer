@@ -36,6 +36,7 @@ module RubyPlayer
       end
 
       def name = 'snes_spc'
+      def technical_metadata? = @gme.technical_metadata?
       def track_count(path) = @gme.track_count(path)
       def metadata(path, subtune_index) = @gme.metadata(path, subtune_index)
 

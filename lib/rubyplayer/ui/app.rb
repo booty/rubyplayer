@@ -690,13 +690,14 @@ module RubyPlayer
           @vgm_telemetry_controller.visible = kind == :vgm
           fetch_art(track) if @art_bytes.nil?
         end
-        return unless %w[ffmpeg gme snes_spc gbs_native nsf_native hes_native].include?(track.backend)
-
         # Existing library rows predate technical metadata. Probe once when
         # opening, off the UI thread, rather than requiring a destructive rescan.
         Thread.new do
           path = @archive_cache.playable_path(track)
-          metadata = @registry.backend_for(path).metadata(path, track.subtune_index)
+          backend = @registry.backend_for(path)
+          next unless backend.technical_metadata?
+
+          metadata = backend.metadata(path, track.subtune_index)
           @bus.publish(:now_playing_metadata_ready, modal: modal, metadata: metadata)
         rescue StandardError
           # File may have disappeared since playback began; retain cached facts.

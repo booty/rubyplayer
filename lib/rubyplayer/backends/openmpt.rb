@@ -34,6 +34,8 @@ module RubyPlayer
       class Error < StandardError; end
 
       def name = 'openmpt'
+      # Module tags only; nothing beyond what the scan already stored.
+      def technical_metadata? = false
 
       def track_count(_path) = 1 # tracker modules are single-song
 

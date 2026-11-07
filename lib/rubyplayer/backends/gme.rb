@@ -58,6 +58,8 @@ module RubyPlayer
       private_constant :OpenEmu
 
       def name = 'gme'
+      # metadata includes :extra hardware facts (chips, system, ...).
+      def technical_metadata? = true
 
       def track_count(path)
         with_emu(path, GmeLib::GME_INFO_ONLY) { |emu| GmeLib.gme_track_count(emu) }
