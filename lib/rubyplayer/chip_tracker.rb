@@ -5,8 +5,8 @@ require_relative 'vgm/note_log'
 require_relative 'vgm/pitch'
 
 module RubyPlayer
-  # What the GBS and NSF trackers share: turning the stream of native chip
-  # snapshots (Gbs::Snapshot, Nsf::Snapshot) from an engine ChipLiveState
+  # What the GBS, NSF and HES trackers share: turning the stream of native chip
+  # snapshots (Gbs::Snapshot, Nsf::Snapshot, Hes::Snapshot) from an engine ChipLiveState
   # into the view snapshot (Vgm::Snapshot) the live page draws, with note
   # history. A tracker must see every native snapshot in order: note starts
   # and stops come from consecutive states, and a note shorter than a render

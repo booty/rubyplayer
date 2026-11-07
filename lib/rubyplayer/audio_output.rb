@@ -44,7 +44,7 @@ module RubyPlayer
     # Effect display names in native id order; an effect's index here is the
     # id set_effect takes.
     def self.effect_names(native: RpAudio)
-      Array.new(native.rp_effect_count) { |id| native.rp_effect_name(id) }.freeze
+      Array.new(native.rp_effect_count) { |effect_id| native.rp_effect_name(effect_id) }.freeze
     end
 
     def initialize(sample_rate: 'auto', ring_buffer_ms: DEFAULT_RING_BUFFER_MS,
@@ -101,11 +101,11 @@ module RubyPlayer
 
     def effect_names = self.class.effect_names(native: @native)
 
-    def set_effect(id, intensity_percent, reset:)
+    def set_effect(effect_id, intensity_percent, reset:)
       @write_mutex.synchronize do
         raise IOError, 'audio output is closed' if @closed
 
-        @native.rp_set_effect(id, intensity_percent, reset ? 1 : 0)
+        @native.rp_set_effect(effect_id, intensity_percent, reset ? 1 : 0)
       end
     end
 

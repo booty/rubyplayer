@@ -194,10 +194,10 @@ unsigned int rp_write(const float *frames, unsigned int frame_count) {
 
 unsigned long long rp_frames_played(void) { return atomic_load(&g_frames_played); }
 
-void rp_set_effect(unsigned int id, unsigned int intensity_percent, int reset) {
-    if (id >= RP_EFFECT_COUNT) return;
+void rp_set_effect(unsigned int effect_id, unsigned int intensity_percent, int reset) {
+    if (effect_id >= RP_EFFECT_COUNT) return;
     if (intensity_percent > 100) intensity_percent = 100;
-    publish_control(&g_effect_controls[id], intensity_percent, reset);
+    publish_control(&g_effect_controls[effect_id], intensity_percent, reset);
 }
 
 void rp_set_effects_bypass(int bypass, int reset) {
