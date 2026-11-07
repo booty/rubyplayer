@@ -3,12 +3,12 @@ require 'rubyplayer/runtime_dependencies'
 require 'stringio'
 
 class RuntimeDependenciesTest < Minitest::Test
-  def build_checker(executables: true, libraries: true, native_libraries: true,
+  def build_checker(executables: true, libraries: true, native_artifacts: true,
                     builder: ->(_) { true }, output: StringIO.new)
     RubyPlayer::RuntimeDependencies.new(
       executable_probe: ->(name) { executables == true || executables.include?(name) },
       library_probe: ->(candidates) { libraries == true || libraries.include?(candidates) },
-      file_probe: ->(path) { native_libraries == true || Array(native_libraries).include?(path) },
+      file_probe: ->(path) { native_artifacts == true || Array(native_artifacts).include?(path) },
       native_builder: builder,
       output: output
     )
@@ -40,7 +40,7 @@ class RuntimeDependenciesTest < Minitest::Test
                  'ffmpeg formula should appear once for ffmpeg and ffprobe'
   end
 
-  def test_missing_native_libraries_are_built_then_checked_again
+  def test_missing_native_artifacts_are_built_then_checked_again
     audio_path = File.expand_path('../lib/rubyplayer/native/librp_audio.dylib', __dir__)
     spc_path = File.expand_path('../lib/rubyplayer/native/librp_spc.dylib', __dir__)
     present = { audio_path => false, spc_path => false }
@@ -76,7 +76,7 @@ class RuntimeDependenciesTest < Minitest::Test
     assert_equal ['lib/rubyplayer/native/librp_spc.dylib'], targets
   end
 
-  def test_healthy_native_libraries_do_not_start_build
+  def test_healthy_native_artifacts_do_not_start_build
     checker = build_checker(builder: ->(_) { flunk 'unexpected build' })
 
     assert checker.verify!
@@ -118,7 +118,7 @@ class RuntimeDependenciesTest < Minitest::Test
 
   def test_failed_build_is_reported_without_retry
     builds = 0
-    checker = build_checker(native_libraries: false, builder: lambda { |_targets|
+    checker = build_checker(native_artifacts: false, builder: lambda { |_targets|
       builds += 1
       false
     })
@@ -132,7 +132,7 @@ class RuntimeDependenciesTest < Minitest::Test
 
   def test_successful_build_that_remains_unloadable_stops_after_one_attempt
     builds = 0
-    checker = build_checker(native_libraries: false, builder: lambda { |_targets|
+    checker = build_checker(native_artifacts: false, builder: lambda { |_targets|
       builds += 1
       true
     })

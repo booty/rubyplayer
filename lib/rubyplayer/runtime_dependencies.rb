@@ -19,12 +19,14 @@ module RubyPlayer
 
     Library = Data.define(:name, :candidates, :formula)
     Command = Data.define(:name, :formula)
-    NativeLibrary = Data.define(:name, :target) do
+    # kind :dylib must dlopen; kind :executable (the media-keys helper app)
+    # must be runnable.
+    NativeArtifact = Data.define(:name, :target, :kind) do
       def path
         File.join(PROJECT_ROOT, target)
       end
 
-      def executable? = target.end_with?('/RubyPlayerMedia')
+      def executable? = kind == :executable
     end
 
     LIBRARIES = [
@@ -37,13 +39,14 @@ module RubyPlayer
       Command.new('ffprobe', 'ffmpeg'),
       Command.new('bsdtar', 'libarchive')
     ].freeze
-    NATIVE_LIBRARIES = [
-      NativeLibrary.new('native audio shim', 'lib/rubyplayer/native/librp_audio.dylib'),
-      NativeLibrary.new('native media keys', 'lib/rubyplayer/native/RubyPlayerMedia.app/Contents/MacOS/RubyPlayerMedia'),
-      NativeLibrary.new('native SPC player', 'lib/rubyplayer/native/librp_spc.dylib'),
-      NativeLibrary.new('native GBS player', 'lib/rubyplayer/native/librp_gbs.dylib'),
-      NativeLibrary.new('native NSF player', 'lib/rubyplayer/native/librp_nsf.dylib'),
-      NativeLibrary.new('native HES player', 'lib/rubyplayer/native/librp_hes.dylib')
+    NATIVE_ARTIFACTS = [
+      NativeArtifact.new('native audio shim', 'lib/rubyplayer/native/librp_audio.dylib', :dylib),
+      NativeArtifact.new('native media keys', 'lib/rubyplayer/native/RubyPlayerMedia.app/Contents/MacOS/RubyPlayerMedia',
+                         :executable),
+      NativeArtifact.new('native SPC player', 'lib/rubyplayer/native/librp_spc.dylib', :dylib),
+      NativeArtifact.new('native GBS player', 'lib/rubyplayer/native/librp_gbs.dylib', :dylib),
+      NativeArtifact.new('native NSF player', 'lib/rubyplayer/native/librp_nsf.dylib', :dylib),
+      NativeArtifact.new('native HES player', 'lib/rubyplayer/native/librp_hes.dylib', :dylib)
     ].freeze
 
     def self.verify!
@@ -55,7 +58,7 @@ module RubyPlayer
       @executable_probe = executable_probe || ->(name) { executable_on_path?(name, path) }
       @library_probe = library_probe || method(:loadable_library?)
       @file_probe = file_probe
-      @native_builder = native_builder || method(:build_native_libraries)
+      @native_builder = native_builder || method(:build_native_artifacts)
       @output = output
     end
 
@@ -65,14 +68,14 @@ module RubyPlayer
 
     def verify!
       missing = missing_specs
-      native_missing = missing.grep(NativeLibrary)
+      native_missing = missing.grep(NativeArtifact)
       build_failed = false
       if native_missing.any? && missing.size == native_missing.size
         begin
           FileUtils.mkdir_p(NATIVE_BUILD_DIR)
           File.open(File.join(NATIVE_BUILD_DIR, 'compile.lock'), File::RDWR | File::CREAT, 0o600) do |lock|
             lock.flock(File::LOCK_EX)
-            native_missing = missing_native_libraries
+            native_missing = missing_native_artifacts
             unless native_missing.empty?
               @output.puts 'Building rubyplayer native libraries...'
               build_failed = !@native_builder.call(native_missing.map(&:target))
@@ -94,12 +97,12 @@ module RubyPlayer
     def missing_specs
       missing = LIBRARIES.reject { |spec| available? { @library_probe.call(spec.candidates) } }
       missing.concat(COMMANDS.reject { |spec| available? { @executable_probe.call(spec.name) } })
-      missing.concat(missing_native_libraries)
+      missing.concat(missing_native_artifacts)
       missing
     end
 
-    def missing_native_libraries
-      NATIVE_LIBRARIES.reject do |spec|
+    def missing_native_artifacts
+      NATIVE_ARTIFACTS.reject do |spec|
         available? do
           @file_probe.call(spec.path) &&
             (spec.executable? ? @executable_probe.call(spec.path) : @library_probe.call([spec.path]))
@@ -107,7 +110,7 @@ module RubyPlayer
       end
     end
 
-    def build_native_libraries(targets)
+    def build_native_artifacts(targets)
       bundle_bin = File.join(File.dirname(RbConfig.ruby), 'bundle')
       system(RbConfig.ruby, bundle_bin, 'exec', RbConfig.ruby, '-S', 'rake', '-B', *targets, chdir: PROJECT_ROOT)
     end
@@ -154,7 +157,7 @@ module RubyPlayer
         lines.push('', 'Install missing Homebrew packages:',
                    "  brew install #{formulas.join(' ')}")
       end
-      if missing.any?(NativeLibrary)
+      if missing.any?(NativeArtifact)
         lines.push('', 'Retry the native build:',
                    '  mise exec -- bundle exec rake -B compile')
       end
