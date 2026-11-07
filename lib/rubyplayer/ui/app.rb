@@ -582,7 +582,7 @@ module RubyPlayer
         @library_pane.rebuild!
         show_selected_tracks
         @status_line.set_message(
-          "Permanently removed #{deleted.size} missing track#{'s' unless deleted.size == 1}"
+          "Permanently removed #{counted(deleted.size, 'missing track')}"
         )
       end
 
@@ -906,7 +906,7 @@ module RubyPlayer
         when :front then @engine.enqueue_front(tracks)
         when :end then @engine.enqueue_end(tracks)
         end
-        @status_line.set_message("#{tracks.size} track#{'s' if tracks.size != 1} enqueued (u:undo)")
+        @status_line.set_message("#{counted(tracks.size, 'track')} enqueued (u:undo)")
       end
 
       def play_now
@@ -1066,7 +1066,10 @@ module RubyPlayer
         @status_line.set_message("Removed #{track_count_text(removed)} from playlist")
       end
 
-      def track_count_text(count) = count == 1 ? 'track' : "#{count} tracks"
+      # "track" alone for one reads naturally in "Added track to ...".
+      def track_count_text(count) = count == 1 ? 'track' : counted(count, 'track')
+
+      def counted(count, noun) = "#{count} #{noun}#{'s' unless count == 1}"
 
       def play_focus(sound)
         # Decoder thread owns both normal-track and Focus writes. This command
@@ -1745,7 +1748,7 @@ module RubyPlayer
       def render_missing_purge_modal
         count = @pending_missing_purge[:count]
         pronoun = count == 1 ? 'its' : 'their'
-        message = "Permanently remove #{count} missing track#{'s' unless count == 1} and #{pronoun} history?"
+        message = "Permanently remove #{counted(count, 'missing track')} and #{pronoun} history?"
         prompt = '[y] Remove    [n/esc] Cancel'
         w = [message.size, prompt.size].max + 4
         render_modal(title: 'Confirm Purge', w: w, h: 5) do |x, y|
