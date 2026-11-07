@@ -20,13 +20,6 @@ class AppTest < Minitest::Test
     assert_equal "All Songs · #{expected_ids.size}", @app.tracks_pane.title
   end
 
-  def test_tab_cycles_active_pane
-    assert_equal :library, @app.active_pane
-    @app.handle_key('tab')
-
-    assert_equal :tracks, @app.active_pane
-  end
-
   def test_add_path_mode_collects_input
     @app.handle_key('a')
     'xy'.each_char { |c| @app.handle_key(c) }

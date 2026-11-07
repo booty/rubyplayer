@@ -23,6 +23,10 @@ class AppSpcLiveTest < Minitest::Test
     @app.handle_key('o')
 
     assert_equal :live, @app.now_playing_page
+    # A chip live page is not VGM: it must leave the telemetry worker asleep.
+    @app.send(:tick_vgm_telemetry)
+
+    refute @app.instance_variable_get(:@vgm_telemetry_controller).instance_variable_get(:@visible)
     text = rendered_text
 
     assert_includes text, 'S-DSP LIVE'
@@ -76,13 +80,6 @@ class AppSpcLiveTest < Minitest::Test
     @app.handle_key('s')
 
     assert_equal 0, @app.engine.spc_live.mute_mask
-  end
-
-  def test_spc_live_page_does_not_start_vgm_telemetry
-    @app.handle_key('o')
-    @app.send(:tick_vgm_telemetry)
-
-    refute @app.instance_variable_get(:@vgm_telemetry_controller).instance_variable_get(:@visible)
   end
 
   private

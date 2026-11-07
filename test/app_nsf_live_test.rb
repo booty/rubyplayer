@@ -23,6 +23,10 @@ class AppNsfLiveTest < Minitest::Test
     @app.handle_key('o')
 
     assert_equal :live, @app.now_playing_page
+    # A chip live page is not VGM: it must leave the telemetry worker asleep.
+    @app.send(:tick_vgm_telemetry)
+
+    refute @app.instance_variable_get(:@vgm_telemetry_controller).instance_variable_get(:@visible)
     text = wait_for_rows
 
     assert_includes text, 'NSF LIVE'
@@ -49,13 +53,6 @@ class AppNsfLiveTest < Minitest::Test
     @app.handle_key('s')
 
     assert_equal 0xff & ~(1 << 5), @app.engine.voice_mute_mask
-  end
-
-  def test_nsf_live_page_does_not_start_vgm_telemetry
-    @app.handle_key('o')
-    @app.send(:tick_vgm_telemetry)
-
-    refute @app.instance_variable_get(:@vgm_telemetry_controller).instance_variable_get(:@visible)
   end
 
   private
