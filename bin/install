@@ -51,14 +51,17 @@ trap 'rm -f "$temporary"' EXIT
   cat <<'LAUNCHER'
 caller_dir=$(pwd -P)
 read -r ruby_version < "$project_dir/.ruby-version"
+ruby_bin_dir=$("$mise_bin" where "ruby@$ruby_version")/bin
 export BUNDLE_GEMFILE="$project_dir/Gemfile"
 export BUNDLE_LOCKFILE="$project_dir/Gemfile.lock"
 # mise selects this checkout's tools; restore the caller's cwd for relative music paths.
 exec "$mise_bin" exec --cd "$project_dir" "ruby@$ruby_version" -- /bin/bash -c '
+  ruby_bin_dir="$3"
+  player_bin="$2"
   cd "$1" || exit
-  shift
-  exec bundle exec ruby --yjit "$@"
-' rubyplayer "$caller_dir" "$project_dir/bin/rubyplayer" "$@"
+  shift 3
+  exec "$ruby_bin_dir/bundle" exec "$ruby_bin_dir/ruby" --yjit "$player_bin" "$@"
+' rubyplayer "$caller_dir" "$project_dir/bin/rubyplayer" "$ruby_bin_dir" "$@"
 LAUNCHER
 } > "$temporary"
 chmod 755 "$temporary"

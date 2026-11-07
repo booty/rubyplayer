@@ -149,6 +149,8 @@ the authority for workflow and invariants.
   dylib. Native callbacks publish to `EventBus`; `App#handle_events` dispatches
   them on the UI thread. Publish `MPNowPlayingInfoCenter.playbackState` whenever
   playback changes, or macOS may stop delivering remote commands. The regular
-  `bundle exec` test command can fail in this Ruby 4.0.1 environment before
-  loading tests; running each test file directly with mise Ruby and
-  `-rminitest/mock` covers the suite while that toolchain issue persists.
+  `mise exec -- bundle exec ...` can select `/usr/bin/bundle` when mise's
+  managed bin directory follows `/usr/bin` in PATH. For a reliable test run
+  in that environment, invoke `mise exec -- "$(mise which bundle)" exec
+  "$(mise which ruby)" -S rake test`. Installed launchers resolve the managed
+  Ruby directory through `mise where` and use its absolute executables.
