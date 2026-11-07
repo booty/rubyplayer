@@ -129,6 +129,14 @@ Ruby comes from mise. Plain `bundle exec` may select wrong Ruby.
   `TestSupport::AppTestSupport`. Do not grow `test/app_test.rb` catch-all.
 - `QueueSelection` is the shared seam for editable ordered-queue views;
   keep each pane's headers/history/layout separate from queue identity logic.
+- `App::MODAL_LAYERS` lists every input-capturing modal topmost first; key
+  routing, drawing order, and `modal_active?` all derive from it. Add a
+  modal there, not to `handle_key`/`render`.
+- `NowPlayingController` owns Now Playing state; `ArtPresenter` owns album
+  art placement. App passes them context (`art_view_open?`) instead of
+  reaching into their state; tests use `app.now_playing` / `app.art`.
+- `NativePaths` is the only place native artifact paths are spelled out.
+- `ArchiveCache#playable_path(track)` resolves any track's real file.
 
 ## Testing
 

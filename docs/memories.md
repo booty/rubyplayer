@@ -157,3 +157,15 @@ the authority for workflow and invariants.
   managed bin directory follows `/usr/bin` in PATH. For a reliable test run
   in that environment, invoke `mise exec -- "$(mise which bundle)" exec
   "$(mise which ruby)" -S rake test`.
+- The media-keys helper protocol is line-based by name both ways (command
+  names out, `playing`/`paused`/`stopped` in). macOS extrapolates elapsed
+  time from the playback rate, so position is resent only on track/state
+  change or drift over 1.5 s; sending it per frame flooded the helper. A
+  dead helper must disable media keys (EPIPE), never crash the UI loop.
+- Effect ids are the native `enum rp_effect_id`; Ruby reads names from
+  `rp_effect_name`, so never keep a parallel Ruby list. The DSP takes a
+  typed `rp_effect_controls`; bit packing exists only in the atomic
+  mailboxes in `rp_audio.c`.
+- Rubocop metric limits in the nested `.rubocop_todo.yml` files are
+  ratcheted to the current worst offender; lower them after a refactor
+  shrinks it rather than raising them to fit new code.
