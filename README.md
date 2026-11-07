@@ -243,8 +243,17 @@ processing run in a background thread and notify the UI through EventBus.
 ## Testing
 
 ```sh
-mise exec -- bundle exec rake test
+mise exec -- bundle exec rake test            # serial, ~27 s
+mise exec -- bundle exec rake test:parallel   # same files across processes, ~4 s
 ```
+
+`test:parallel` splits the test files into shards (one per core, up to 8;
+`TEST_SHARDS=n` overrides) and runs each in its own Ruby process, because
+the native audio shim allows one open device per process. Shards are
+balanced by each file's duration in earlier runs, kept in
+`tmp/test_timings.json`; a failing shard's full log is printed and kept in
+`tmp/parallel_tests/`. Tests that wait on real-time playback can run slower
+under the extra load, so `rake test` stays the reference run before a commit.
 
 Album-art rendering is also checked in real terminals (macOS, with Kitty and
 iTerm2 installed and Screen Recording allowed for the calling terminal):

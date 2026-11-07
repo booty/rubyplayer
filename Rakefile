@@ -86,6 +86,15 @@ task compile: [NATIVE_DYLIB, MEDIA_KEYS_APP, SPC_DYLIB, GBS_DYLIB, NSF_DYLIB, HE
 
 task test: :compile
 
+namespace :test do
+  desc 'Run the suite across parallel processes (TEST_SHARDS=n, default: cores up to 8)'
+  task parallel: :compile do
+    require_relative 'script/parallel_tests'
+    shard_count = ENV['TEST_SHARDS']&.then { Integer(it) }
+    abort 'parallel test run failed' unless ParallelTests.new(shard_count: shard_count).passed?
+  end
+end
+
 task default: :test
 
 desc 'Capture album art in real Kitty and iTerm2 windows and check aspect and gaps (macOS, opens windows)'
