@@ -7,6 +7,7 @@ require_relative '../../rubyplayer'
 require_relative '../duration_formatter'
 require_relative '../audio_output'
 require_relative '../effects_rack'
+require_relative '../art_fetcher'
 require_relative '../media_keys'
 require_relative '../playback_engine'
 require_relative '../playback_state'
@@ -137,7 +138,10 @@ module RubyPlayer
         @theme_picker_index = 0
         @theme_id_before_preview = nil
         set_theme!(@config['ui', 'theme'])
-        @artwork = Artwork.new(names: @config['ui', 'art_filenames'], archive_cache: @archive_cache)
+        @art_fetcher = ArtFetcher.new(
+          artwork: Artwork.new(names: @config['ui', 'art_filenames'], archive_cache: @archive_cache),
+          event_bus: @bus, display_max_px: -> { @config['ui', 'art_display_max_px'] }
+        )
         @art_supported = KittyImage.supported?(env)
         # Cell pixels are read per placement rather than cached: a font-size
         # change alters them and arrives only as a SIGWINCH-driven repaint.
@@ -199,7 +203,9 @@ module RubyPlayer
         # Shutdown is best-effort across independent resources. Focus process
         # failure must not leave decoder thread, native audio, or SQLite open;
         # preserve the first error so callers still learn cleanup was incomplete.
-        [-> { @media_keys.stop }, -> { @kitty_image.clear }, -> { @vgm_telemetry_controller.shutdown },
+        [-> { @media_keys.stop }, -> { @art_fetcher.stop }, -> { @kitty_image.clear }, lambda {
+          @vgm_telemetry_controller.shutdown
+        },
          -> { @engine.shutdown },
          -> { @audio.close }, -> { @db.close }].each do |cleanup|
           cleanup.call
@@ -768,34 +774,11 @@ module RubyPlayer
         invalidate_screen!
       end
 
-      # Resolution can spawn ffmpeg (embedded art), so it runs off-thread and
-      # comes back as an :art_ready event through the bus — the decoder and
-      # UI never block on it. Fetched even while the mode is :off so toggling
-      # the mode on mid-track shows art immediately.
+      # ArtFetcher resolves art on its own thread and answers with :art_ready,
+      # so the decoder and UI never block on ffmpeg. Fetched even while the
+      # mode is :off so toggling the mode on mid-track shows art immediately.
       def fetch_art(track)
-        return unless track&.id
-
-        Thread.new do
-          bytes = begin
-            @artwork.for_track(track)
-          rescue StandardError
-            nil
-          end
-          # Accent and downscaling ride in the same background thread as the
-          # fetch — the UI thread never waits on ffmpeg. Only the capped
-          # display copy crosses to the UI; the original never gets emitted.
-          accent = bytes && begin
-            @artwork.average_color(bytes)
-          rescue StandardError
-            nil
-          end
-          display = bytes && begin
-            @artwork.display_bytes(bytes, max_px: @config['ui', 'art_display_max_px'])
-          rescue StandardError
-            nil
-          end
-          @bus.publish(:art_ready, track_id: track.id, bytes: display, accent: accent)
-        end
+        @art_fetcher.request(track) if track&.id
       end
 
       def set_art(bytes, accent: nil)
