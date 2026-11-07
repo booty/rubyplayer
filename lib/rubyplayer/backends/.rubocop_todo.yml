@@ -3,13 +3,16 @@
 # on 2026-08-01 20:15:47 UTC using RuboCop version 1.88.2.
 # The point is for the user to remove these configuration records
 # one by one as the offenses are removed from the code base.
+# Ratcheted 2026-11-07: each Metrics Max is the current worst offender,
+# so code may shrink under these limits but not grow past them. Lower a
+# limit when a refactor brings the worst offender down.
 # Note that changes in the inspected code, or installation of new
 # versions of RuboCop, may require this file to be generated again.
 
 # Offense count: 2
 # Configuration parameters: AllowedMethods, AllowedPatterns, CountRepeatedAttributes.
 Metrics/AbcSize:
-  Max: 26
+  Max: 25
 
 # Offense count: 1
 # Configuration parameters: AllowedMethods, AllowedPatterns.

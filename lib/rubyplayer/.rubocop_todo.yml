@@ -3,6 +3,9 @@
 # on 2026-08-01 20:22:13 UTC using RuboCop version 1.88.2.
 # The point is for the user to remove these configuration records
 # one by one as the offenses are removed from the code base.
+# Ratcheted 2026-11-07: each Metrics Max is the current worst offender,
+# so code may shrink under these limits but not grow past them. Lower a
+# limit when a refactor brings the worst offender down.
 # Note that changes in the inspected code, or installation of new
 # versions of RuboCop, may require this file to be generated again.
 
@@ -26,12 +29,12 @@ Metrics/AbcSize:
 # Configuration parameters: CountComments, CountAsOne, AllowedMethods, AllowedPatterns.
 # AllowedMethods: refine
 Metrics/BlockLength:
-  Max: 29
+  Max: 26
 
 # Offense count: 4
 # Configuration parameters: CountComments, CountAsOne.
 Metrics/ClassLength:
-  Max: 500
+  Max: 492
 
 # Offense count: 9
 # Configuration parameters: AllowedMethods, AllowedPatterns.
@@ -41,7 +44,7 @@ Metrics/CyclomaticComplexity:
 # Offense count: 48
 # Configuration parameters: CountComments, CountAsOne, AllowedMethods, AllowedPatterns.
 Metrics/MethodLength:
-  Max: 36
+  Max: 35
 
 # Offense count: 1
 # Configuration parameters: CountComments, CountAsOne.
@@ -51,7 +54,7 @@ Metrics/ModuleLength:
 # Offense count: 7
 # Configuration parameters: CountKeywordArgs, MaxOptionalParameters.
 Metrics/ParameterLists:
-  Max: 8
+  Max: 6
 
 # Offense count: 5
 # Configuration parameters: AllowedMethods, AllowedPatterns.
