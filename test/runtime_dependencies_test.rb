@@ -1,6 +1,7 @@
 require 'test_helper'
 require 'rubyplayer/runtime_dependencies'
 require 'stringio'
+require 'tmpdir'
 
 class RuntimeDependenciesTest < Minitest::Test
   def build_checker(executables: true, libraries: true, native_artifacts: true,
@@ -9,6 +10,7 @@ class RuntimeDependenciesTest < Minitest::Test
       executable_probe: ->(name) { executables == true || executables.include?(name) },
       library_probe: ->(candidates) { libraries == true || libraries.include?(candidates) },
       file_probe: ->(path) { native_artifacts == true || Array(native_artifacts).include?(path) },
+      stale_probe: ->(_) { false },
       native_builder: builder,
       output: output
     )
@@ -48,6 +50,7 @@ class RuntimeDependenciesTest < Minitest::Test
     checker = RubyPlayer::RuntimeDependencies.new(
       executable_probe: ->(_) { true }, library_probe: ->(_) { true },
       file_probe: ->(path) { present.fetch(path, true) },
+      stale_probe: ->(_) { false },
       native_builder: lambda { |missing_targets|
         targets = missing_targets
         present[audio_path] = present[spc_path] = true
@@ -66,6 +69,7 @@ class RuntimeDependenciesTest < Minitest::Test
       executable_probe: ->(_) { true },
       library_probe: ->(candidates) { candidates != [spc_path] || loadable },
       file_probe: ->(_) { true },
+      stale_probe: ->(_) { false },
       native_builder: lambda { |missing_targets|
         targets = missing_targets
         loadable = true
@@ -92,7 +96,8 @@ class RuntimeDependenciesTest < Minitest::Test
 
         true
       },
-      file_probe: ->(_) { true }
+      file_probe: ->(_) { true },
+      stale_probe: ->(_) { false }
     )
 
     assert checker.verify!
@@ -110,6 +115,7 @@ class RuntimeDependenciesTest < Minitest::Test
         audio_probes > 1
       },
       native_builder: ->(_) { flunk 'already built by another launch' },
+      stale_probe: ->(_) { false },
       output: StringIO.new
     )
 
@@ -156,5 +162,56 @@ class RuntimeDependenciesTest < Minitest::Test
     assert_equal ['libgme', 'libopenmpt', 'sox', 'ffmpeg', 'ffprobe', 'bsdtar',
                   'native audio shim', 'native media keys', 'native SPC player', 'native GBS player',
                   'native NSF player', 'native HES player'], missing
+  end
+
+  def test_stale_audio_is_rebuilt_before_loading_and_unchanged_launch_does_not_build
+    # A loadable old dylib used to pass preflight and then fail attaching rp_set_effect.
+    Dir.mktmpdir do |root|
+      target = RubyPlayer::NativePaths::AUDIO_DYLIB
+      inputs = RubyPlayer::NativeBuild.inputs(target)
+      (inputs + [target]).each do |path|
+        absolute = File.join(root, path)
+        FileUtils.mkdir_p(File.dirname(absolute))
+        File.write(absolute, '')
+        File.utime(Time.at(100), Time.at(100), absolute)
+      end
+      File.utime(Time.at(200), Time.at(200), File.join(root, 'ext/rp_audio/effects.h'))
+      builds = []
+      checker = RubyPlayer::RuntimeDependencies.new(
+        executable_probe: ->(_) { true }, file_probe: ->(_) { true },
+        stale_probe: ->(path) { path == target && RubyPlayer::NativeBuild.stale?(path, root: root) },
+        library_probe: lambda { |paths|
+          if paths == [RubyPlayer::NativePaths.absolute(target)]
+            refute_empty builds, 'must rebuild before dlopen can cache the old library'
+          end
+          true
+        },
+        native_builder: lambda { |targets|
+          builds << targets
+          File.utime(Time.at(300), Time.at(300), File.join(root, target))
+          true
+        }, output: StringIO.new
+      )
+
+      assert checker.verify!
+      assert checker.verify!
+      assert_equal [[target]], builds
+    end
+  end
+
+  def test_another_launch_can_refresh_stale_audio_before_this_one_takes_the_lock
+    probes = 0
+    checker = RubyPlayer::RuntimeDependencies.new(
+      executable_probe: ->(_) { true }, library_probe: ->(_) { true }, file_probe: ->(_) { true },
+      stale_probe: lambda { |target|
+        next false unless target == RubyPlayer::NativePaths::AUDIO_DYLIB
+
+        probes += 1
+        probes == 1
+      },
+      native_builder: ->(_) { flunk 'already refreshed by another launch' }, output: StringIO.new
+    )
+
+    assert checker.verify!
   end
 end

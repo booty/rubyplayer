@@ -1,6 +1,6 @@
 # Implementation lessons
 
-Current as of 2026-11-06. Supplementary implementation notes; AGENTS.md remains
+Current as of 2026-11-13. Supplementary implementation notes; AGENTS.md remains
 the authority for workflow and invariants.
 
 - The installer selects the checkout's explicit mise Ruby version, or Ruby 4
@@ -9,10 +9,12 @@ the authority for workflow and invariants.
   directory so relative music paths retain their meaning.
   Pin both `BUNDLE_GEMFILE` and `BUNDLE_LOCKFILE`: Bundler 4 exports the latter
   independently, so inheriting another bundle can otherwise modify its lockfile.
-- Startup probes all bundled dylibs before loading the UI. Rebuild only missing
-  or unloadable targets with `rake -B` (timestamps cannot repair a bad binary),
-  under a cross-process lock; probe again after taking the lock because another
-  launch may already have built them. Healthy launches never invoke Rake.
+- Startup checks native freshness before dlopen: loading a stale dylib can
+  cache its old symbols even after a rebuild. `NativeBuild` shares source,
+  header, build-rule, and transitive object dependencies with Rake. Rebuild
+  only missing, stale, or unloadable targets with `rake -B` under a cross-process
+  lock; check again after taking the lock because another launch may already
+  have built them. Unchanged launches never invoke Rake.
 - Scan paths need literal, case-sensitive matching. Binary directory-prefix
   ranges avoid SQL wildcard interpretation while allowing indexed comparisons.
 - SQLite backups must include committed WAL pages. Use the backup API and

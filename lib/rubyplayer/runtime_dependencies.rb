@@ -4,6 +4,7 @@ require 'ffi'
 require 'fileutils'
 require 'rbconfig'
 require_relative 'native_paths'
+require_relative 'native_build'
 
 module RubyPlayer
   # Runs before UI/audio requires so installation problems become one concise
@@ -52,10 +53,12 @@ module RubyPlayer
     end
 
     def initialize(executable_probe: nil, library_probe: nil, file_probe: File.method(:file?),
-                   native_builder: nil, output: $stderr, path: ENV.fetch('PATH', ''))
+                   native_builder: nil, stale_probe: NativeBuild.method(:stale?),
+                   output: $stderr, path: ENV.fetch('PATH', ''))
       @executable_probe = executable_probe || ->(name) { executable_on_path?(name, path) }
       @library_probe = library_probe || method(:loadable_library?)
       @file_probe = file_probe
+      @stale_probe = stale_probe
       @native_builder = native_builder || method(:build_native_artifacts)
       @output = output
     end
@@ -102,7 +105,7 @@ module RubyPlayer
     def missing_native_artifacts
       NATIVE_ARTIFACTS.reject do |spec|
         available? do
-          @file_probe.call(spec.path) &&
+          @file_probe.call(spec.path) && !@stale_probe.call(spec.target) &&
             (spec.executable? ? @executable_probe.call(spec.path) : @library_probe.call([spec.path]))
         end
       end
